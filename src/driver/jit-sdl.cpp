@@ -3,7 +3,7 @@
 
 #include "SDL.h"
 #include "SDL_image.h"
-#include "ast/ast.h"
+#include "compiler/ast.h"
 #include "dom/dom-to-string.h"
 #include "compiler/parser.h"
 #include "compiler/name-resolver.h"

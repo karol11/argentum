@@ -16,7 +16,7 @@ llvm_map_components_to_libnames(llvm_libs support core nativecodegen orcjit)
 
 find_package(SDL2 REQUIRED)
 find_package(SDL2_image REQUIRED)
-include_directories(${CMAKE_CURRENT_LIST_DIR} ${SDL2_INCLUDE_DIRS} ${SDL2_IMAGE_INCLUDE_DIRS})
+include_directories(${CMAKE_CURRENT_LIST_DIR}/src ${SDL2_INCLUDE_DIRS} ${SDL2_IMAGE_INCLUDE_DIRS})
 
 set(ag_sources
     src/utils/utf8.h
@@ -55,7 +55,7 @@ add_executable(ag-jit-sdl
     ${ag_sources}
     src/driver/jit-sdl.cpp
 )
-target_link_libraries(jit-sdl
+target_link_libraries(ag-jit-sdl
     ${SDL2_LIBRARIES}
     ${SDL2_IMAGE_LIBRARIES}
     ${llvm_libs})
@@ -69,4 +69,4 @@ add_executable(ag-tests
     src/compiler/compiler-test.cpp
     src/utils/vmt_util-test.cpp
 )
-target_link_libraries(ag_tests ${llvm_libs})
+target_link_libraries(ag-tests ${llvm_libs})

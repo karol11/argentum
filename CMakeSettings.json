@@ -1,0 +1,32 @@
+﻿{
+  "configurations": [
+    {
+      "name": "x64-Debug",
+      "generator": "Ninja",
+      "configurationType": "Debug",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "buildRoot": "${projectDir}\\out\\build\\${name}",
+      "installRoot": "${projectDir}\\out\\install\\${name}",
+      "cmakeCommandArgs": "",
+      "buildCommandArgs": "",
+      "ctestCommandArgs": "",
+      "variables": [
+        {
+          "name": "SDL2_DIR",
+          "value": "D:/Docs/cpp_proj/SDL2",
+          "type": "PATH"
+        },
+        {
+          "name": "SDL2_image_DIR",
+          "value": "D:/Docs/cpp_proj/SDL2_image",
+          "type": "PATH"
+        },
+        {
+          "name": "LLVM_DIR",
+          "value": "D:/Docs/cpp_proj/llvm12.0.1d/lib/cmake/llvm",
+          "type": "PATH"
+        }
+      ]
+    }
+  ]
+}
