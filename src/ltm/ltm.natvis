@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?> 
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+  <Type Name="ltm::own&lt;*&gt;">
+    <DisplayString Condition="target==nullptr">null</DisplayString>
+    <DisplayString>{($T1*)target}</DisplayString>
+    <Expand>
+      <Item Name="[target]">($T1*)target</Item>
+    </Expand>
+  </Type>
+  <Type Name="ltm::pin&lt;*&gt;">
+    <DisplayString Condition="target==nullptr">null</DisplayString>
+    <DisplayString>{($T1*)target}</DisplayString>
+    <Expand>
+      <Item Name="[target]">($T1*)target</Item>
+    </Expand>
+  </Type>
+  <Type Name="ltm::weak&lt;*&gt;">
+    <DisplayString Condition="target==nullptr">null</DisplayString>
+    <DisplayString Condition="((ltm::WeakBlock*)target)->target==nullptr">lost</DisplayString>
+    <DisplayString>{((ltm::WeakBlock*)target)->target}</DisplayString>
+    <Expand>
+      <Item Name="[target]">($T1*)((ltm::WeakBlock*)target)->target</Item>
+    </Expand>
+  </Type>
+</AutoVisualizer>
