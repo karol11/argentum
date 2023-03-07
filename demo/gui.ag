@@ -1,0 +1,29 @@
+using array;
+using sdl;
+
+interface gui_Actor {
+    paint(sdl_Window dst);
+    tick(int milliseconds) bool; // returns true if alive
+}
+
+class gui_Group {
+    +sys_Array;
+    +gui_Actor{
+        paint(sdl_Window dst) {
+            each((i){
+                i~gui_Actor ? _.paint(dst)
+            })
+        }
+        tick(int milliseconds) bool {
+            plow((i) {
+                i~gui_Actor &&
+                    _.tick(milliseconds)
+            });
+            size() != 0
+        }
+    }
+}
+
+fn gui_Group_getAt(gui_Group a, int i) ?gui_Actor {
+    a[i] && _~gui_Actor
+}

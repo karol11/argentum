@@ -69,7 +69,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (std::string(argv[1]) == "--help") {
-            std::cout << "Smk - language that makes difference." << std::endl;
+            std::cout << "Argentum JIT interpreter demo. Language that makes difference." << std::endl;
             return 0;
         }
         ast::initialize();
@@ -102,7 +102,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Parsing " << argv[1] << std::endl;
         std::unordered_set<ltm::pin<dom::Name>> modules_in_dep_path;
         parse(ast, ast->dom->names()->get(argv[2]), modules_in_dep_path, [&](auto name) {
-            return read_file(std::string(argv[1]) + "/" + std::to_string(name) + ".s-k");
+            return read_file(std::string(argv[1]) + "/" + std::to_string(name) + ".ag");
         });
         std::cout << "Checking name consistency" << std::endl;
         resolve_names(ast);
