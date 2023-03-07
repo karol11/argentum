@@ -532,11 +532,13 @@ TEST(Parser, TypedArrays) {
                 this.y:=y;
             }
         }
-        class NodeArray { +sys_Array; def = Node.xy(0, 0); }   // `def` - default object to be returned on errors
-        fn NodeArray_getAt(NodeArray a, int i) Node {
-            sys_Array_getAt(a, i) && _~Node ? _ : a.def          // get element, check it for out of bounds or unitialized, cast it to Node and check, on success return it otherwise return default.
+        class NodeArray {
+            +sys_Array;
+            def = Node.xy(0, 0);   // `def` - default object to be returned on errors
+            getAt(int i) Node {
+                sys_Array_getAt(this, i) && _~Node ? _ : def  // get element, check it for out of bounds or unitialized, cast it to Node and check, on success return it otherwise return default.
+            }
         }
-
         a = NodeArray;
         a.add((){ Node.xy(2, 3) });
         a.add((){ Node.xy(20, 30) });

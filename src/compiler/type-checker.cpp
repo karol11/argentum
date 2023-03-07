@@ -128,23 +128,41 @@ struct Typer : ast::ActionMatcher {
 				node.type_ = as_mk_delegate->base->type();  // preserve both own/ref and actual this type.
 		}
 	}
-	void handle_index_op(ast::GetAtIndex& node, own<ast::Action> opt_value, const char* name) {
+	void handle_index_op(ast::GetAtIndex& node, own<ast::Action> opt_value, const string name) {
 		auto indexed = ast->extract_class(find_type(node.indexed)->type());
 		if (!indexed)
 			node.error("Only objects can be indexed, not ", node.indexed->type());
-		auto fn = ast->functions_by_names[indexed->name->get(name)].pinned();
-		if (!fn)
-			node.error("function ", indexed->name->get(name), " not found");
-		auto fnref = ast::make_at_location<ast::MakeFnPtr>(node);
-		fnref->fn = fn;
-		auto r = ast::make_at_location<ast::Call>(node).owned();
-		r->callee = fnref;
-		r->params = move(node.indexes);
-		r->params.insert(r->params.begin(), move(node.indexed));
-		if (opt_value)
-			r->params.push_back(move(opt_value));
-		fix(r);
-		*fix_result = move(r);
+		if (auto fn = ast->functions_by_names[indexed->name->get(name)].pinned()) {
+			auto fnref = ast::make_at_location<ast::MakeFnPtr>(node);
+			fnref->fn = fn;
+			auto r = ast::make_at_location<ast::Call>(node).owned();
+			r->callee = fnref;
+			r->params = move(node.indexes);
+			r->params.insert(r->params.begin(), move(node.indexed));
+			if (opt_value)
+				r->params.push_back(move(opt_value));
+			fix(r);
+			*fix_result = move(r);
+			return;
+		}
+		if (auto global_name = ast->dom->names()->peek(name)) {
+			if (auto m = dom::peek(indexed->this_names, global_name)) {
+				if (auto method = dom::strict_cast<ast::Method>(m)) {
+					auto r = ast::make_at_location<ast::Call>(node).owned();
+					auto callee = ast::make_at_location<ast::MakeDelegate>(node);
+					r->callee = callee;
+					callee->base = node.indexed;
+					callee->method = method;
+					r->params = move(node.indexes);
+					if (opt_value)
+						r->params.push_back(move(opt_value));
+					fix(r);
+					*fix_result = move(r);
+					return;
+				}
+			}
+		}
+		node.error("function ", indexed->name->get(name), " not found");
 	}
 	void on_get_at_index(ast::GetAtIndex& node) override { handle_index_op(node, nullptr, "getAt"); }
 	void on_set_at_index(ast::SetAtIndex& node) override { handle_index_op(node, move(node.value), "setAt"); }
