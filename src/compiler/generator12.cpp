@@ -1184,7 +1184,7 @@ struct Generator : ast::ActionScanner {
 			}
 			void on_void(ast::TpVoid& type) override {
 				val = depth > 1 ? val
-					: depth == 1 ? gen->builder->CreateBitCast(val, gen->tp_bool)
+					: depth == 1 ? gen->cast_to(val, gen->tp_bool)
 					: gen->builder->getInt8(1);
 			}
 			void on_optional(ast::TpOptional& type) override { assert(false); }

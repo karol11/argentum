@@ -42,58 +42,6 @@ int64_t execute(const char* source_text, bool dump_all = false) {
     return generate_and_execute(ast, dump_all);
 }
 
-TEST(Parser, StringOperations) {
-    ASSERT_EQ(13, execute(R"(
-        class sys_String{
-            get() int { sys_String_getCh(this) }
-            length() int {
-                r = 0;
-                loop {
-                    c = sys_String_getCh(this);
-                    c != 0 ? r := r + 1;
-                    c == 0 ? r
-                }
-            }
-        }
-        class OString {
-            +sys_Blob;
-            pos = 0;
-            put(int codePoint) this {
-                size = sys_Container_size(this);
-                growStep = 100;
-                pos + 5 >= size ?
-                    sys_Container_insert(this, size, growStep);
-                pos := sys_Blob_putCh(this, pos, codePoint)
-            }
-            append(sys_String s) this {
-                loop{
-                    c = sys_String_getCh(s);
-                    c != 0 ? put(c);
-                    c == 0
-                }
-            }
-            str() @sys_String {
-                r = sys_String;
-                sys_String_fromBlob(r, this, 0, pos);
-                pos := 0;
-                r
-            }
-        }
-        a = OString.put('<').append("Hello there").put('>').str();
-        a.length()
-    )"));
-}
-
-TEST(Parser, LiteralStrings) {
-    ASSERT_EQ(1, execute(R"(
-        a = "Hi";
-        sys_String_getCh(a); // a="i"
-        b = @a;
-        sys_String_getCh(a); // a=""   b"i"
-        sys_String_getCh(b) == 'i' && sys_String_getCh(a) == 0 ? 1:0
-    )"));
-}
-
 TEST(Parser, IntegerOps) {
     ASSERT_EQ(7, execute("(2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1))"));
 }
@@ -404,7 +352,7 @@ TEST(Parser, ForeignFunctionCall) {
 TEST(Parser, LogicalOr) {
     ASSERT_EQ(42, execute(R"(
         a = 3;
-        (a > 2 || a < 4) ? 42 : 0
+        a > 2 || a < 4 ? 42 : 0
     )"));
 }
 
@@ -593,6 +541,58 @@ TEST(Parser, TypedArrays) {
         a.add((){ Node.xy(2, 3) });
         a.add((){ Node.xy(20, 30) });
         a[0].x + a[1].y + a.size()
+    )"));
+}
+
+TEST(Parser, StringOperations) {
+    ASSERT_EQ(13, execute(R"(
+        class sys_String{
+            get() int { sys_String_getCh(this) }
+            length() int {
+                r = 0;
+                loop {
+                    c = sys_String_getCh(this);
+                    c != 0 ? r := r + 1;
+                    c == 0 ? r
+                }
+            }
+        }
+        class OString {
+            +sys_Blob;
+            pos = 0;
+            put(int codePoint) this {
+                size = sys_Container_size(this);
+                growStep = 100;
+                pos + 5 >= size ?
+                    sys_Container_insert(this, size, growStep);
+                pos := sys_Blob_putCh(this, pos, codePoint)
+            }
+            append(sys_String s) this {
+                loop{
+                    c = sys_String_getCh(s);
+                    c != 0 ? put(c);
+                    c == 0
+                }
+            }
+            str() @sys_String {
+                r = sys_String;
+                sys_String_fromBlob(r, this, 0, pos);
+                pos := 0;
+                r
+            }
+        }
+        a = OString.put('<').append("Hello there").put('>').str();
+        a.length()
+    )"));
+}
+
+TEST(Parser, LiteralStrings) {
+    ASSERT_EQ(1, execute(R"(
+        a = "Hi";
+        sys_String_getCh(a); // a="i"
+        b = @a;
+        sys_String_getCh(a); // a=""   b"i"
+        sys_String_getCh(b) == 'i' && sys_String_getCh(a) == 0 ? 1:0
     )"));
 }
 
