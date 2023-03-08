@@ -101,7 +101,9 @@ struct MethodInfo {
 };
 
 struct ClassInfo {
-	llvm::StructType* fields;    // {dispatcher_fn*, fields}; where dispatcher_fn void*(uint64_t interface_and_method_id)
+	llvm::StructType* fields;    // only fields, to access dispatcher or counter: cast to obj_ptr and apply offset-1
+								 // obj_ptr{dispatcher_fn*, counter}; where dispatcher_fn void*(uint64_t interface_and_method_id)
+								 // to access vmt: cast dispatcher_fn to vmt and apply offset -1
 	llvm::StructType* vmt;       // only for class { (dispatcher_fn_used_as_id*, methods*)*, copier_fn*, disposer_fn*, instance_size, vmt_size};
 	uint64_t vmt_size;           // vmt bytes size - used in casts
 	llvm::Function* constructor; // T*()
@@ -143,6 +145,7 @@ struct Generator : ast::ActionScanner {
 	llvm::Type* tp_opt_lambda;
 	llvm::Type* tp_int_ptr;
 	llvm::Type* obj_ptr;
+	llvm::StructType* obj_struct;
 	llvm::Type* tp_byte_ptr;
 	llvm::Type* weak_block_ptr;
 	llvm::Function* fn_release;  // void(Obj*) no_throw
@@ -167,8 +170,6 @@ struct Generator : ast::ActionScanner {
 	unordered_map<weak<ast::MkLambda>, llvm::Function*> compiled_functions;
 	llvm::Constant* null_weak;
 
-	static constexpr size_t OBJ_PREFIX_FIELDS = 2;  // pointer to dispatcher+couter_or_weak
-
 	Generator(ltm::pin<ast::Ast> ast)
 		: ast(ast)
 		, context(new llvm::LLVMContext)
@@ -186,7 +187,8 @@ struct Generator : ast::ActionScanner {
 		tp_bool = llvm::Type::getInt1Ty(*context);
 		tp_opt_lambda = llvm::StructType::get(*context, { tp_int_ptr, tp_int_ptr });
 		tp_byte_ptr = llvm::Type::getInt8Ty(*context)->getPointerTo();
-		obj_ptr = llvm::StructType::get(*context, { void_ptr_type, tp_int_ptr })->getPointerTo();
+		obj_struct = llvm::StructType::get(*context, { void_ptr_type, tp_int_ptr });
+		obj_ptr = obj_struct->getPointerTo();
 		weak_block_ptr = llvm::StructType::get(*context, { void_ptr_type, tp_int_ptr, tp_int_ptr })->getPointerTo();
 		empty_mtable = make_const_array("empty_mtable", { llvm::Constant::getNullValue(void_ptr_type) });
 		null_weak = llvm::Constant::getNullValue(weak_block_ptr);
@@ -405,7 +407,9 @@ struct Generator : ast::ActionScanner {
 		result->data = builder->CreateCall(classes[ast->string_cls].constructor, {});
 		builder->CreateStore(
 			builder->CreateGlobalStringPtr(node.value),
-			cast_to(builder->CreateStructGEP(result->data, 2), tp_byte_ptr->getPointerTo()));
+			cast_to(
+				builder->CreateStructGEP(result->data, 0),
+				tp_byte_ptr->getPointerTo()));
 		result->lifetime = Val::Retained{};
 	}
 
@@ -625,7 +629,7 @@ struct Generator : ast::ActionScanner {
 				auto entry_point = builder->CreateCall(
 					llvm::FunctionCallee(
 						dispatcher_fn_type,
-						builder->CreateLoad(builder->CreateStructGEP(cast_to(receiver, obj_ptr), 0))
+						builder->CreateLoad(builder->CreateConstGEP2_32(nullptr, cast_to(receiver, obj_ptr), -1, 0))
 					),
 					{ builder->getInt64(classes[method->cls].interface_ordinal | m_info.ordinal) });
 				result->data = builder->CreateCall(
@@ -640,7 +644,7 @@ struct Generator : ast::ActionScanner {
 							builder->CreateConstGEP2_32(
 								nullptr,
 								builder->CreateBitOrPointerCast(
-									builder->CreateLoad(builder->CreateStructGEP(receiver, 0)),
+									builder->CreateLoad(builder->CreateConstGEP2_32(nullptr, cast_to(receiver, obj_ptr), -1, 0)),
 									vmt_type),
 								-1,
 								m_info.ordinal))),
@@ -798,7 +802,7 @@ struct Generator : ast::ActionScanner {
 			auto id = builder->CreateCall(
 				llvm::FunctionCallee(
 					dispatcher_fn_type,
-					builder->CreateLoad(builder->CreateStructGEP(result->data, 0))
+					builder->CreateLoad(builder->CreateConstGEP2_32(nullptr, cast_to(result->data, obj_ptr), -1, 0))
 				),
 				{ interface_ordinal });
 			*result = compile_if(
@@ -810,7 +814,7 @@ struct Generator : ast::ActionScanner {
 				[&] { return Val{ result->type, make_opt_none(result_type), Val::NonPtr{} }; });
 			return;
 		}
-		auto vmt_ptr = builder->CreateLoad(builder->CreateStructGEP(result->data, 0));
+		auto vmt_ptr = builder->CreateLoad(builder->CreateConstGEP2_32(nullptr, cast_to(result->data, obj_ptr), -1, 0));
 		auto vmt_ptr_bb = builder->GetInsertBlock();
 		*result = compile_if(
 			*result_type,
@@ -819,7 +823,7 @@ struct Generator : ast::ActionScanner {
 				builder->CreateLoad(
 					builder->CreateConstGEP2_32(
 						nullptr,
-						builder->CreateBitOrPointerCast(vmt_ptr, obj_vmt_type->getPointerTo()),
+						cast_to(vmt_ptr, obj_vmt_type->getPointerTo()),
 						-1, 3))),
 			[&] {
 				return compile_if(
@@ -1558,9 +1562,9 @@ struct Generator : ast::ActionScanner {
 			bb_not_null,
 			bb_null);
 		b.SetInsertPoint(bb_not_null);
-		auto counter_addr = b.CreateStructGEP(
+		auto counter_addr = b.CreateConstGEP2_32(nullptr,
 			b.CreateBitOrPointerCast(&*fn_retain->arg_begin(), obj_ptr),
-			1);
+			-1, 1);
 		auto counter = b.CreateLoad(counter_addr);
 		auto bb_with_weak = llvm::BasicBlock::Create(*context, "", fn_retain);
 		auto bb_no_weak = llvm::BasicBlock::Create(*context, "", fn_retain);
@@ -1642,11 +1646,11 @@ struct Generator : ast::ActionScanner {
 		for (auto& cls : ast->classes) {
 			auto& info = classes[cls];
 			if (!cls->is_interface) {  // handle fields
-				vector<llvm::Type*> fields{ dispatcher_fn_type->getPointerTo(), int_type };
+				vector<llvm::Type*> fields;
 				if (cls->base_class) {
 					auto& base_fields = classes[cls->base_class].fields->elements();
-					for (size_t i = OBJ_PREFIX_FIELDS; i < base_fields.size(); i++)
-						fields.push_back(base_fields[i]);
+					for (auto& f : base_fields)
+						fields.push_back(f);
 				}
 				for (auto& field : cls->fields) {
 					field->offset = fields.size();
@@ -1721,10 +1725,11 @@ struct Generator : ast::ActionScanner {
 			builder.CreateRetVoid();
 			// Constructor
 			builder.SetInsertPoint(llvm::BasicBlock::Create(*context, "", info.constructor));
-			result = builder.CreateCall(fn_allocate, { builder.getInt64(layout.getTypeAllocSize(info.fields)) });
+			result = builder.CreateCall(fn_allocate, {
+				builder.getInt64(layout.getTypeAllocSize(info.fields)) });
 			builder.CreateCall(info.initializer, { result });
 			auto typed_result = builder.CreateBitOrPointerCast(result, info.fields->getPointerTo());
-			builder.CreateStore(info.dispatcher, builder.CreateStructGEP(typed_result, 0));
+			builder.CreateStore(cast_to(info.dispatcher, void_ptr_type), builder.CreateConstGEP2_32(nullptr, result, -1, 0));
 			builder.CreateRet(typed_result);
 			// Disposer
 			if (special_copy_and_dispose.count(cls) == 0) {

@@ -44,37 +44,37 @@ namespace runtime {
 	void Object::release(Object* obj) {
 		if (!obj || size_t(obj) < 256)
 			return;
-		if ((obj->counter & CTR_WEAKLESS) != 0) {
-			if ((obj->counter -= CTR_STEP) >= CTR_STEP)
+		if ((obj->head().counter & CTR_WEAKLESS) != 0) {
+			if ((obj->head().counter -= CTR_STEP) >= CTR_STEP)
 				return;
 		} else {
-			auto wb = reinterpret_cast<Weak*>(obj->counter);
+			auto wb = reinterpret_cast<Weak*>(obj->head().counter);
 			if ((wb->org_counter -= CTR_STEP) >= CTR_STEP)
 				return;
 			wb->target = nullptr;
-			obj->counter = 0;
+			obj->head().counter = 0;
 			release_weak(wb);
 		}
-		reinterpret_cast<const Vmt*>(obj->dispatcher)[-1].dispose(obj);
-		rt_free(obj);
+		reinterpret_cast<const Vmt*>(obj->head().dispatcher)[-1].dispose(obj);
+		rt_free(reinterpret_cast<Head*>(obj) - 1);
 	}
 
 	Object* Object::retain(Object* obj) {
 		if (obj && size_t(obj) >= 256) {
-			if ((obj->counter & CTR_WEAKLESS) != 0) {
-				obj->counter += CTR_STEP;
+			if ((obj->head().counter & CTR_WEAKLESS) != 0) {
+				obj->head().counter += CTR_STEP;
 			} else {
-				reinterpret_cast<Weak*>(obj->counter)->org_counter += CTR_STEP;
+				reinterpret_cast<Weak*>(obj->head().counter)->org_counter += CTR_STEP;
 			}
 		}
 		return obj;
 	}
 
 	void* Object::allocate(size_t size) {
-		auto r = rt_alloc(size);
+		auto r = reinterpret_cast<Head*>(rt_alloc(size + sizeof(Head)));
 		memset(r, 0, size);
-		reinterpret_cast<Object*>(r)->counter = CTR_STEP | CTR_WEAKLESS;
-		return r;
+		r->counter = CTR_STEP | CTR_WEAKLESS;
+		return r + 1;
 	}
 
 	Object* Object::copy(Object* src) {
@@ -85,9 +85,9 @@ namespace runtime {
 			switch (get_ptr_tag(i)) {
 			case TG_OBJECT:
 				if (c)
-					c->counter = CTR_STEP | CTR_WEAKLESS;
+					c->head().counter = CTR_STEP | CTR_WEAKLESS;
 				c = untag_ptr<Object*>(i);
-				i = reinterpret_cast<Object*>(c->counter);
+				i = reinterpret_cast<Object*>(c->head().counter);
 				break;
 			case TG_WEAK_BLOCK:
 				wb = untag_ptr<Weak*>(i);
@@ -106,7 +106,7 @@ namespace runtime {
 			}
 		}
 		if (c)
-			c->counter = CTR_STEP | CTR_WEAKLESS;
+			c->head().counter = CTR_STEP | CTR_WEAKLESS;
 		copy_head = nullptr;
 		return dst;
 	}
@@ -114,28 +114,28 @@ namespace runtime {
 	Object* Object::copy_object_field(Object* src) {
 		if (!src || size_t(src) < 256)
 			return src;
-		if ((src->counter & CTR_WEAKLESS
-			? src->counter
-			: reinterpret_cast<Weak*>(src->counter)->org_counter)
+		if ((src->head().counter & CTR_WEAKLESS
+			? src->head().counter
+			: reinterpret_cast<Weak*>(src->head().counter)->org_counter)
 			& CTR_FROZEN) {
 			return retain(src);
 		}
-		const auto& vmt = reinterpret_cast<const Vmt*>(src->dispatcher)[-1];
-		auto d = reinterpret_cast<Object*>(rt_alloc(vmt.instance_alloc_size));
-		memcpy(d, src, vmt.instance_alloc_size);
-		reinterpret_cast<Object*>(d)->counter = CTR_STEP | CTR_WEAKLESS;
-		vmt.copy_ref_fields(d, src);
-		if ((src->counter & CTR_WEAKLESS) == 0) { // has weak block
-			auto wb = reinterpret_cast<Weak*>(src->counter);
+		const auto& vmt = reinterpret_cast<const Vmt*>(src->head().dispatcher)[-1];
+		auto dh = reinterpret_cast<Head*>(rt_alloc(vmt.instance_alloc_size + sizeof(Head)));
+		memcpy(dh, &src->head(), vmt.instance_alloc_size + sizeof(Head));
+		dh->counter = CTR_STEP | CTR_WEAKLESS;
+		vmt.copy_ref_fields(reinterpret_cast<Object*>(dh + 1), src);
+		if ((src->head().counter & CTR_WEAKLESS) == 0) { // has weak block
+			auto wb = reinterpret_cast<Weak*>(src->head().counter);
 			if (wb->target == src) { // no weak copied yet
-				wb->target = tag_ptr<Object*>(d, TG_OBJECT);
-				d->counter = reinterpret_cast<uintptr_t>(copy_head);
+				wb->target = tag_ptr<Object*>(dh + 1, TG_OBJECT);
+				dh->counter = reinterpret_cast<uintptr_t>(copy_head);
 				copy_head = tag_ptr<Object*>(src, TG_OBJECT);
 			} else {
 				auto dst_wb = reinterpret_cast<Weak*>(rt_alloc(sizeof(Weak)));
-				d->counter = reinterpret_cast<uintptr_t>(dst_wb);
+				dh->counter = reinterpret_cast<uintptr_t>(dst_wb);
 				dst_wb->org_counter = CTR_STEP | CTR_WEAKLESS;
-				void* i = reinterpret_cast<Weak*>(src->counter)->target;
+				void* i = reinterpret_cast<Weak*>(src->head().counter)->target;
 				uintptr_t dst_wb_locks = 1;
 				while (get_ptr_tag(i) == TG_WEAK) {
 					Weak** w = untag_ptr<Weak**>(i);
@@ -145,21 +145,21 @@ namespace runtime {
 				}
 				dst_wb->wb_counter = dst_wb_locks;
 				dst_wb->target = reinterpret_cast<Object*>(i);
-				wb->target = tag_ptr<Object*>(d, TG_OBJECT);
+				wb->target = tag_ptr<Object*>(dh + 1, TG_OBJECT);
 			}
 		}
 		while (!copy_fixers.empty()) {  // TODO retain objects in copy_fixers vector.
 			copy_fixers.back().second(copy_fixers.back().first);
 			copy_fixers.pop_back();
 		}
-		return reinterpret_cast<Object*>(d);
+		return reinterpret_cast<Object*>(dh + 1);
 	}
 
 	void Object::make_shared(Object* obj) {  // TODO: implement hierarchy freeze
-		if ((obj->counter & CTR_WEAKLESS) != 0) {
-			obj->counter |= CTR_FROZEN;
+		if ((obj->head().counter & CTR_WEAKLESS) != 0) {
+			obj->head().counter |= CTR_FROZEN;
 		} else {
-			auto wb = reinterpret_cast<Weak*>(obj->counter);
+			auto wb = reinterpret_cast<Weak*>(obj->head().counter);
 			wb->org_counter |= CTR_FROZEN;
 		}
 	}
@@ -198,14 +198,14 @@ namespace runtime {
 			case TG_OBJECT:
 			{ // already copied
 				Object* copy = untag_ptr<Object*>(src->target);
-				auto cwb = reinterpret_cast<Weak*>(copy->counter);
+				auto cwb = reinterpret_cast<Weak*>(copy->head().counter);
 				if (!cwb || get_ptr_tag(cwb) == TG_OBJECT) // has no wb yet
 				{
 					cwb = reinterpret_cast<Weak*>(rt_alloc(sizeof(Weak)));
 					cwb->org_counter = CTR_STEP;
 					cwb->wb_counter = CTR_STEP;
-					cwb->target = reinterpret_cast<Object*>(copy->counter);
-					copy->counter = reinterpret_cast<uintptr_t>(tag_ptr<void*>(cwb, TG_WEAK_BLOCK));  // workaround for in C++ compiler error
+					cwb->target = reinterpret_cast<Object*>(copy->head().counter);
+					copy->head().counter = reinterpret_cast<uintptr_t>(tag_ptr<void*>(cwb, TG_WEAK_BLOCK));
 				} else
 					cwb = untag_ptr<Weak*>(cwb);
 				cwb->wb_counter++;
@@ -216,15 +216,15 @@ namespace runtime {
 	}
 
 	Object::Weak* Object::mk_weak(Object* obj) { // obj can't be null
-		if (obj->counter & CTR_WEAKLESS) {
+		if (obj->head().counter & CTR_WEAKLESS) {
 			auto w = reinterpret_cast<Weak*>(rt_alloc(sizeof(Weak)));
-			w->org_counter = obj->counter;
+			w->org_counter = obj->head().counter;
 			w->target = obj;
 			w->wb_counter = 2; // one from obj and one from `mk_weak` result
-			obj->counter = reinterpret_cast<std::uintptr_t>(w);
+			obj->head().counter = reinterpret_cast<std::uintptr_t>(w);
 			return w;
 		}
-		auto w = reinterpret_cast<Weak*>(obj->counter);
+		auto w = reinterpret_cast<Weak*>(obj->head().counter);
 		w->wb_counter++;
 		return w;
 	}

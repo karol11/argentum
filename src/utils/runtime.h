@@ -18,15 +18,19 @@ namespace runtime {
 		CTR_STEP = 0x10,
 	};
 
-	struct Object {
-		struct Vmt {
-			void (*copy_ref_fields)(void* dst, void* src);
-			void (*dispose)(void* ptr);
-			size_t instance_alloc_size;
-			size_t vmt_size;
-		};
+	struct Vmt {
+		void (*copy_ref_fields)(void* dst, void* src);
+		void (*dispose)(void* ptr);
+		size_t instance_alloc_size;
+		size_t vmt_size;
+	};
+
+	struct Head {
 		void** (*dispatcher)(uint64_t interface_and_method_ordinal);
 		uintptr_t counter;  // pointer_to_weak_block || (number_of_owns_and_refs * CTR_STEP | CRT_WEAKLESS)
+	};
+	struct Object {
+		Head& head() { return reinterpret_cast<Head*>(this)[-1]; }
 
 		static void release(Object* obj);
 		static Object* retain(Object* obj);
