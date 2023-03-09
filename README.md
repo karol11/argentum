@@ -18,17 +18,20 @@
 * Tiny runtime (it is designed with wasm in mind)
 
 Presentation slides: [here](https://docs.google.com/presentation/d/1Cqbh30gTnfoFL3xJh3hhW4Hqhdk9tHw4akZExtiSivA/edit?usp=share_link)
+Documentaion: [here](https://docs.google.com/document/d/1QCvxUGr2kce67jht8PLH822ZuZSXHvMIFgsACsbV4Y4/edit?usp=sharing)
 
 ## Why not X
 
-There are many programming language in the wild. Some of them make programmer to manually allocate and free memory:
+There are many programming languages in the wild.
+
+Some of them make programmer to manually allocate and free memory:
 
 * C
 * C++ (if not using smart pointers)
 * ADA
 * Pascal etc.
 
-Other languages automate this process using mark/sweep or copying Garbage Collector. It simplifies language and ease the programmers life but ath the cost. GC-driven languages are slower, they consume more memory (sometimes twice) but what's worse, they always pause applications at unpredictable moments for unpredictable periods. These languages are:
+Other languages automate this process using mark/sweep or copying Garbage Collector. It simplifies language and ease the programmers life but at the cost. GC-driven languages are slower, they consume more memory (sometimes twice) but what's worse, they always pause applications at unpredictable moments for unpredictable periods. These languages are:
 
 * Java
 * Go
@@ -36,7 +39,7 @@ Other languages automate this process using mark/sweep or copying Garbage Collec
 * Java Script
 * Dart etc.
 
-There are third group of languages, that use semi-automatic approach usualy based on ref-counting. Programmer dont have to think too much on memory management. The main downside is - memory leaks are possible and in fact without strict discipline they are inevidable. These languages are:
+There are third group of languages, that use semi-automatic approach usualy based on ref-counting. Programmer don't have to think too much on memory management, but their main downside is: memory leaks are possible and in fact without strict discipline they are inevidable. These languages are:
 
 * Swift
 * Rust
