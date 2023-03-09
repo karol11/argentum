@@ -551,13 +551,13 @@ string Var::get_annotation() {
 string DataRef::get_annotation() {
 	return var
 		? Node::get_annotation()
-		: format_str(Node::get_annotation(), " var_name=", var_name);
+		: format_str(Node::get_annotation(), " var_name=", var_name.pinned());
 }
 
 string FieldRef::get_annotation() {
 	return field
 		? Node::get_annotation()
-		: format_str(Node::get_annotation(), " field_name=", field_name);
+		: format_str(Node::get_annotation(), " field_name=", field_name.pinned());
 }
 
 } // namespace ast

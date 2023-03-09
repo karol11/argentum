@@ -375,6 +375,31 @@ struct Parser {
 		expect(")");
 		return r;
 	}
+
+	pin<ast::BinaryOp> match_set_op() {
+		if (match("+=")) return make<ast::AddOp>();
+		if (match("-=")) return make<ast::SubOp>();
+		if (match("*=")) return make<ast::MulOp>();
+		if (match("/=")) return make<ast::DivOp>();
+		if (match("%=")) return make<ast::ModOp>();
+		if (match("<<=")) return make<ast::ShlOp>();
+		if (match(">>=")) return make<ast::ShrOp>();
+		if (match("&=")) return make<ast::AndOp>();
+		if (match("|=")) return make<ast::OrOp>();
+		if (match("^=")) return make<ast::XorOp>();
+		return nullptr;
+	}
+	pin<Action> make_set_op(pin<Action> assignee, std::function<pin<Action>()> val) {
+		if (auto as_get = dom::strict_cast<ast::Get>(assignee)) {
+			auto set = make<ast::Set>();
+			set->var = as_get->var;
+			set->var_name = as_get->var_name;
+			set->val = val();
+			return set;
+		}
+		error("expected variable name in front of <set>= operator");
+	}
+
 	pin<Action> parse_unar() {
 		auto r = parse_unar_head();
 		for (;;) {
@@ -394,41 +419,81 @@ struct Parser {
 					gi->indexes.push_back(parse_expression());
 				while (match(","));
 				expect("]");
-				if (match(":=")) {
+				if (auto op = match_set_op()) {
+					auto block = make_at_location<ast::Block>(*gi);
+					block->names.push_back(make_at_location<ast::Var>(*r));
+					block->names.back()->initializer = r;
+					auto indexed = make_at_location<ast::Get>(*gi);
+					indexed->var = block->names.back();
+					for (auto& var : gi->indexes) {
+						block->names.push_back(make_at_location<ast::Var>(*var));
+						block->names.back()->initializer = move(var);
+						auto index = make_at_location<ast::Get>(*block->names.back()->initializer);
+						index->var = block->names.back();
+						var = index;
+					}
 					auto si = make_at_location<ast::SetAtIndex>(*gi);
-					si->indexes = move(gi->indexes);
-					si->value = parse_expression();
-					gi = si;
+					si->indexed = indexed;
+					gi->indexed = indexed;
+					si->indexes = gi->indexes;
+					si->value = op;
+					op->p[0] = gi;
+					op->p[1] = parse_expression();
+					block->body.push_back(si);
+					r = block;
+				} else {
+					if (match(":=")) {
+						auto si = make_at_location<ast::SetAtIndex>(*gi);
+						si->indexes = move(gi->indexes);
+						si->value = parse_expression();
+						gi = si;
+					}
+					gi->indexed = r;
+					r = gi;
 				}
-				gi->indexed = r;
-				r = gi;
 			} else if (match(".")) {
 				pin<ast::FieldRef> gf = make<ast::GetField>();
 				gf->field_name = expect_domain_name("field name");
-				if (match(":=")) {
+				if (auto op = match_set_op()) {
+					auto block = make_at_location<ast::Block>(*gf);
+					block->names.push_back(make_at_location<ast::Var>(*r));
+					block->names.back()->initializer = r;
+					auto field_base = make_at_location<ast::Get>(*gf);
+					field_base->var = block->names.back();
 					auto sf = make_at_location<ast::SetField>(*gf);
 					sf->field_name = gf->field_name;
-					sf->val = parse_expression();
-					gf = sf;
-				}
-				gf->base = r;
-				r = gf;
-			} else if (match(":=")) {
-				if (auto as_get = dom::strict_cast<ast::Get>(r)) {
-					auto set = make<ast::Set>();
-					set->var = as_get->var;
-					set->var_name = as_get->var_name;
-					set->val = parse_expression();
-					r = set;
+					sf->base = field_base;
+					gf->base = field_base;
+					sf->val = op;
+					op->p[0] = gf;
+					op->p[1] = parse_expression();
+					block->body.push_back(sf);
+					r = block;
 				} else {
-					error("expected variable name in front of := operator");
+					if (match(":=")) {
+						auto sf = make_at_location<ast::SetField>(*gf);
+						sf->field_name = gf->field_name;
+						sf->val = parse_expression();
+						gf = sf;
+					}
+					gf->base = r;
+					r = gf;
 				}
+			} else if (match(":=")) {
+				r = make_set_op(r, [&] { return parse_expression(); });
+			} else if (auto op = match_set_op()) {
+				r = make_set_op(r, [&] {
+					op->p[0] = r;
+					op->p[1] = parse_expression();
+					return op;
+				});
 			} else if (match("~")) {
 				r = fill(make<ast::CastOp>(), r, parse_unar_head());
 			} else
 				return r;
 		}
 	}
+
 	pin<Action> parse_unar_head() {
 		if (match("(")) {
 			pin<Action> start_expr;
