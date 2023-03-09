@@ -598,4 +598,25 @@ TEST(Parser, LiteralStrings) {
     )"));
 }
 
+TEST(Parser, SetOps) {
+    ASSERT_EQ(20, execute(R"(
+        class Cl{
+            x = 0xc;
+            getAt(int i) int { x }
+            setAt(int i, int v) { x := v }
+            inc() {
+                x += 1
+            }
+        }
+        a = 1;    // a=1   x=0xc
+        a *= 10;  // a=10
+        a += 4;   // a=14
+        c = Cl;
+        c.x |= 3;  //     x=0xf(15)
+        c[4] /= 3; //     x = 5
+        c.inc();   //     x=6
+        c.x + a    // 20
+    )"));
+}
+
 }  // namespace
