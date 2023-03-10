@@ -70,3 +70,9 @@ add_executable(ag-tests
     src/utils/vmt_util-test.cpp
 )
 target_link_libraries(ag-tests ${llvm_libs})
+
+add_executable(agc
+    ${ag_sources}
+    src/driver/compiler.cpp
+)
+target_link_libraries(agc ${llvm_libs})

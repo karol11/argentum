@@ -1,0 +1,4 @@
+fn sys_log(sys_String msg);
+
+sys_log("Hello World");
+42
