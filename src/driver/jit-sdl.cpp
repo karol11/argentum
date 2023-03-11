@@ -8,27 +8,28 @@
 #include "compiler/parser.h"
 #include "compiler/name-resolver.h"
 #include "compiler/type-checker.h"
-#include "utils/runtime.h"
+#include "utils/register_runtime.h"
+#include "runtime/runtime.h"
 
 using ltm::own;
 using ast::Ast;
 int64_t generate_and_execute(ltm::pin<Ast> ast, bool dump_ir);  // defined in `generator.h/cpp`
 
-void to_log(runtime::StringObj* str) {
+void to_log(AgString* str) {
     std::cout << str->ptr << std::endl;
 }
-int64_t create_window(runtime::StringObj* title, int64_t x, int64_t y, int64_t w, int64_t h, int64_t flags) {
+int64_t create_window(AgString* title, int64_t x, int64_t y, int64_t w, int64_t h, int64_t flags) {
     return (int64_t) SDL_CreateWindow(title->ptr, int(x), int(y), int(w), int(h), int(flags));
 }
-void make_fit(runtime::Blob* b, size_t required_size) {
+void make_fit(AgBlob* b, size_t required_size) {
     if (b->size * sizeof(int64_t) < required_size)
-        runtime::Blob::insert_items(b, b->size, required_size - b->size * sizeof(int64_t));
+        ag_insert_items(b, b->size, required_size - b->size * sizeof(int64_t));
 }
-void wait_event(runtime::Blob* event) {
+void wait_event(AgBlob* event) {
     make_fit(event, sizeof(SDL_Event));
     SDL_WaitEvent((SDL_Event*)event->data);
 }
-void poll_event(runtime::Blob* event) {
+void poll_event(AgBlob* event) {
     make_fit(event, sizeof(SDL_Event));
     SDL_PollEvent((SDL_Event*)event->data);
 }
@@ -36,7 +37,7 @@ void fill_rect(SDL_Renderer* renderer, int64_t x, int64_t y, int64_t w, int64_t 
     SDL_Rect r{ int(x), int(y), int(w), int(h) };
     SDL_RenderFillRect(renderer, &r);
 }
-int64_t img_load(runtime::StringObj* file_name) {
+int64_t img_load(AgString* file_name) {
     return (int64_t) IMG_Load(file_name->ptr);
 }
 void img_blt(SDL_Renderer* renderer, SDL_Texture* texture, int64_t sx, int64_t sy, int64_t sw, int64_t sh, int64_t dx, int64_t dy, int64_t dw, int64_t dh) {

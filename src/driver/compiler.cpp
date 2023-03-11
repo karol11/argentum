@@ -21,7 +21,7 @@
 #include "compiler/name-resolver.h"
 #include "compiler/type-checker.h"
 #include "compiler/generator.h"
-#include "utils/runtime.h"
+#include "utils/register_runtime.h"
 
 using ltm::own;
 using ast::Ast;
@@ -103,7 +103,7 @@ int main(int argc, char* argv[]) {
         check_str(out_file_name, "output file");
         ast::initialize();
         auto ast = own<Ast>::make();
-        runtime::register_content(*ast);
+        register_runtime_content(*ast);
         std::unordered_set<ltm::pin<dom::Name>> modules_in_dep_path;
         parse(ast, ast->dom->names()->get(start_module_name), modules_in_dep_path, [&](auto name) {
             return read_file(std::string(src_dir_name) + "/" + std::to_string(name) + ".ag");

@@ -3,6 +3,6 @@
 
 namespace ast { struct Ast; }
 
-void register_content(struct ast::Ast&);
+void register_runtime_content(struct ast::Ast&);
 
 #endif // AK_REGISTER_RUNTIME_H_

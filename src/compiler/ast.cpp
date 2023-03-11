@@ -1,7 +1,7 @@
 #include <cassert>
 #include <sstream>
 
-#include "utils/runtime.h"
+#include "utils/register_runtime.h"
 #include "dom/dom-to-string.h"
 #include "compiler/ast.h"
 
@@ -424,7 +424,7 @@ pin<ast::Function> Ast::mk_fn(pin<dom::Name> name, void(*entry_point)(), pin<Act
 
 Ast::Ast()
 	: dom(new dom::Dom(cpp_dom)) {
-	runtime::register_content(*this);
+	register_runtime_content(*this);
 }
 
 pin<TpInt64> Ast::tp_int64() {

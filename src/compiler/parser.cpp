@@ -577,7 +577,7 @@ struct Parser {
 		}
 		if (match_ns("'")) {
 			auto r = make<ast::ConstInt64>();
-			r->value = get_utf8(cur);
+			r->value = get_utf8(&cur);
 			if (!r->value)
 				error("incomplete character constant");
 			expect("'");
@@ -586,7 +586,7 @@ struct Parser {
 		if (match_ns("\"")) {
 			auto r = make<ast::ConstString>();
 			for (;;) {
-				int c = get_utf8(cur);
+				int c = get_utf8(&cur);
 				if (!c) {
 					error("incomplete string constant");
 				} if (c == '"') {
@@ -595,9 +595,9 @@ struct Parser {
 					r->value += '"';
 					cur++;
 				} else {
-					put_utf8(c, [&](auto c) {
-						r->value += c;
-						return true;
+					put_utf8(c, &r->value, [](void* ctx, int c) {
+						*(string*)ctx += c;
+						return 1;
 					});
 				}
 			}

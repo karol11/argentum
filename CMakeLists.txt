@@ -45,14 +45,16 @@ set(ag_sources
     src/compiler/generator12.cpp
 #    src/compiler/generator15.cpp
 
-    src/utils/vmt_util.h
+    src/utils/register_runtime.h
+    src/utils/register_runtime.cpp
 
-    src/utils/runtime.h
-    src/utils/runtime.cpp
+    src/utils/vmt_util.h
 )
 
 add_executable(ag-jit-sdl
     ${ag_sources}
+    src/runtime/runtime.h
+    src/runtime/runtime.c
     src/driver/jit-sdl.cpp
 )
 target_link_libraries(ag-jit-sdl
@@ -62,6 +64,8 @@ target_link_libraries(ag-jit-sdl
 
 add_executable(ag-tests
     ${ag_sources}
+    src/runtime/runtime.h
+    src/runtime/runtime.c
     src/utils/fake-gunit.h
     src/utils/fake-gunit.cpp
     src/ltm/ltm-test.cpp
@@ -75,4 +79,5 @@ add_executable(agc
     ${ag_sources}
     src/driver/compiler.cpp
 )
+target_compile_definitions(agc PRIVATE AG_STANDALONE_COMPILER_MODE)
 target_link_libraries(agc ${llvm_libs})

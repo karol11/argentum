@@ -5,7 +5,16 @@
 
 #ifdef __cplusplus
 extern "C" {
+#else
+typedef int bool;
 #endif
+
+//
+// Tags in `counter` field
+//
+#define AG_CTR_WEAKLESS ((uintptr_t)    1)
+#define AG_CTR_FROZEN   ((uintptr_t)    2)
+#define AG_CTR_STEP     ((uintptr_t) 0x10)
 
 typedef struct {
 	void   (*copy_ref_fields)  (void* dst, void* src);
@@ -17,10 +26,9 @@ typedef struct {
 typedef struct {
 	void**    (*dispatcher) (uint64_t interface_and_method_ordinal);
 	uintptr_t counter;  // pointer_to_weak_block || (number_of_owns_and_refs * AG_CTR_STEP | AG_CTR_* flags)
-} AGHead;
+} AgHead;
 
-typedef struct {
-} AgObject;
+typedef void AgObject;
 
 typedef struct {
 	AgObject* target;
@@ -50,8 +58,8 @@ uintptr_t ag_max_mem_ok();
 //
 void      ag_release  (AgObject* obj);
 AgObject* ag_retain   (AgObject* obj);
-AgObject* ag_allocate (size_t size);
 AgObject* ag_copy     (AgObject* src);
+AgObject* ag_allocate_obj      (size_t size);
 AgObject* ag_copy_object_field (AgObject* src);
 void      ag_make_shared       (AgObject* obj);
 void      ag_reg_copy_fixer    (AgObject* object, void (*fixer)(AgObject*));
@@ -63,7 +71,7 @@ AgWeak*   ag_retain_weak     (AgWeak* w);
 void      ag_release_weak    (AgWeak* w);
 void      ag_copy_weak_field (void** dst, AgWeak* src);
 AgWeak*   ag_mk_weak         (AgObject* obj);
-AgObject* deref_weak         (AgWeak* w);
+AgObject* ag_deref_weak         (AgWeak* w);
 
 //
 // AgString support

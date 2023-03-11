@@ -12,7 +12,7 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 #include "utils/vmt_util.h"
-#include "utils/runtime.h"
+#include "runtime/runtime.h"
 
 using std::string;
 using std::vector;
@@ -96,36 +96,36 @@ struct Val {
 //     - otherwise Retain.
 
 struct MethodInfo {
-	llvm::FunctionType* type;
-	size_t ordinal;  // index in vmt
+	llvm::FunctionType* type = nullptr;
+	size_t ordinal = 0;  // index in vmt
 };
 
 struct ClassInfo {
-	llvm::StructType* fields;    // only fields, to access dispatcher or counter: cast to obj_ptr and apply offset-1
+	llvm::StructType* fields = nullptr; // only fields, to access dispatcher or counter: cast to obj_ptr and apply offset-1
 								 // obj_ptr{dispatcher_fn*, counter}; where dispatcher_fn void*(uint64_t interface_and_method_id)
 								 // to access vmt: cast dispatcher_fn to vmt and apply offset -1
-	llvm::StructType* vmt;       // only for class { (dispatcher_fn_used_as_id*, methods*)*, copier_fn*, disposer_fn*, instance_size, vmt_size};
-	uint64_t vmt_size;           // vmt bytes size - used in casts
-	llvm::Function* constructor; // T*()
-	llvm::Function* initializer; // void(void*)
-	llvm::Function* copier;      // void(void* dst, void* src);
-	llvm::Function* dispose;      // void(void*);
-	llvm::Function* dispatcher;      // void*(void*obj, uint64 inerface_and_method_ordinal);
-	vector<llvm::Constant*> vmt_fields; // pointers to methods. size <= 2^16, at index 0 - inteface id for dynamic cast
-	uint64_t interface_ordinal;  // 48_bit_random << 16
-	llvm::ArrayType* ivmt;       // only for interface i8*[methods_count+1], ivmt[0]=inteface_id
+	llvm::StructType* vmt = nullptr;       // only for class { (dispatcher_fn_used_as_id*, methods*)*, copier_fn*, disposer_fn*, instance_size, vmt_size};
+	uint64_t vmt_size = 0;                 // vmt bytes size - used in casts
+	llvm::Function* constructor = nullptr; // T*()
+	llvm::Function* initializer = nullptr; // void(void*)
+	llvm::Function* copier = nullptr;      // void(void* dst, void* src);
+	llvm::Function* dispose = nullptr;     // void(void*);
+	llvm::Function* dispatcher = nullptr;  // void*(void*obj, uint64 inerface_and_method_ordinal);
+	vector<llvm::Constant*> vmt_fields;    // pointers to methods. size <= 2^16, at index 0 - inteface id for dynamic cast
+	uint64_t interface_ordinal = 0;        // 48_bit_random << 16
+	llvm::ArrayType* ivmt = nullptr;       // only for interface i8*[methods_count+1], ivmt[0]=inteface_id
 };
 
 struct Generator : ast::ActionScanner {
 	ltm::pin<ast::Ast> ast;
 	std::unique_ptr<llvm::LLVMContext> context;
 	std::unique_ptr<llvm::Module> module;
-	llvm::IntegerType* int_type;
-	llvm::Type* double_type;
-	llvm::PointerType* void_ptr_type;
-	llvm::Type* void_type;
-	llvm::IRBuilder<>* builder;
-	Val* result;
+	llvm::IntegerType* int_type = nullptr;
+	llvm::Type* double_type = nullptr;
+	llvm::PointerType* void_ptr_type = nullptr;
+	llvm::Type* void_type = nullptr;
+	llvm::IRBuilder<>* builder = nullptr;
+	Val* result = nullptr;
 	llvm::DataLayout layout;
 	unordered_map<pin<ast::TpLambda>, llvm::StructType*> lambda_types; // {void*, fn_entry_point}
 	unordered_map<pin<ast::TpFunction>, llvm::PointerType*> function_types; // PointerToFunction
@@ -133,42 +133,42 @@ struct Generator : ast::ActionScanner {
 	unordered_map<pin<ast::Method>, MethodInfo> methods;
 	unordered_map<pin<ast::Function>, llvm::Function*> functions;
 
-	llvm::Function* current_function;
+	llvm::Function* current_function = nullptr;
 	unordered_map<weak<ast::Var>, llvm::Value*> locals;
 	unordered_map<weak<ast::Var>, int> capture_offsets;
 	vector<pair<int, llvm::StructType*>> captures;
 	vector<llvm::Value*> capture_ptrs;
-	llvm::Type* tp_opt_int;
-	llvm::Type* tp_opt_double;
-	llvm::Type* tp_bool;
-	llvm::Type* tp_opt_bool;
-	llvm::Type* tp_opt_lambda;
-	llvm::Type* tp_int_ptr;
-	llvm::Type* obj_ptr;
-	llvm::StructType* obj_struct;
-	llvm::Type* tp_byte_ptr;
-	llvm::Type* weak_block_ptr;
-	llvm::Function* fn_release;  // void(Obj*) no_throw
-	llvm::Function* fn_relase_weak;  // void(WB*) no_throw
-	llvm::Function* fn_retain;   // void(Obj*) no_throw
-	llvm::Function* fn_retain_weak;   // void(WB*) no_throw
-	llvm::Function* fn_allocate; // Obj*(size_t)
-	llvm::Function* fn_copy;   // Obj*(Obj*)
-	llvm::Function* fn_mk_weak;   // WB*(Obj*)
-	llvm::Function* fn_deref_weak;   // intptr_aka_?obj* (WB*)
-	llvm::Function* fn_copy_object_field;   // Obj* (Obj* src)
-	llvm::Function* fn_copy_weak_field;   // void(WB** dst, WB* src)
-	llvm::PointerType* fn_copy_fixer_type;  // void (*)(Obj*)
-	llvm::Function* fn_reg_copy_fixer;      // void (Obj*, fn_fixer_type)
-	llvm::Function* fn_make_string_literal; // @String* (void* asciiz)
+	llvm::Type* tp_opt_int = nullptr;
+	llvm::Type* tp_opt_double = nullptr;
+	llvm::Type* tp_bool = nullptr;
+	llvm::Type* tp_opt_bool = nullptr;
+	llvm::Type* tp_opt_lambda = nullptr;
+	llvm::Type* tp_int_ptr = nullptr;
+	llvm::Type* obj_ptr = nullptr;
+	llvm::StructType* obj_struct = nullptr;
+	llvm::Type* tp_byte_ptr = nullptr;
+	llvm::Type* weak_block_ptr = nullptr;
+	llvm::Function* fn_release = nullptr;  // void(Obj*) no_throw
+	llvm::Function* fn_relase_weak = nullptr;  // void(WB*) no_throw
+	llvm::Function* fn_retain = nullptr;   // void(Obj*) no_throw
+	llvm::Function* fn_retain_weak = nullptr;   // void(WB*) no_throw
+	llvm::Function* fn_allocate = nullptr; // Obj*(size_t)
+	llvm::Function* fn_copy = nullptr;   // Obj*(Obj*)
+	llvm::Function* fn_mk_weak = nullptr;   // WB*(Obj*)
+	llvm::Function* fn_deref_weak = nullptr;   // intptr_aka_?obj* (WB*)
+	llvm::Function* fn_copy_object_field = nullptr;   // Obj* (Obj* src)
+	llvm::Function* fn_copy_weak_field = nullptr;   // void(WB** dst, WB* src)
+	llvm::PointerType* fn_copy_fixer_type = nullptr;  // void (*)(Obj*)
+	llvm::Function* fn_reg_copy_fixer = nullptr;      // void (Obj*, fn_fixer_type)
+	llvm::Function* fn_make_string_literal = nullptr; // @String* (void* asciiz)
 	std::default_random_engine random_generator;
 	std::uniform_int_distribution<uint64_t> uniform_uint64_distribution;
 	unordered_set<uint64_t> assigned_interface_ids;
-	llvm::FunctionType* dispatcher_fn_type;
-	llvm::StructType* obj_vmt_type;
-	llvm::Constant* empty_mtable; // void_ptr[1] = { null }
+	llvm::FunctionType* dispatcher_fn_type = nullptr;
+	llvm::StructType* obj_vmt_type = nullptr;
+	llvm::Constant* empty_mtable = nullptr; // void_ptr[1] = { null }
 	unordered_map<weak<ast::MkLambda>, llvm::Function*> compiled_functions;
-	llvm::Constant* null_weak;
+	llvm::Constant* null_weak = nullptr;
 
 	Generator(ltm::pin<ast::Ast> ast)
 		: ast(ast)
@@ -1572,7 +1572,7 @@ struct Generator : ast::ActionScanner {
 			b.CreateCmp(llvm::CmpInst::Predicate::ICMP_NE,
 				b.CreateAnd(
 					counter,
-					llvm::ConstantInt::get(tp_int_ptr, runtime::CTR_WEAKLESS)),
+					llvm::ConstantInt::get(tp_int_ptr, AG_CTR_WEAKLESS)),
 				llvm::ConstantInt::get(tp_int_ptr, 0)),
 			bb_no_weak,
 			bb_with_weak);
@@ -1580,7 +1580,7 @@ struct Generator : ast::ActionScanner {
 		b.CreateStore(
 			b.CreateAdd(
 				counter,
-				llvm::ConstantInt::get(tp_int_ptr, runtime::CTR_STEP)),
+				llvm::ConstantInt::get(tp_int_ptr, AG_CTR_STEP)),
 			counter_addr);
 		b.CreateBr(bb_null);
 		b.SetInsertPoint(bb_with_weak);
@@ -1588,7 +1588,7 @@ struct Generator : ast::ActionScanner {
 		b.CreateStore(
 			b.CreateAdd(
 				b.CreateLoad(wb_counter_addr),
-				llvm::ConstantInt::get(tp_int_ptr, runtime::CTR_STEP)),
+				llvm::ConstantInt::get(tp_int_ptr, AG_CTR_STEP)),
 			wb_counter_addr);
 		b.CreateBr(bb_null);
 		b.SetInsertPoint(bb_null);
@@ -1598,7 +1598,7 @@ struct Generator : ast::ActionScanner {
 	llvm::orc::ThreadSafeModule build() {
 		make_fn_retain();
 		make_fn_retain_weak();
-		std::unordered_set<pin<ast::TpClass>> special_copy_and_dispose = { ast->blob->base_class, ast->blob, ast->own_array, ast->weak_array };
+		std::unordered_set<pin<ast::TpClass>> special_copy_and_dispose = { ast->blob->base_class, ast->blob, ast->own_array, ast->weak_array, ast->string_cls };
 		dispatcher_fn_type = llvm::FunctionType::get(void_ptr_type, { int_type }, false);
 		auto dispos_fn_type = llvm::FunctionType::get(void_type, { obj_ptr }, false);
 		auto copier_fn_type = llvm::FunctionType::get(
@@ -1897,6 +1897,7 @@ llvm::orc::ThreadSafeModule generate_code(ltm::pin<ast::Ast> ast) {
 }
 
 int64_t execute(llvm::orc::ThreadSafeModule& module, ast::Ast& ast, bool dump_ir) {
+#ifndef AG_STANDALONE_COMPILER_MODE
 	if (dump_ir) {
 		module.withModuleDo([](llvm::Module& m) {
 			m.print(llvm::outs(), nullptr);
@@ -1920,13 +1921,15 @@ int64_t execute(llvm::orc::ThreadSafeModule& module, ast::Ast& ast, bool dump_ir
 		auto test_fn = check(jit->lookup(std::to_string(test.second->name.pinned()) + "!test"));
 		auto addr = (int64_t(*)()) test_fn.getAddress();
 		auto r = addr();
-		assert(runtime::leak_detector_ok());
+		assert(ag_leak_detector_ok());
 		std::cout << " passed" << std::endl;
 	}
-	std::cout << "Launch app" << std::endl;
 	auto r = main_addr();
-	assert(runtime::leak_detector_ok());
+	assert(ag_leak_detector_ok());
 	return r;
+#else
+	return -1;
+#endif
 }
 
 static bool llvm_inited = false;
