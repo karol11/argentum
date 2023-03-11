@@ -1,10 +1,11 @@
 #ifndef AK_UTF8_H__
 #define AK_UTF8_H__
 
-inline int get_utf8_no_surrogates(const char* &ptr) {
+inline int get_utf8_no_surrogates(const char** ptr) {
 	int r, n;
 restart_and_reload:
-	r = *(ptr++);
+	r = **ptr;
+	(*ptr)++;
 restart:
 	n = 2;
 	if (r <= 0)
@@ -17,7 +18,8 @@ restart:
 	else
 		goto restart_and_reload;
 	while (--n) {
-		int c = *(ptr++);
+		int c = **ptr;
+		(*ptr)++;
 		if ((c & 0xc0) != 0x80) {
 			if (c <= 0)
 				return c;
@@ -29,7 +31,7 @@ restart:
 	return r;
 }
 
-inline int get_utf8(const char* &ptr) {
+inline int get_utf8(const char** ptr) {
 	int r = get_utf8_no_surrogates(ptr);
 	for (;;) {
 		if (r < 0xD800 || r > 0xDFFF)
@@ -46,30 +48,29 @@ inline int get_utf8(const char* &ptr) {
 	}
 }
 
-template<typename F>
-int put_utf8(int v, F put_fn) {
+int put_utf8(int v, void* ctx, int(*put_fn)(void*, int)) {
 	if (v <= 0x7f)
-		return put_fn(v);
+		return put_fn(ctx, v);
 	else {
 		int r;
 		if (v <= 0x7ff)
-			r = put_fn(v >> 6 | 0xc0);
+			r = put_fn(ctx, v >> 6 | 0xc0);
 		else {
 			if (v <= 0xffff)
-				r = put_fn(v >> (6 + 6) | 0xe0);
+				r = put_fn(ctx, v >> (6 + 6) | 0xe0);
 			else {
 				if (v <= 0x10ffff)
-					r = put_fn(v >> (6 + 6 + 6) | 0xf0);
+					r = put_fn(ctx, v >> (6 + 6 + 6) | 0xf0);
 				else
 					return 0;
 				if (r > 0)
-					r = put_fn(((v >> (6 + 6)) & 0x3f) | 0x80);
+					r = put_fn(ctx, ((v >> (6 + 6)) & 0x3f) | 0x80);
 			}
 			if (r > 0)
-				r = put_fn(((v >> 6) & 0x3f) | 0x80);
+				r = put_fn(ctx, ((v >> 6) & 0x3f) | 0x80);
 		}
 		if (r > 0)
-			r = put_fn((v & 0x3f) | 0x80);
+			r = put_fn(ctx, (v & 0x3f) | 0x80);
 		return r;
 	}
 }
