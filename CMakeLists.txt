@@ -81,3 +81,8 @@ add_executable(agc
 )
 target_compile_definitions(agc PRIVATE AG_STANDALONE_COMPILER_MODE)
 target_link_libraries(agc ${llvm_libs})
+
+add_library (ag_runtime STATIC
+    src/runtime/runtime.h
+    src/runtime/runtime.c
+)

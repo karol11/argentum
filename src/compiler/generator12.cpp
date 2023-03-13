@@ -160,7 +160,6 @@ struct Generator : ast::ActionScanner {
 	llvm::Function* fn_copy_weak_field = nullptr;   // void(WB** dst, WB* src)
 	llvm::PointerType* fn_copy_fixer_type = nullptr;  // void (*)(Obj*)
 	llvm::Function* fn_reg_copy_fixer = nullptr;      // void (Obj*, fn_fixer_type)
-	llvm::Function* fn_make_string_literal = nullptr; // @String* (void* asciiz)
 	std::default_random_engine random_generator;
 	std::uniform_int_distribution<uint64_t> uniform_uint64_distribution;
 	unordered_set<uint64_t> assigned_interface_ids;
@@ -196,63 +195,58 @@ struct Generator : ast::ActionScanner {
 		fn_retain = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { obj_ptr }, false),
 			llvm::Function::InternalLinkage,
-			"retain",
+			"ag_retain",
 			*module);
 		fn_retain_weak = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { weak_block_ptr }, false),
 			llvm::Function::InternalLinkage,
-			"retain_weak",
+			"ag_retain_weak",
 			*module);
 		fn_release = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { obj_ptr }, false),
 			llvm::Function::ExternalLinkage,
-			"release",
+			"ag_release",
 			*module);
 		fn_relase_weak = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { weak_block_ptr }, false),
 			llvm::Function::ExternalLinkage,
-			"release_weak",
+			"ag_release_weak",
 			*module);
 		fn_allocate = llvm::Function::Create(
 			llvm::FunctionType::get(obj_ptr, { int_type }, false),
 			llvm::Function::ExternalLinkage,
-			"alloc",
+			"ag_alloc_obj",
 			*module);
 		fn_copy = llvm::Function::Create(
 			llvm::FunctionType::get(obj_ptr, { obj_ptr }, false),
 			llvm::Function::ExternalLinkage,
-			"copy",
+			"ag_copy",
 			*module);
 		fn_copy_object_field = llvm::Function::Create(
 			llvm::FunctionType::get(obj_ptr, { obj_ptr }, false),
 			llvm::Function::ExternalLinkage,
-			"copy_object_field",
+			"ag_copy_object_field",
 			*module);
 		fn_copy_weak_field = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { weak_block_ptr->getPointerTo(), weak_block_ptr }, false),
 			llvm::Function::ExternalLinkage,
-			"copy_weak_field",
+			"ag_copy_weak_field",
 			*module);
 		fn_copy_fixer_type = llvm::FunctionType::get(obj_ptr, { obj_ptr }, false)->getPointerTo();
 		fn_reg_copy_fixer = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { obj_ptr, fn_copy_fixer_type }, false),
 			llvm::Function::ExternalLinkage,
-			"reg_copy_fixer",
+			"ag_reg_copy_fixer",
 			*module);
 		fn_mk_weak = llvm::Function::Create(
 			llvm::FunctionType::get(weak_block_ptr, { obj_ptr }, false),
 			llvm::Function::ExternalLinkage,
-			"mk_weak",
+			"ag_mk_weak",
 			*module);
 		fn_deref_weak = llvm::Function::Create(
 			llvm::FunctionType::get(tp_int_ptr, { weak_block_ptr }, false),
 			llvm::Function::ExternalLinkage,
-			"deref_weak",
-			*module);
-		fn_make_string_literal = llvm::Function::Create(
-			llvm::FunctionType::get(obj_ptr, { llvm::Type::getInt8Ty(*context)->getPointerTo() }, false),
-			llvm::Function::ExternalLinkage,
-			"make_string_literal",
+			"ag_deref_weak",
 			*module);
 	}
 
@@ -1698,7 +1692,7 @@ struct Generator : ast::ActionScanner {
 				fn->is_platform
 					? llvm::Function::ExternalLinkage
 					: llvm::Function::InternalLinkage,
-				std::to_string(fn->name.pinned()), module.get())});
+				ast::format_str("ag_fn_", fn->name.pinned()), module.get())});
 		}
 		// Build class contents - initializer, dispatcher, disposer, copier, methods.
 		for (auto& cls : ast->classes) {
@@ -1707,7 +1701,7 @@ struct Generator : ast::ActionScanner {
 			auto& info = classes[cls];
 			ClassInfo* base_info = cls->base_class ? &classes[cls->base_class] : nullptr;
 			info.dispose = llvm::Function::Create(dispos_fn_type, llvm::Function::InternalLinkage,
-				std::to_string(cls->name.pinned()) + "!dtor", module.get());
+				ast::format_str("ag_dtor_", cls->name.pinned()), module.get());
 			info.dispatcher = llvm::Function::Create(dispatcher_fn_type, llvm::Function::InternalLinkage,
 				std::to_string(cls->name.pinned()) + "!disp", module.get());
 			// Initializer
@@ -1755,7 +1749,7 @@ struct Generator : ast::ActionScanner {
 			}
 			// Copier
 			info.copier = llvm::Function::Create(copier_fn_type, llvm::Function::InternalLinkage,
-				std::to_string(cls->name.pinned()) + "!copy", module.get());
+				ast::format_str("ag_copy_", cls->name.pinned()), module.get());
 			if (special_copy_and_dispose.count(cls) == 0) {
 				builder.SetInsertPoint(llvm::BasicBlock::Create(*context, "", info.copier));
 				if (auto manual_fixer_name = cls->name->peek("afterCopy")) {
@@ -1872,7 +1866,7 @@ struct Generator : ast::ActionScanner {
 			auto fn = llvm::Function::Create(
 				llvm::FunctionType::get(int_type, {}, false),
 				llvm::Function::ExternalLinkage,
-				std::to_string(test.second->name.pinned()) + "!test",
+				ast::format_str("ag_test_", test.second->name.pinned()),
 				module.get());
 			current_function = fn;
 			compile_fn_body(*test.second);

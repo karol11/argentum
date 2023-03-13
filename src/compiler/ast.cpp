@@ -418,7 +418,7 @@ pin<ast::Function> Ast::mk_fn(pin<dom::Name> name, void(*entry_point)(), pin<Act
 		fn->names.back()->type = p;
 	}
 	if (entry_point)
-		platform_exports.insert({ std::to_string(name), entry_point });
+		platform_exports.insert({ ast::format_str("ag_fn_", name), entry_point});
 	return fn;
 };
 

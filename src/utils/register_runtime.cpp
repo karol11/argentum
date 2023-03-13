@@ -67,24 +67,24 @@ void register_runtime_content(struct ast::Ast& ast) {
 	ast.mk_fn(sys->get("makeShared"), FN(ag_make_shared), new ast::ConstVoid, { ast.get_ref(ast.object) });  // TODO: its a hack till frozen objects were introduced
 
 	ast.platform_exports.insert({
-		{ "copy", FN(ag_copy) },
-		{ "copy_object_field", FN(ag_copy_object_field) },
-		{ "copy_weak_field", FN(ag_copy_weak_field) },
-		{ "release_weak", FN(ag_release_weak) },
-		{ "release", FN(ag_release) },
-		{ "alloc", FN(ag_allocate_obj) },
-		{ "mk_weak", FN(ag_mk_weak) },
-		{ "deref_weak", FN(ag_deref_weak) },
-		{ "reg_copy_fixer", FN(ag_reg_copy_fixer) },
+		{ "ag_copy", FN(ag_copy) },
+		{ "ag_copy_object_field", FN(ag_copy_object_field) },
+		{ "ag_copy_weak_field", FN(ag_copy_weak_field) },
+		{ "ag_release_weak", FN(ag_release_weak) },
+		{ "ag_release", FN(ag_release) },
+		{ "ag_alloc_obj", FN(ag_allocate_obj) },
+		{ "ag_mk_weak", FN(ag_mk_weak) },
+		{ "ag_deref_weak", FN(ag_deref_weak) },
+		{ "ag_reg_copy_fixer", FN(ag_reg_copy_fixer) },
 
-		{ "sys_Container!copy", FN(ag_copy_blob_fields) },
-		{ "sys_Container!dtor", FN(ag_dispose_blob) },
-		{ "sys_Blob!copy", FN(ag_copy_blob_fields) },
-		{ "sys_Blob!dtor", FN(ag_dispose_blob) },
-		{ "sys_Array!copy", FN(ag_copy_array_fields) },
-		{ "sys_Array!dtor",FN(ag_dispose_array) },
-		{ "sys_WeakArray!copy", FN(ag_copy_weak_array_fields) },
-		{ "sys_WeakArray!dtor", FN(ag_dispose_weak_array) },
-		{ "sys_String!copy", FN(ag_copy_str_fields) },
-		{ "sys_String!dtor", FN(ag_dispose_str_fields) }});
+		{ "ag_copy_sys_Container", FN(ag_copy_blob_fields) },
+		{ "ag_dtor_sys_Container", FN(ag_dispose_blob) },
+		{ "ag_copy_sys_Blob", FN(ag_copy_blob_fields) },
+		{ "ag_dtor_sys_Blob", FN(ag_dispose_blob) },
+		{ "ag_copy_sys_Array", FN(ag_copy_array_fields) },
+		{ "ag_dtor_sys_Array",FN(ag_dispose_array) },
+		{ "ag_copy_sys_WeakArray", FN(ag_copy_weak_array_fields) },
+		{ "ag_dtor_sys_WeakArray", FN(ag_dispose_weak_array) },
+		{ "ag_copy_sys_String", FN(ag_copy_str_fields) },
+		{ "ag_dtor_sys_String", FN(ag_dispose_str_fields) }});
 }

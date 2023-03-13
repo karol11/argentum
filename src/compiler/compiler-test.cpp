@@ -27,7 +27,7 @@ int64_t foreign_test_function(int64_t delta) {
 int64_t execute(const char* source_text, bool dump_all = false) {
     ast::initialize();
     auto ast = own<Ast>::make();
-    ast->platform_exports.insert({ "sys_foreignTestFunction", (void(*)())(foreign_test_function) });
+    ast->platform_exports.insert({ "ag_fn_sys_foreignTestFunction", (void(*)())(foreign_test_function) });
     auto start_module_name = ast->dom->names()->get("ak")->get("test");
     unordered_map<own<Name>, string> texts{ {start_module_name, source_text} };
     std::unordered_set<ltm::pin<dom::Name>> modules_in_dep_path;
