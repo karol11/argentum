@@ -1,6 +1,18 @@
 #include <stddef.h> // size_t
 #include <stdint.h> // int32_t
 #include <stdio.h> // puts
+
+#ifdef NO_DEFAULT_LIB
+void ag_zero_mem(void*, size_t);
+void ag_memcpy(void*, void*, size_t);
+void ag_memmove(void*, void*, size_t);
+#else
+#include <string.h>
+#define ag_zero_mem(P, S) memset(P, 0, S)
+#define ag_memcpy memcpy
+#define ag_memmove memmove
+#endif
+
 #include "utils/utf8.h"
 #include "runtime/runtime.h"
 
@@ -13,16 +25,6 @@
 #ifndef __cplusplus
 #define true 1
 #define false 0
-#endif
-
-#ifdef NO_DEFAULT_LIB
-void ag_zero_mem(void*, size_t);
-void ag_memcpy(void*, void*, size_t);
-void ag_memmove(void*, void*, size_t);
-#else
-#define ag_zero_mem(P, S) memset(P, 0, S)
-#define ag_memcpy memcpy
-#define ag_memmove memmove
 #endif
 
 //

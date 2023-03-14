@@ -16,6 +16,7 @@
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Bitcode/BitcodeWriter.h"
 #include "compiler/ast.h"
 #include "compiler/parser.h"
 #include "compiler/name-resolver.h"
@@ -124,7 +125,10 @@ int main(int argc, char* argv[]) {
             }
             module.setTargetTriple(target_triple);
             if (output_bitcode) {
-                module.print(out_file, nullptr);
+                if (output_asm)
+                    module.print(out_file, nullptr);
+                else
+                    llvm::WriteBitcodeToFile(module, out_file);
             } else {
                 std::string error_str;
                 auto target = llvm::TargetRegistry::lookupTarget(target_triple, error_str);

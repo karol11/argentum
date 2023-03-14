@@ -25,7 +25,6 @@ size_t m_strlen(const char* s) {  // todo: optimize
     return i;
 }
 
-
 void puts(const char* s) {
     WriteConsoleA(stdout, s, (DWORD) m_strlen(s), NULL, NULL);
 }

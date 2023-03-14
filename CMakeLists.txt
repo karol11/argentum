@@ -1,6 +1,5 @@
 ﻿# Argentum
 cmake_minimum_required (VERSION 3.8)
-set(CMAKE_GENERATOR_PLATFORM x64)
 set(CMAKE_CXX_STANDARD 17)
 add_definitions(-D_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
