@@ -1,11 +1,12 @@
 ﻿# Argentum
 cmake_minimum_required (VERSION 3.8)
-
-project ("codegen")
-
+set(CMAKE_GENERATOR_PLATFORM x64)
 set(CMAKE_CXX_STANDARD 17)
 add_definitions(-D_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
+project ("argentum")
+
 find_package(LLVM REQUIRED CONFIG PATHS ../llvm12.0.1r/lib/cmake/llvm NO_DEFAULT_PATH)
 #find_package(LLVM REQUIRED CONFIG PATHS ../llvm-15-lib/lib/cmake/llvm NO_DEFAULT_PATH)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")

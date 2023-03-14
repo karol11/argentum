@@ -23,7 +23,7 @@ int64_t create_window(AgString* title, int64_t x, int64_t y, int64_t w, int64_t 
 }
 void make_fit(AgBlob* b, size_t required_size) {
     if (b->size * sizeof(int64_t) < required_size)
-        ag_insert_items(b, b->size, required_size - b->size * sizeof(int64_t));
+        ag_fn_sys_Container_insert(b, b->size, required_size - b->size * sizeof(int64_t));
 }
 void wait_event(AgBlob* event) {
     make_fit(event, sizeof(SDL_Event));

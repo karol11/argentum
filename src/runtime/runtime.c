@@ -1,6 +1,6 @@
 #include <stddef.h> // size_t
-#include <string.h> // memcpy
 #include <stdint.h> // int32_t
+#include <stdio.h> // puts
 #include "utils/utf8.h"
 #include "runtime/runtime.h"
 
@@ -13,6 +13,16 @@
 #ifndef __cplusplus
 #define true 1
 #define false 0
+#endif
+
+#ifdef NO_DEFAULT_LIB
+void ag_zero_mem(void*, size_t);
+void ag_memcpy(void*, void*, size_t);
+void ag_memmove(void*, void*, size_t);
+#else
+#define ag_zero_mem(P, S) memset(P, 0, S)
+#define ag_memcpy memcpy
+#define ag_memmove memmove
 #endif
 
 //
@@ -57,8 +67,8 @@ void ag_free(void* data) {
 
 #else
 
-#define ag_alloc AG_ALLOC;
-#define ag_free AG_FREE;
+#define ag_alloc AG_ALLOC
+#define ag_free AG_FREE
 
 #endif
 
@@ -110,7 +120,10 @@ AgObject* ag_retain(AgObject* obj) {
 
 AgObject* ag_allocate_obj(size_t size) {
 	AgHead* r = (AgHead*) ag_alloc(size + sizeof(AgHead));
-	memset(r, 0, size);
+	if (!r) {  // todo: add more handling
+		exit(-42);
+	}
+	ag_zero_mem(r, size);
 	r->counter = AG_CTR_STEP | AG_CTR_WEAKLESS;
 	return r + 1;
 }
@@ -157,8 +170,9 @@ AgObject* ag_copy_object_field(AgObject* src) {
 		return ag_retain(src);
 	}
 	AgVmt* vmt = ((AgVmt*)(ag_head(src)->dispatcher)) - 1;
-	AgHead* dh = (AgHead*)(ag_alloc(vmt->instance_alloc_size + sizeof(AgHead)));
-	memcpy(dh, ag_head(src), vmt->instance_alloc_size + sizeof(AgHead));
+	AgHead* dh = (AgHead*) ag_alloc(vmt->instance_alloc_size + sizeof(AgHead));
+	if (!dh) { exit(-42); }
+	ag_memcpy(dh, ag_head(src), vmt->instance_alloc_size + sizeof(AgHead));
 	dh->counter = AG_CTR_STEP | AG_CTR_WEAKLESS;
 	vmt->copy_ref_fields((AgObject*)(dh + 1), src);
 	if ((ag_head(src)->counter & AG_CTR_WEAKLESS) == 0) { // has weak block
@@ -191,7 +205,7 @@ AgObject* ag_copy_object_field(AgObject* src) {
 	return (AgObject*)(dh + 1);
 }
 
-void ag_make_shared(AgObject* obj) {  // TODO: implement hierarchy freeze
+void ag_fn_sys_make_shared(AgObject* obj) {  // TODO: implement hierarchy freeze
 	if ((ag_head(obj)->counter & AG_CTR_WEAKLESS) != 0) {
 		ag_head(obj)->counter |= AG_CTR_FROZEN;
 	} else {
@@ -277,7 +291,7 @@ void ag_reg_copy_fixer(AgObject* object, void (*fixer)(AgObject*)) {
 		ag_copy_fixers_alloc = ag_copy_fixers_alloc * 2 + 16;
 		AgCopyFixer* new_dt = (AgCopyFixer*) AG_ALLOC(sizeof(AgCopyFixer) * ag_copy_fixers_alloc);
 		if (ag_copy_fixers) {
-			memcpy(new_dt, ag_copy_fixers, sizeof(AgCopyFixer) * ag_copy_fixers_count);
+			ag_memcpy(new_dt, ag_copy_fixers, sizeof(AgCopyFixer) * ag_copy_fixers_count);
 			AG_FREE(ag_copy_fixers);
 		}
 		ag_copy_fixers = new_dt;
@@ -287,52 +301,52 @@ void ag_reg_copy_fixer(AgObject* object, void (*fixer)(AgObject*)) {
 	f->data = object;
 }
 
-int32_t ag_get_char(AgString* s) {
+int32_t ag_fn_sys_String_getCh(AgString* s) {
 	return s->ptr && *s->ptr
 		? get_utf8(&s->ptr)
 		: 0;
 }
 
-void ag_copy_str_fields(AgString* d, AgString* s) {
+void ag_copy_sys_String(AgString* d, AgString* s) {
 	d->ptr = s->ptr;
 	d->buffer = s->buffer;
 	if (d->buffer)
 		d->buffer->counter++;
 }
 
-void ag_dispose_str_fields(AgString* s) {
+void ag_dtor_sys_String(AgString* s) {
 	if (s->buffer && --s->buffer->counter == 0)
 		ag_free(s->buffer);
 }
 
-int64_t ag_get_size(AgBlob* b) {
+int64_t ag_fn_sys_Container_size(AgBlob* b) {
 	return b->size;
 }
 
-void ag_insert_items(AgBlob* b, uint64_t index, uint64_t count) {
+void ag_fn_sys_Container_insert(AgBlob* b, uint64_t index, uint64_t count) {
 	if (!count || index > b->size)
 		return;
 	int64_t* new_data = (int64_t*) ag_alloc(sizeof(int64_t) * (b->size + count));
-	memcpy(new_data, b->data, sizeof(int64_t) * index);
-	memset(new_data + index, 0, sizeof(int64_t) * count);
-	memcpy(new_data + index + count, b->data + index, sizeof(int64_t) * (b->size - index));
+	ag_memcpy(new_data, b->data, sizeof(int64_t) * index);
+	ag_zero_mem(new_data + index, sizeof(int64_t) * count);
+	ag_memcpy(new_data + index + count, b->data + index, sizeof(int64_t) * (b->size - index));
 	ag_free(b->data);
 	b->data = new_data;
 	b->size += count;
 }
 
-void ag_delete_blob_items(AgBlob* b, uint64_t index, uint64_t count) {
+void ag_fn_sys_Blob_delete(AgBlob* b, uint64_t index, uint64_t count) {
 	if (!count || index > b->size || index + count > b->size)
 		return;
 	int64_t* new_data = (int64_t*) ag_alloc(sizeof(int64_t) * (b->size - count));
-	memcpy(new_data, b->data, sizeof(int64_t) * index);
-	memcpy(new_data + index, b->data + index + count, sizeof(int64_t) * (b->size - index));
+	ag_memcpy(new_data, b->data, sizeof(int64_t) * index);
+	ag_memcpy(new_data + index, b->data + index + count, sizeof(int64_t) * (b->size - index));
 	ag_free(b->data);
 	b->data = new_data;
 	b->size -= count;
 }
 
-void ag_delete_array_items(AgBlob* b, uint64_t index, uint64_t count) {
+void ag_fn_sys_Array_delete(AgBlob* b, uint64_t index, uint64_t count) {
 	if (!count || index > b->size || index + count > b->size)
 		return;
 	AgObject** data = ((AgObject**)(b->data)) + index;
@@ -340,10 +354,10 @@ void ag_delete_array_items(AgBlob* b, uint64_t index, uint64_t count) {
 		ag_release(*data);
 		*data = 0;
 	}
-	ag_delete_blob_items(b, index, count);
+	ag_fn_sys_Blob_delete(b, index, count);
 }
 
-void ag_delete_weak_array_items(AgBlob* b, uint64_t index, uint64_t count) {
+void ag_fn_sys_WeakArray_delete(AgBlob* b, uint64_t index, uint64_t count) {
 	if (!count || index > b->size || index + count > b->size)
 		return;
 	AgWeak** data = ((AgWeak**)(b->data)) + index;
@@ -351,81 +365,81 @@ void ag_delete_weak_array_items(AgBlob* b, uint64_t index, uint64_t count) {
 		ag_release_weak(*data);
 		*data = 0;
 	}
-	ag_delete_blob_items(b, index, count);
+	ag_fn_sys_Blob_delete(b, index, count);
 }
 
-bool ag_move_items(AgBlob* blob, uint64_t a, uint64_t b, uint64_t c) {
+bool ag_fn_sys_Container_move(AgBlob* blob, uint64_t a, uint64_t b, uint64_t c) {
 	if (a >= b || b >= c || c > blob->size)
 		return false;
 	uint64_t* temp = (uint64_t*) ag_alloc(sizeof(uint64_t) * (b - a));
-	memmove(temp, blob->data + a, sizeof(uint64_t) * (b - a));
-	memmove(blob->data + a, blob->data + b, sizeof(uint64_t) * (c - b));
-	memmove(blob->data + a + (c - b), temp, sizeof(uint64_t) * (b - a));
+	ag_memmove(temp, blob->data + a, sizeof(uint64_t) * (b - a));
+	ag_memmove(blob->data + a, blob->data + b, sizeof(uint64_t) * (c - b));
+	ag_memmove(blob->data + a + (c - b), temp, sizeof(uint64_t) * (b - a));
 	ag_free(temp);
 	return true;
 }
 
-int64_t ag_get_at(AgBlob* b, uint64_t index) {
+int64_t ag_fn_sys_Blob_getAt(AgBlob* b, uint64_t index) {
 	return index < b->size ? b->data[index] : 0;
 }
 
-void ag_set_at(AgBlob* b, uint64_t index, int64_t val) {
+void ag_fn_sys_Blob_setAt(AgBlob* b, uint64_t index, int64_t val) {
 	if (index < b->size)
 		b->data[index] = val;
 }
-int64_t ag_get_i8_at(AgBlob* b, uint64_t index) {
+int64_t ag_fn_sys_Blob_getByteAt(AgBlob* b, uint64_t index) {
 	return index / sizeof(int64_t) < b->size
 		? ((uint8_t*)(b->data))[index]
 		: 0;
 }
 
-void ag_set_i8_at(AgBlob* b, uint64_t index, int64_t val) {
+void ag_fn_sys_Blob_setByteAt(AgBlob* b, uint64_t index, int64_t val) {
 	if (index / sizeof(int64_t) < b->size)
 		((uint8_t*)(b->data))[index] = (uint8_t)val;
 }
 
-int64_t ag_get_i16_at(AgBlob* b, uint64_t index) {
+int64_t ag_fn_sys_Blob_get16At(AgBlob* b, uint64_t index) {
 	return index / sizeof(int64_t) * sizeof(int16_t) < b->size
 		? ((uint16_t*)(b->data))[index]
 		: 0;
 }
 
-void ag_set_i16_at(AgBlob* b, uint64_t index, int64_t val) {
+void ag_fn_sys_Blob_set16At(AgBlob* b, uint64_t index, int64_t val) {
 	if (index / sizeof(int64_t) * sizeof(int16_t) < b->size)
 		((uint16_t*)(b->data))[index] = (uint16_t)val;
 }
 
-int64_t ag_get_i32_at(AgBlob* b, uint64_t index) {
+int64_t ag_fn_sys_Blob_get32At(AgBlob* b, uint64_t index) {
 	return index / sizeof(int64_t) * sizeof(int32_t) < b->size
 		? ((uint32_t*)(b->data))[index]
 		: 0;
 }
 
-void ag_set_i32_at(AgBlob* b, uint64_t index, int64_t val) {
+void ag_fn_sys_Blob_set32At(AgBlob* b, uint64_t index, int64_t val) {
 	if (index / sizeof(int64_t) * sizeof(int32_t) < b->size)
 		((uint32_t*)(b->data))[index] = (uint32_t)val;
 }
 
-bool ag_blob_copy(AgBlob* dst, uint64_t dst_index, AgBlob* src, uint64_t src_index, uint64_t bytes) {
+bool ag_fn_sys_Blob_copy(AgBlob* dst, uint64_t dst_index, AgBlob* src, uint64_t src_index, uint64_t bytes) {
 	if ((src_index + bytes) / sizeof(int64_t) >= src->size || (dst_index + bytes) / sizeof(int64_t) >= dst->size)
 		return false;
-	memmove(((uint8_t*)(dst->data)) + dst_index, ((uint8_t*)(src->data)) + src_index, bytes);
+	ag_memmove(((uint8_t*)(dst->data)) + dst_index, ((uint8_t*)(src->data)) + src_index, bytes);
 	return true;
 }
 
-AgObject* ag_get_ref_at(AgBlob* b, uint64_t index) {
+AgObject* ag_fn_sys_Array_getAt(AgBlob* b, uint64_t index) {
 	return index < b->size
 		? ag_retain(((AgObject*)(b->data)[index]))
 		: 0;
 }
 
-AgWeak* ag_get_weak_at(AgBlob* b, uint64_t index) {
+AgWeak* ag_fn_sys_WeakArray_getAt(AgBlob* b, uint64_t index) {
 	return index < b->size
 		? ag_retain_weak((AgWeak*)(b->data[index]))
 		: 0;
 }
 
-void ag_set_own_at(AgBlob* b, uint64_t index, AgObject* val) {
+void ag_fn_sys_Array_setAt(AgBlob* b, uint64_t index, AgObject* val) {
 	if (index < b->size) {
 		AgObject** dst = ((AgObject**)(b->data)) + index;
 		ag_retain(val);
@@ -434,7 +448,7 @@ void ag_set_own_at(AgBlob* b, uint64_t index, AgObject* val) {
 	}
 }
 
-void ag_set_weak_at(AgBlob* b, uint64_t index, AgWeak* val) {
+void ag_fn_sys_WeakArray_setAt(AgBlob* b, uint64_t index, AgWeak* val) {
 	if (index < b->size) {
 		AgWeak** dst = ((AgWeak**)(b->data)) + index;
 		val = ag_retain_weak(val);
@@ -443,13 +457,17 @@ void ag_set_weak_at(AgBlob* b, uint64_t index, AgWeak* val) {
 	}
 }
 
-void ag_copy_blob_fields(AgBlob* d, AgBlob* s) {
+void ag_copy_sys_Blob(AgBlob* d, AgBlob* s) {
 	d->size = s->size;
 	d->data = (int64_t*) ag_alloc(sizeof(int64_t) * d->size);
-	memcpy(d->data, s->data, sizeof(int64_t) * d->size);
+	ag_memcpy(d->data, s->data, sizeof(int64_t) * d->size);
 }
 
-void ag_copy_array_fields(AgBlob* d, AgBlob* s) {
+void ag_copy_sys_Container(AgBlob* d, AgBlob* s) {
+	ag_copy_sys_Blob(d, s);
+}
+
+void ag_copy_sys_Array(AgBlob* d, AgBlob* s) {
 	d->size = s->size;
 	d->data = (int64_t*) ag_alloc(sizeof(int64_t) * d->size);
 	for (AgObject
@@ -463,7 +481,7 @@ void ag_copy_array_fields(AgBlob* d, AgBlob* s) {
 	}
 }
 
-void ag_copy_weak_array_fields(AgBlob* d, AgBlob* s) {
+void ag_copy_sys_WeakArray(AgBlob* d, AgBlob* s) {
 	d->size = s->size;
 	d->data = (int64_t*) ag_alloc(sizeof(int64_t) * d->size);
 	void** to = (void**)(d->data);
@@ -477,11 +495,14 @@ void ag_copy_weak_array_fields(AgBlob* d, AgBlob* s) {
 	}
 }
 
-void ag_dispose_blob(AgBlob* p) {
+void ag_dtor_sys_Blob(AgBlob* p) {
 	ag_free(p->data);
 }
+void ag_dtor_sys_Container(AgBlob* p) {
+	ag_dtor_sys_Blob(p);
+}
 
-void ag_dispose_array(AgBlob* p) {
+void ag_dtor_sys_Array(AgBlob* p) {
 	for (AgObject
 			**ptr = (AgObject**)(p->data),
 			**to = ptr + p->size;
@@ -493,7 +514,7 @@ void ag_dispose_array(AgBlob* p) {
 	ag_free(p->data);
 }
 
-void ag_dispose_weak_array(AgBlob* p) {
+void ag_dtor_sys_WeakArray(AgBlob* p) {
 	for (AgWeak
 			**ptr = (AgWeak**)(p->data),
 			**to = ptr + p->size;
@@ -505,14 +526,14 @@ void ag_dispose_weak_array(AgBlob* p) {
 	ag_free(p->data);
 }
 
-bool ag_to_str(AgString* s, AgBlob* b, int at, int count) {
+bool ag_fn_sys_String_fromBlob(AgString* s, AgBlob* b, int at, int count) {
 	if ((at + count) / sizeof(uint64_t) >= b->size)
 		return false;
 	if (s->buffer && --s->buffer->counter == 0)
 		ag_free(s->buffer);
 	s->buffer = (AgStringBuffer*) ag_alloc(sizeof(AgStringBuffer) + count);
 	s->buffer->counter = 1;
-	memcpy(s->buffer->data, ((char*)(b->data)) + at, count);
+	ag_memcpy(s->buffer->data, ((char*)(b->data)) + at, count);
 	s->buffer->data[count] = 0;
 	s->ptr = s->buffer->data;
 	return true;
@@ -525,10 +546,18 @@ static int ag_put_fn(void* ctx, int b) {
 	return 1;
 }
 
-int64_t ag_put_ch(AgBlob* b, int at, int codepoint) {
+int64_t ag_fn_sys_Blob_putCh(AgBlob* b, int at, int codepoint) {
 	char* cursor = ((char*)(b->data)) + at;
 	if (at + 5 > b->size * sizeof(uint64_t))
 		return 0;
 	put_utf8(codepoint, &cursor, ag_put_fn);
 	return cursor - (char*)(b->data);
+}
+
+void ag_fn_terminate(int result) {
+	exit(result);
+}
+
+void ag_fn_sys_log(AgString* s) {
+	puts(s->ptr);
 }

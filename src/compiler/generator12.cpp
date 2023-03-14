@@ -215,7 +215,7 @@ struct Generator : ast::ActionScanner {
 		fn_allocate = llvm::Function::Create(
 			llvm::FunctionType::get(obj_ptr, { int_type }, false),
 			llvm::Function::ExternalLinkage,
-			"ag_alloc_obj",
+			"ag_allocate_obj",
 			*module);
 		fn_copy = llvm::Function::Create(
 			llvm::FunctionType::get(obj_ptr, { obj_ptr }, false),
