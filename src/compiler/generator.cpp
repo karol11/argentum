@@ -275,7 +275,7 @@ struct Generator : ast::ActionScanner {
 			is_weak
 				? fn_relase_weak
 				: fn_release,
-			{ ptr });
+			{ cast_to(ptr, ptr_type) });  // sometimes it might be optional->int_ptr->i64
 	}
 	
 	llvm::Value* remove_indirection(const ast::Var& var, llvm::Value* val) {
@@ -646,10 +646,9 @@ struct Generator : ast::ActionScanner {
 			bool is_fn = isa<ast::TpFunction>(*node.callee->type());
 			if (!is_fn)
 				params.push_back(nullptr);
-			auto function_type = llvm::cast<llvm::FunctionType>(
-				is_fn				
-					? to_llvm_type(*node.callee->type())->getPointerElementType()
-					: to_llvm_type(*node.callee->type())->getStructElementType(1)->getPointerElementType());
+			auto function_type = is_fn				
+					? function_to_llvm_fn(*node.callee, node.callee->type())
+					: lambda_to_llvm_fn(*node.callee, node.callee->type());
 			auto pt = function_type->params().begin() + (is_fn ? 0 : 1);
 			for (auto& p : node.params) {
 				to_dispose.push_back(comp_to_persistent(p));
@@ -705,17 +704,10 @@ struct Generator : ast::ActionScanner {
 		if (is_ptr(node.var->type)) {
 			auto addr = get_data_ref(node.var);
 			build_release(builder->CreateLoad(ptr_type, addr), is_weak(node.var->type));
-			builder->CreateStore(
-				cast_to(
-					result->data,
-					addr->getType()->getPointerElementType()),
-				addr);
+			builder->CreateStore(result->data, addr);
 			result->lifetime = Val::Temp{ node.var };
 		} else {
-			auto addr = get_data_ref(node.var);
-			builder->CreateStore(
-				cast_to(result->data, addr->getType()->getPointerElementType()),
-				addr);
+			builder->CreateStore(result->data, get_data_ref(node.var));
 		}
 	}
 	void on_get_field(ast::GetField& node) override {
@@ -743,7 +735,7 @@ struct Generator : ast::ActionScanner {
 		if (is_ptr(node.type())) {
 			auto addr = builder->CreateStructGEP(class_fields, base.data, node.field->offset);
 			build_release(
-				builder->CreateLoad(class_fields->getElementType(node.field->offset), addr),
+				builder->CreateLoad(ptr_type, addr),
 				is_weak(node.type()));
 			builder->CreateStore(result->data, addr);
 			if (get_if<Val::Retained>(&base.lifetime)) {
@@ -1677,7 +1669,7 @@ struct Generator : ast::ActionScanner {
 		// Make llvm functions for standalone ast functions.
 		for (auto& fn : ast->functions) {
 			functions.insert({fn, llvm::Function::Create(
-				llvm::cast<llvm::FunctionType>(to_llvm_type(*fn->type())->getPointerElementType()),
+				function_to_llvm_fn(*fn, fn->type()),
 				fn->is_platform
 					? llvm::Function::ExternalLinkage
 					: llvm::Function::InternalLinkage,
@@ -1712,7 +1704,7 @@ struct Generator : ast::ActionScanner {
 				builder.getInt64(layout.getTypeAllocSize(info.fields)) });
 			builder.CreateCall(info.initializer, { result });
 			auto typed_result = builder.CreateBitOrPointerCast(result, info.fields->getPointerTo());
-			builder.CreateStore(cast_to(info.dispatcher, ptr_type), builder.CreateConstGEP2_32(nullptr, result, -1, 0));
+			builder.CreateStore(cast_to(info.dispatcher, ptr_type), builder.CreateConstGEP2_32(obj_struct, result, -1, 0));
 			builder.CreateRet(typed_result);
 			// Disposer
 			if (special_copy_and_dispose.count(cls) == 0) {
@@ -1748,7 +1740,7 @@ struct Generator : ast::ActionScanner {
 							fn_reg_copy_fixer,
 							{
 								cast_to(info.copier->getArg(0), ptr_type),
-								cast_to(functions[manual_fixer_fn->second.pinned()], fn_copy_fixer_fn_type)
+								cast_to(functions[manual_fixer_fn->second.pinned()], ptr_type)
 							});
 					}
 				}

@@ -229,7 +229,6 @@ struct Typer : ast::ActionMatcher {
 	}
 	void on_get(ast::Get& node) override {
 		if (auto as_class = dom::strict_cast<ast::TpClass>(node.var->type)) {
-			// TODO in ret of fn result it still returns tpCls
 			node.type_ = ast->get_ref(as_class);
 		} else {
 			node.type_ = node.var->type;
@@ -290,6 +289,7 @@ struct Typer : ast::ActionMatcher {
 				node.error("class ", cls->name.pinned(), " doesn't have field/method ", node.field_name.pinned());
 		}
 		if (&node == fix_result->pinned()) {
+			find_type(node.base);
 			node.type_ = find_type(node.field->initializer)->type();
 			if (auto as_class = dom::strict_cast<ast::TpClass>(node.type())) {
 				node.type_ = ast->get_ref(as_class);
