@@ -267,7 +267,7 @@ struct Generator : ast::ActionScanner {
 			is_weak
 				? fn_retain_weak
 				: fn_retain,
-			{ ptr });
+			{ cast_to(ptr, ptr_type) });  // sometimes it might be optional->int_ptr->i64
 	}
 
 	void build_release(llvm::Value* ptr, bool is_weak) {
@@ -275,7 +275,7 @@ struct Generator : ast::ActionScanner {
 			is_weak
 				? fn_relase_weak
 				: fn_release,
-			{ cast_to(ptr, ptr_type) });  // sometimes it might be optional->int_ptr->i64
+			{ cast_to(ptr, ptr_type) });  // sometimes it might be optional
 	}
 	
 	llvm::Value* remove_indirection(const ast::Var& var, llvm::Value* val) {
@@ -1896,7 +1896,7 @@ int64_t execute(llvm::orc::ThreadSafeModule& module, ast::Ast& ast, bool dump_ir
 	auto main_addr = f_main.toPtr<int64_t()>();
 	for (auto& test : ast.tests_by_names) {
 		std::cout << "Test:" << std::to_string(test.first.pinned());
-	 	auto test_fn = check(jit->lookup(std::to_string(test.second->name.pinned()) + "!test"));
+	 	auto test_fn = check(jit->lookup(ast::format_str("ag_test_", test.second->name.pinned())));
 		auto addr = test_fn.toPtr<int64_t()>();
 		auto r = addr();
 		assert(ag_leak_detector_ok());

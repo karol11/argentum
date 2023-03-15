@@ -46,14 +46,14 @@ class Flare {
             }
         }
         tick(int milliseconds) bool {
-            x := x + dx;
-            y := y + dy;
-            dy := dy + 1 << 13;
-            scene?sc sc.rnd.get(0, 2) == 0 ?
+            x += dx;
+            y += dy;
+            dy += 1 << 13;
+            scene?=sc sc.rnd.get(0, 2) == 0 ?
                 sc.push(1, (i){ +Sparkles.init(sc, x >> 16, y >> 16, color) });
-            fade := fade + dFade;
-            dFade := dFade - 140;
-            fade == 0 && scene &&s s.rnd.get(0, generation) == 0 ?
+            fade += dFade;
+            dFade -= 140;
+            fade == 0 && scene &&=s s.rnd.get(0, generation) == 0 ?
                 distributeInCircle(s.rnd, s.rnd.get(6, 15), 10 << 16, (dx, dy) {
                     s.push(1, (i){ +Flare.initAtFlare(this, dx, dy) });
                 });
@@ -98,7 +98,7 @@ class Sparkles {
                 dst.fillRect(this.x + x, this.y + y, 1, 1, color);
             })
         }
-        tick(int milliseconds) bool { (r := r - 1) > 0 }
+        tick(int milliseconds) bool { (r -= 1) > 0 }
     }
     init(Scene scene, int x, int y, int color) this {
         this.scene := &scene;

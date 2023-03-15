@@ -77,29 +77,29 @@ int main(int argc, char* argv[]) {
         auto ast = own<Ast>::make();
         using FN = void(*)();
         ast->platform_exports.insert({
-            { "sys_log", FN(to_log) },
-            { "sys_sdl_init", FN(SDL_Init) },
-            { "sys_sdl_createWindow", FN(create_window) },
-            { "sys_sdl_createRenderer", FN(SDL_CreateRenderer) },
-            { "sys_sdl_waitEvent", FN(wait_event) },
-            { "sys_sdl_pollEvent", FN(poll_event) },
-            { "sys_sdl_setRendererDrawColor", FN(SDL_SetRenderDrawColor) },
-            { "sys_sdl_rendererClear", FN(SDL_RenderClear) },
-            { "sys_sdl_rendererFillRect", FN(fill_rect) },
-            { "sys_sdl_rendererPresent", FN(SDL_RenderPresent) },
-            { "sys_sdl_createTextureFromSurface", FN(SDL_CreateTextureFromSurface) },
-            { "sys_sdl_setTextureAlphaMod", FN(SDL_SetTextureAlphaMod) },
-            { "sys_sdl_setTextureColorMod", FN(set_color_mod)},
-            { "sys_sdl_blt", FN(img_blt) },
-            { "sys_sdl_freeSurface", FN(SDL_FreeSurface) },
-            { "sys_sdl_destroyTexture", FN(SDL_DestroyTexture)},
-            { "sys_sdl_destroyRenderer", FN(SDL_DestroyRenderer) },
-            { "sys_sdl_destroyWindow", FN(SDL_DestroyWindow) },
-            { "sys_sdl_delay", FN(SDL_Delay) },
-            { "sys_sdl_quit", FN(SDL_Quit) },
-            { "sys_img_init", FN(IMG_Init) },
-            { "sys_img_load", FN(img_load) },
-            { "sys_img_quit", FN(IMG_Quit) }});
+            { "ag_fn_sys_log", FN(to_log) },
+            { "ag_fn_sys_sdl_init", FN(SDL_Init) },
+            { "ag_fn_sys_sdl_createWindow", FN(create_window) },
+            { "ag_fn_sys_sdl_createRenderer", FN(SDL_CreateRenderer) },
+            { "ag_fn_sys_sdl_waitEvent", FN(wait_event) },
+            { "ag_fn_sys_sdl_pollEvent", FN(poll_event) },
+            { "ag_fn_sys_sdl_setRendererDrawColor", FN(SDL_SetRenderDrawColor) },
+            { "ag_fn_sys_sdl_rendererClear", FN(SDL_RenderClear) },
+            { "ag_fn_sys_sdl_rendererFillRect", FN(fill_rect) },
+            { "ag_fn_sys_sdl_rendererPresent", FN(SDL_RenderPresent) },
+            { "ag_fn_sys_sdl_createTextureFromSurface", FN(SDL_CreateTextureFromSurface) },
+            { "ag_fn_sys_sdl_setTextureAlphaMod", FN(SDL_SetTextureAlphaMod) },
+            { "ag_fn_sys_sdl_setTextureColorMod", FN(set_color_mod)},
+            { "ag_fn_sys_sdl_blt", FN(img_blt) },
+            { "ag_fn_sys_sdl_freeSurface", FN(SDL_FreeSurface) },
+            { "ag_fn_sys_sdl_destroyTexture", FN(SDL_DestroyTexture)},
+            { "ag_fn_sys_sdl_destroyRenderer", FN(SDL_DestroyRenderer) },
+            { "ag_fn_sys_sdl_destroyWindow", FN(SDL_DestroyWindow) },
+            { "ag_fn_sys_sdl_delay", FN(SDL_Delay) },
+            { "ag_fn_sys_sdl_quit", FN(SDL_Quit) },
+            { "ag_fn_sys_img_init", FN(IMG_Init) },
+            { "ag_fn_sys_img_load", FN(img_load) },
+            { "ag_fn_sys_img_quit", FN(IMG_Quit) }});
         std::cout << "Parsing " << argv[1] << std::endl;
         std::unordered_set<ltm::pin<dom::Name>> modules_in_dep_path;
         parse(ast, ast->dom->names()->get(argv[2]), modules_in_dep_path, [&](auto name) {
@@ -111,8 +111,8 @@ int main(int argc, char* argv[]) {
         check_types(ast);
         std::cout << "Building bitcode" << std::endl;
         return int(generate_and_execute(ast, false));
-//    } catch (void*) {  // debug-only  TODO: replace exceptions with `quick_exit`
-    } catch (int) {
+    } catch (void*) {  // debug-only  TODO: replace exceptions with `quick_exit`
+//    } catch (int) {
         return -1;
     }
     return 0;

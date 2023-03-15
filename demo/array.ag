@@ -12,7 +12,7 @@ class sys_Array{
         loop!{
             i < itemsCount ? {
                 sys_Array_getAt(this, i) ? handler(_);
-                i := i + 1
+                i += 1
             }
         }
     }
@@ -21,7 +21,7 @@ class sys_Array{
         loop!{
             i < itemsCount ? {
                 sys_Array_getAt(this, i) && filter(_)
-                    ? { i := i + 1; }
+                    ? { i += 1; }
                     : deleteAt(i);
             }
         }
@@ -29,15 +29,15 @@ class sys_Array{
     deleteAt(int i) {
         sys_Array_setAt(this, i, ?sys_Object);
         sys_Container_move(this, i, i + 1, itemsCount);
-        itemsCount := itemsCount - 1;
+        itemsCount -= 1;
     }
     push(int n, (int)?@sys_Object generator) {
         itemsCount + n >= sys_Container_size(this)
             ? sys_Container_insert(this, itemsCount, (itemsCount + n + 20) / 4);
         loop{
             sys_Array_setAt(this, itemsCount, generator(itemsCount));
-            itemsCount := itemsCount + 1;
-            (n := n - 1) == 0
+            itemsCount += 1;
+            (n -= 1) == 0
         }
     }
     setAt(int i, ()@sys_Object generator) bool {
@@ -48,5 +48,5 @@ class sys_Array{
 test insertIntoArray() {
     a = sys_Array;
     a.push(2, (i){ ?sys_Object });
-    a.size() != 2 ? sys_terminate()
+    a.size() != 2 ? sys_terminate(-1)
 }

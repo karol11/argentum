@@ -213,7 +213,6 @@ struct NameResolver : ast::ActionScanner {
 	void handle_data_ref(ast::DataRef& node, F on_field, M on_method, C on_class, FN on_function) {
 		if (node.var)
 			return;
-		pin<ast::Var> var_to_fix_depth;
 		if (auto it = locals.find(node.var_name); it != locals.end()) {
 			fix_var_depth(node.var = it->second);
 			return;

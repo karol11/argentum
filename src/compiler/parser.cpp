@@ -303,32 +303,23 @@ struct Parser {
 
 	pin<Action> parse_ifs() {
 		auto r = parse_ors();
-		while (match("?")) {
+		bool is_and = match("&&");
+		if (is_and || match("?")) {
 			auto rhs = make<ast::Block>();
 			rhs->names.push_back(make<ast::Var>());
 			rhs->names.back()->name = ast->dom->names()->get(match("=") ? expect_id("local") : "_");
-			rhs->body.push_back(parse_ors());
-			r = fill(make<ast::If>(), r, rhs);
+			rhs->body.push_back(parse_ifs());
+			if (is_and)
+				return fill(make<ast::LAnd>(), r, rhs);
+			return fill(make<ast::If>(), r, rhs);
 		}
 		return r;
 	}
 
 	pin<Action> parse_ors() {
-		auto r = parse_ands();
-		while (match("||"))
-			r = fill(make<ast::LOr>(), r, parse_ands());
-		return r;
-	}
-
-	pin<Action> parse_ands() {
 		auto r = parse_comparisons();
-		while (match("&&")) {
-			auto rhs = make<ast::Block>();
-			rhs->names.push_back(make<ast::Var>());
-			rhs->names.back()->name = ast->dom->names()->get(match("=") ? expect_id("local") : "_");
-			rhs->body.push_back(parse_comparisons());
-			r = fill(make<ast::LAnd>(), r, rhs);
-		}
+		while (match("||"))
+			r = fill(make<ast::LOr>(), r, parse_comparisons());
 		return r;
 	}
 

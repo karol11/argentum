@@ -10,13 +10,13 @@ class utils_Random {
 fn forRangeWhile(int from, int to, (int)bool body) { // TODO replace bool with ?T after introduction of generics
     loop !(
         from < to && body(from) ?
-            from := from + 1
+            from += 1
     )
 }
 
 fn forRange(int from, int to, (int)void body) {
     loop !(from < to ? {
         body(from);
-        from := from + 1
+        from += 1
     })
 }
