@@ -42,8 +42,7 @@ set(ag_sources
     src/compiler/type-checker.cpp
 
     src/compiler/generator.h
-    src/compiler/generator12.cpp
-#    src/compiler/generator15.cpp
+    src/compiler/generator.cpp
 
     src/utils/register_runtime.h
     src/utils/register_runtime.cpp
@@ -86,3 +85,4 @@ add_library (ag_runtime STATIC
     src/runtime/runtime.h
     src/runtime/runtime.c
 )
+
