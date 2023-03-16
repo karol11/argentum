@@ -23,11 +23,15 @@ int64_t foreign_test_function_state = 0;
 int64_t foreign_test_function(int64_t delta) {
     return foreign_test_function_state += delta;
 }
+void ag_assert(int64_t expected, int64_t actual) {
+    ASSERT_EQ(expected, actual);
+}
 
-int64_t execute(const char* source_text, bool dump_all = false) {
+void execute(const char* source_text, bool dump_all = false) {
     ast::initialize();
     auto ast = own<Ast>::make();
     ast->platform_exports.insert({ "ag_fn_sys_foreignTestFunction", (void(*)())(foreign_test_function) });
+    ast->mk_fn(ast->dom->names()->get("assert"), (void(*)())(ag_assert), new ast::ConstVoid, { ast->tp_int64(), ast->tp_int64() });
     auto start_module_name = ast->dom->names()->get("ak")->get("test");
     unordered_map<own<Name>, string> texts{ {start_module_name, source_text} };
     std::unordered_set<ltm::pin<dom::Name>> modules_in_dep_path;
@@ -39,98 +43,100 @@ int64_t execute(const char* source_text, bool dump_all = false) {
     if (dump_all)
         std::cout << std::make_pair(ast.pinned(), ast->dom.pinned()) << "\n";
     foreign_test_function_state = 0;
-    return generate_and_execute(ast, dump_all);
+    generate_and_execute(ast, dump_all);
 }
 
-TEST(Parser, IntegerOps) {
-    ASSERT_EQ(7, execute("(2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1))"));
+TEST(Parser, Positive) {
+    execute("assert(7, (2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1)))");
 }
 
 TEST(Parser, Doubles) {
-    ASSERT_EQ(3, execute("int(3.14 - 0.2e-4 * 5.0)"));
+    execute("assert(3, int(3.14 - 0.2e-4 * 5.0))");
 }
 
 TEST(Parser, Block) {
-    ASSERT_EQ(3, execute("{1+1}+1"));
+    execute("assert(3, {1+1}+1)");
 }
 
 TEST(Parser, Functions) {
-    ASSERT_EQ(9, execute(R"-(
+    execute(R"-(
       fn plus1(int a) int {
             a + 1
       }
-      plus1(4) + plus1(3)
-    )-"));
+      assert(9, plus1(4) + plus1(3))
+    )-");
 }
 
 TEST(Parser, LambdaWithParams) {
-    ASSERT_EQ(40, execute("(a){1+a}(3)*10"));
+    execute("assert(40, (a){1+a}(3)*10)");
 }
 
 TEST(Parser, PassingLambdaToLambda) {
-    ASSERT_EQ(99, execute(R"-(
+    execute(R"-( assert(99,
       (a, b, xfn) {
             xfn((t) {
                 a + b + t
             })
       } (2, 4, (vfn) {
             vfn(3) * vfn(5)
-      })
-    )-"));
+      }))
+    )-");
 }
 
 TEST(Parser, Sequecnce) {
-    ASSERT_EQ(44, execute("1; 3.14; 44"));
+    execute("assert(44, {1; 3.14; 44})");
 }
 
 TEST(Parser, LocalAssignment) {
-    ASSERT_EQ(10, execute("a = 2; a := a + 3; a * 2"));
+    execute("assert(10, {a = 2; a := a + 3; a * 2})");
 }
 
 TEST(Parser, MakeAndConsumeOptionals) {
-    ASSERT_EQ(2, execute("(opt){ opt : 2 } (false ? 44)"));
+    execute("assert(2, (opt){ opt : 2 } (false ? 44))");
 }
 
 TEST(Parser, MaybeChain) {
-    ASSERT_EQ(3, execute(R"(
+    execute(R"(assert(3, {
         a = +3.3;  // a: local of type optional(double), having value just(3.3)
         a ? int(_) : 0  // convert optional(double) to optional(int) and extract replacing `none` with 0
-    )"));
+    })
+    )");
 }
 
 TEST(Parser, IntLessThan) {
-    ASSERT_EQ(3, execute("a = 2; a < 10 ? 3 : 44"));
+    execute("assert(3, { a = 2; a < 10 ? 3 : 44 })");
 }
 
 TEST(Parser, IntNotEqual) {
-    ASSERT_EQ(3, execute("a = 2; a != 10 ? 3 : 44"));
+    execute("assert(3, { a = 2; a != 10 ? 3 : 44 })");
 }
 
 TEST(Parser, Loop) {
-    ASSERT_EQ(39916800, execute(R"(
+    execute(R"(
       a = 0;
       r = 1;
-      loop {
+      assert(39916800, loop {
           a := a + 1;
           r  := r * a;
           a > 10 ? r
-      })"));
+      })
+    )");
 }
 
 TEST(Parser, Classes) {
-    ASSERT_EQ(3, execute(R"(
+    execute(R"(
         class Point {
           x = 0;
           y = 2;
         }
         p=Point;
         p.x := 1;
-        p.y + p.x
-    )"));
+        assert(3, p.y + p.x)
+    )");
 }
 
 TEST(Parser, ClassInstanceCopy) {
-    ASSERT_EQ(4, execute(R"(
+    execute(R"(
         class Point {
           x = 0;
           y = 2;
@@ -139,12 +145,12 @@ TEST(Parser, ClassInstanceCopy) {
         p.x := 1;
         pb = @p;
         pb.x := 3;
-        p.x + pb.x
-    )"));
+        assert(4, p.x + pb.x)
+    )");
 }
 
 TEST(Parser, ClassMethods) {
-    ASSERT_EQ(32, execute(R"(
+    execute(R"(
         class Point {
           x = 1;
           y = 2;
@@ -159,12 +165,12 @@ TEST(Parser, ClassMethods) {
         p=P3;
         p.x := 10;
         p.z := 20;
-        p.m()
-    )"));
+        assert(32, p.m())
+    )");
 }
 
 TEST(Parser, Interfaces) {
-    ASSERT_EQ(37, execute(R"(
+    execute(R"(
         interface Movable {
           move(int x, int y);
         }
@@ -189,12 +195,12 @@ TEST(Parser, Interfaces) {
         p.x := 10;    // 10, 2, 3
         p.z := 20;    // 10, 2, 20
         p.move(2, 3); // 12, 5, 20
-        p.m()         // 37
-    )"));
+        assert(37, p.m())
+    )");
 }
 
 TEST(Parser, TwoInterfaces) {
-    ASSERT_EQ(201, execute(R"(
+    execute(R"(
         interface Movable {
           moveTo(int x, int y);
         }
@@ -224,12 +230,12 @@ TEST(Parser, TwoInterfaces) {
         p = Widget;
         p.moveTo(1,2);
         p.resize(100,200);
-        p.x + p.size.y
-    )"));
+        assert(201, p.x + p.size.y)
+    )");
 }
 
 TEST(Parser, PromisedCast) {
-    ASSERT_EQ(24, execute(R"(
+    execute(R"(
         interface Movable {
           moveTo(int x, int y);
         }
@@ -254,13 +260,12 @@ TEST(Parser, PromisedCast) {
         p = Widget~Movable;
         p.moveTo(1, 2);
         p := Point;
-        p.moveTo(10, 20);
-        24
-    )"));
+        p.moveTo(10, 20)
+    )");
 }
 
 TEST(Parser, ClassCast) {
-    ASSERT_EQ(24, execute(R"(
+    execute(R"(
         class Point {
           x = 0;
           y = 0;
@@ -270,12 +275,12 @@ TEST(Parser, ClassCast) {
           color = 24;
         }
         p = Widget~Point;  // `p` is a `Point` holder initialized with a `Widget` instance
-        p~Widget?_.color : 0     // cast `p` to `Widget` and return its `color` field on success
-    )"));
+        assert(24, p~Widget?_.color : 0)     // cast `p` to `Widget` and return its `color` field on success
+    )");
 }
 
 TEST(Parser, InterfaceCast) { // TODO interface dispatch with collisions
-    ASSERT_EQ(47, execute(R"(
+    execute(R"(
         interface Opaque {
           bgColor() int;
         }
@@ -292,12 +297,12 @@ TEST(Parser, InterfaceCast) { // TODO interface dispatch with collisions
         w = Widget~Point;
         a = p~Opaque?_.bgColor() : 40;  // expected to fallback to 40
         b = w~Opaque?_.bgColor() : 50;  // expected to return 7
-        a+b
-    )"));
+        assert(47, a + b)
+    )");
 }
 
 TEST(Parser, Weak) {
-    ASSERT_EQ(22, execute(R"(
+    execute(R"(
         class Point {
           x = 0;
         }
@@ -307,12 +312,12 @@ TEST(Parser, Weak) {
         r = w?_.x : 100;
         p := Point;
         w ? r := r + _.x;
-        r
-    )"));
+        assert(22, r)
+    )");
 }
 
 TEST(Parser, TopoCopy) {
-    ASSERT_EQ(35, execute(R"(
+    execute(R"(
         class Node {
           parent = &Node;  // Weak(Node) = null
           left = ?Node;    // Optional(own(Node)) = null
@@ -337,34 +342,34 @@ TEST(Parser, TopoCopy) {
         root.left := +@root;
         root.left?_.parent := &root;
 
-        oldSize * 10 + root.scan(&Node)
-    )"));
+        assert(35, oldSize * 10 + root.scan(&Node))
+    )");
 }
 
 TEST(Parser, ForeignFunctionCall) {
-    ASSERT_EQ(42, execute(R"(
+    execute(R"(
         fn sys_foreignTestFunction(int x) int;
         sys_foreignTestFunction(4*10);
-        sys_foreignTestFunction(2)
-    )"));
+        assert(42, sys_foreignTestFunction(2))
+    )");
 }
 
 TEST(Parser, LogicalOr) {
-    ASSERT_EQ(42, execute(R"(
+    execute(R"(
         a = 3;
-        a > 2 || a < 4 ? 42 : 0
-    )"));
+        assert(42, a > 2 || a < 4 ? 42 : 0)
+    )");
 }
 
 TEST(Parser, LogicalAnd) {
-    ASSERT_EQ(42, execute(R"(
+    execute(R"(
         a = 3;
-        a > 2 && a < 4 ? 42 : 0
-    )"));
+        assert(42, a > 2 && a < 4 ? 42 : 0)
+    )");
 }
 
 TEST(Parser, Raii) {
-    ASSERT_EQ(2, execute(R"(
+    execute(R"(
         class Font {
             ttfHandle = 0;
             setId(int id) {
@@ -387,22 +392,22 @@ TEST(Parser, Raii) {
             fa.setId(42);   // sys_foreignTestFunction_state= 2+42
             fb = @fa;       // sys_foreignTestFunction_state= 2+42+42
         };                  // sys_foreignTestFunction_state= 2+42+42-42-42 = 2
-        sys_foreignTestFunction(0)
-    )"));
+        assert(2, sys_foreignTestFunction(0))
+    )");
 }
 
 TEST(Parser, BlobsAndIndexes) {
-    ASSERT_EQ(42, execute(R"(
+    execute(R"(
         b = sys_Blob;
         sys_Container_insert(b, 0, 3);
         b[1] := 42;
         c = @b;
-        c[1]
-    )"));
+        assert(42, c[1])
+    )");
 }
 
 TEST(Parser, Arrays) {
-    ASSERT_EQ(42, execute(R"(
+    execute(R"(
         class Node {
             x = 1;
             y = 0;
@@ -417,12 +422,12 @@ TEST(Parser, Arrays) {
         };
         c = @a;
         sys_Array_delete(c, 0, 1);
-        c[0]&&_~Node?_.x : -1
-    )"));
+        assert(42, c[0] && _~Node ? _.x : -1)
+    )");
 }
 
 TEST(Parser, WeakArrays) {
-    ASSERT_EQ(1, execute(R"(
+    execute(R"(
         class Node {
             x = 1;
             y = 0;
@@ -434,12 +439,12 @@ TEST(Parser, WeakArrays) {
         a[1] := &n;
         c = @a;
         sys_WeakArray_delete(c, 0, 1);
-        c[0]&&_==n ? 1:0
-    )"));
+        assert(1, c[0]&&_==n ? 1:0)
+    )");
 }
 
 TEST(Parser, OpenClasses) {
-    ASSERT_EQ(42, execute(R"(
+    execute(R"(
         class sys_Array {                              // Any methods can be added to existing classes.
             insert(int at, int count) {
                 sys_Container_insert(this, at, count);
@@ -457,12 +462,12 @@ TEST(Parser, OpenClasses) {
         a[1] := +Node;
         c = @a;
         c.delete(0, 1);
-        c[0]&&_~Node?_.x : -1
-    )"));
+        assert(42, c[0]&&_~Node?_.x : -1)
+    )");
 }
 
 TEST(Parser, RetOwnPtr) {
-    ASSERT_EQ(42, execute(R"(
+    execute(R"(
         class Node {
             x = 1;
             y = 0;
@@ -476,12 +481,12 @@ TEST(Parser, RetOwnPtr) {
         a = sys_Array;
         sys_Container_insert(a, 0, 1);
         a[0] := +nodeAt(42, 33);  // no copy here!
-        a[0]&&_~Node?_.x : -1
-    )"));
+        assert(42, a[0]&&_~Node?_.x : -1)
+    )");
 }
 
 TEST(Parser, InitializerMethods) {
-    ASSERT_EQ(5, execute(R"(
+    execute(R"(
         class Node {
             x = 1;
             y = 0;
@@ -510,12 +515,12 @@ TEST(Parser, InitializerMethods) {
         }
         b = Bar;
         b.n.removeFlags(2);      // 4 1 1    // they can be used as normal methods too
-        b.n.x + b.n.flags        // 5
-    )"));
+        assert(5, b.n.x + b.n.flags)         // 5
+    )");
 }
 
 TEST(Parser, TypedArrays) {
-    ASSERT_EQ(34, execute(R"(
+    execute(R"(
         class sys_Array {
             add(()@sys_Object n) {               // `add` accepts lambda and calss it to get @object placed exactly where, when and how much objects needed.
                 at = sys_Container_size(this);
@@ -542,12 +547,12 @@ TEST(Parser, TypedArrays) {
         a = NodeArray;
         a.add((){ Node.xy(2, 3) });
         a.add((){ Node.xy(20, 30) });
-        a[0].x + a[1].y + a.size()
-    )"));
+        assert(34, a[0].x + a[1].y + a.size())
+    )");
 }
 
 TEST(Parser, StringOperations) {
-    ASSERT_EQ(13, execute(R"(
+    execute(R"(
         class sys_String{
             get() int { sys_String_getCh(this) }
             length() int {
@@ -584,22 +589,22 @@ TEST(Parser, StringOperations) {
             }
         }
         a = OString.put('<').append("Hello there").put('>').str();
-        a.length()
-    )"));
+        assert(13, a.length())
+    )");
 }
 
 TEST(Parser, LiteralStrings) {
-    ASSERT_EQ(1, execute(R"(
+    execute(R"(
         a = "Hi";
         sys_String_getCh(a); // a="i"
         b = @a;
         sys_String_getCh(a); // a=""   b"i"
-        sys_String_getCh(b) == 'i' && sys_String_getCh(a) == 0 ? 1:0
-    )"));
+        assert(1, sys_String_getCh(b) == 'i' && sys_String_getCh(a) == 0 ? 1:0)
+    )");
 }
 
 TEST(Parser, SetOps) {
-    ASSERT_EQ(20, execute(R"(
+    execute(R"(
         class Cl{
             x = 0xc;
             getAt(int i) int { x }
@@ -615,8 +620,8 @@ TEST(Parser, SetOps) {
         c.x |= 3;  //     x=0xf(15)
         c[4] /= 3; //     x = 5
         c.inc();   //     x=6
-        c.x + a    // 20
-    )"));
+        assert(20, c.x + a)    // 20
+    )");
 }
 
 }  // namespace

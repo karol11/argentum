@@ -501,7 +501,7 @@ struct Typer : ast::ActionMatcher {
 			if (!fn->is_platform)
 				expect_type(fn->body.back(), fn->type_expression->type(), [] { return "checking actual result tupe against fn declaration"; });
 		}
-		expect_type(find_type(ast->entry_point), ast->tp_lambda({ ast->tp_int64() }), []{ return "main fn return value"; });
+		expect_type(find_type(ast->entry_point), ast->tp_lambda({ ast->tp_void() }), []{ return "main fn return value"; });
 		for (auto& t : ast->tests_by_names) {
 			type_fn(t.second);
 			if (!t.second->names.empty())

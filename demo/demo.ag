@@ -49,7 +49,7 @@ class Flare {
             x += dx;
             y += dy;
             dy += 1 << 13;
-            scene?=sc sc.rnd.get(0, 2) == 0 ?
+            scene ?=sc sc.rnd.get(0, 2) == 0 ?
                 sc.push(1, (i){ +Sparkles.init(sc, x >> 16, y >> 16, color) });
             fade += dFade;
             dFade -= 140;
@@ -129,6 +129,4 @@ fn distributeInCircle(utils_Random rnd, int count, int r, (int, int)void callbac
     });
 }
 
-Scene.init()?_.run();
-
-42   // main function returns int for errorlevel TODO: remove
+Scene.init()?_.run()

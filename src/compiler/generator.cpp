@@ -1841,14 +1841,14 @@ struct Generator : ast::ActionScanner {
 			}
 		}
 		current_function = llvm::Function::Create(
-			llvm::FunctionType::get(int_type, {}, false),
+			llvm::FunctionType::get(void_type, {}, false),
 			llvm::Function::ExternalLinkage,
 			"main", module.get());
 		compile_fn_body(*ast->entry_point);
 		// Compile tests
 		for (auto& test : ast->tests_by_names) {
 			auto fn = llvm::Function::Create(
-				llvm::FunctionType::get(int_type, {}, false),
+				llvm::FunctionType::get(void_type, {}, false),
 				llvm::Function::ExternalLinkage,
 				ast::format_str("ag_test_", test.second->name.pinned()),
 				module.get());
@@ -1893,18 +1893,18 @@ int64_t execute(llvm::orc::ThreadSafeModule& module, ast::Ast& ast, bool dump_ir
 	check(lib->define(llvm::orc::absoluteSymbols(move(runtime_exports))));
 	check(jit->addIRModule(std::move(module)));
 	auto f_main = check(jit->lookup("main"));
-	auto main_addr = f_main.toPtr<int64_t()>();
+	auto main_addr = f_main.toPtr<void()>();
 	for (auto& test : ast.tests_by_names) {
 		std::cout << "Test:" << std::to_string(test.first.pinned());
 	 	auto test_fn = check(jit->lookup(ast::format_str("ag_test_", test.second->name.pinned())));
-		auto addr = test_fn.toPtr<int64_t()>();
-		auto r = addr();
+		auto addr = test_fn.toPtr<void()>();
+		addr();
 		assert(ag_leak_detector_ok());
 		std::cout << " passed" << std::endl;
 	}
-	auto r = main_addr();
+	main_addr();
 	assert(ag_leak_detector_ok());
-	return r;
+	return 0;
 #else
 	return -1;
 #endif

@@ -110,9 +110,9 @@ int main(int argc, char* argv[]) {
         std::cout << "Checking types" << std::endl;
         check_types(ast);
         std::cout << "Building bitcode" << std::endl;
-        return int(generate_and_execute(ast, false));
-    } catch (void*) {  // debug-only  TODO: replace exceptions with `quick_exit`
-//    } catch (int) {
+        generate_and_execute(ast, false);
+//    } catch (void*) {  // debug-only  TODO: replace exceptions with `quick_exit`
+    } catch (int) {
         return -1;
     }
     return 0;
