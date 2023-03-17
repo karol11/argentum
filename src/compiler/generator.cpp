@@ -1761,7 +1761,11 @@ struct Generator : ast::ActionScanner {
 				continue;
 			auto& info = classes[cls];
 			ClassInfo* base_info = cls->base_class ? &classes[cls->base_class] : nullptr;
-			info.dispose = llvm::Function::Create(dispos_fn_type, llvm::Function::InternalLinkage,
+			info.dispose = llvm::Function::Create(
+				dispos_fn_type,
+				special_copy_and_dispose.count(cls) == 0
+					? llvm::Function::InternalLinkage
+					: llvm::Function::ExternalLinkage,
 				ast::format_str("ag_dtor_", cls->name.pinned()), module.get());
 			info.dispatcher = llvm::Function::Create(dispatcher_fn_type, llvm::Function::InternalLinkage,
 				std::to_string(cls->name.pinned()) + "!disp", module.get());
@@ -1810,7 +1814,11 @@ struct Generator : ast::ActionScanner {
 				builder.CreateRetVoid();
 			}
 			// Copier
-			info.copier = llvm::Function::Create(copier_fn_type, llvm::Function::InternalLinkage,
+			info.copier = llvm::Function::Create(
+				copier_fn_type,
+				special_copy_and_dispose.count(cls) == 0
+					? llvm::Function::InternalLinkage
+					: llvm::Function::ExternalLinkage,
 				ast::format_str("ag_copy_", cls->name.pinned()), module.get());
 			if (special_copy_and_dispose.count(cls) == 0) {
 				builder.SetInsertPoint(llvm::BasicBlock::Create(*context, "", info.copier));
@@ -1936,6 +1944,7 @@ struct Generator : ast::ActionScanner {
 			compile_fn_body(*test.second, ast::format_str("test_", test.second->name.pinned()));
 		}
 		di_builder->finalize();
+		module->addModuleFlag(llvm::Module::Warning, "Debug Info Version", llvm::DEBUG_METADATA_VERSION);
 		return llvm::orc::ThreadSafeModule(std::move(module), std::move(context));
 	}
 
