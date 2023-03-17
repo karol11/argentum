@@ -499,7 +499,10 @@ struct Generator : ast::ActionScanner {
 		if (get_if<Val::Temp>(&fn_result.lifetime)) {  // if connected to outer local/param
 			make_result_retained();
 		}
-		builder->CreateRet(fn_result.data);
+		if (isa<ast::TpVoid>(*fn_result.type))
+			builder->CreateRetVoid();
+		else
+			builder->CreateRet(fn_result.data);
 		builder = prev_builder;
 		if (!captures.empty() && captures.back().first == node.lexical_depth)
 			captures.pop_back();
