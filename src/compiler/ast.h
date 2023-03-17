@@ -175,6 +175,7 @@ struct typelist_comparer {
 };
 
 struct Ast: dom::DomItem {
+	string absolute_path;
 	own<dom::Dom> dom;
 	unordered_map<const vector<own<Type>>*, own<TpLambda>, typelist_hasher, typelist_comparer> lambda_types_;
 	unordered_map<const vector<own<Type>>*, own<TpFunction>, typelist_hasher, typelist_comparer> function_types_;

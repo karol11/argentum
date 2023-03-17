@@ -8,11 +8,14 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/DIBuilder.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 #include "utils/vmt_util.h"
 #include "runtime/runtime.h"
+
+#include "llvm/Bitcode/BitcodeWriter.h"
 
 using std::string;
 using std::vector;
@@ -132,6 +135,11 @@ struct Generator : ast::ActionScanner {
 	unordered_map<pin<ast::TpClass>, ClassInfo> classes;
 	unordered_map<pin<ast::Method>, MethodInfo> methods;
 	unordered_map<pin<ast::Function>, llvm::Function*> functions;
+	
+	// todo - create custom debug info format and custom debugger
+	unordered_map<weak<dom::Name>, llvm::DIScope*> di_modules;
+	llvm::DIScope* current_di_scope = nullptr;
+	std::unique_ptr<llvm::DIBuilder> di_builder;
 
 	llvm::Function* current_function = nullptr;
 	unordered_map<weak<ast::Var>, llvm::Value*> locals;
@@ -174,6 +182,7 @@ struct Generator : ast::ActionScanner {
 		, layout("")
 	{
 		module = std::make_unique<llvm::Module>("code", *context);
+		di_builder = std::make_unique<llvm::DIBuilder>(*module);
 		int_type = llvm::Type::getInt64Ty(*context);
 		double_type = llvm::Type::getDoubleTy(*context);
 		ptr_type = llvm::PointerType::getUnqual(*context);
@@ -247,13 +256,21 @@ struct Generator : ast::ActionScanner {
 			"ag_deref_weak",
 			*module);
 	}
+	[[noreturn]] void internal_error(ast::Node& n, const char* message) {
+		n.error("internal error: ", message);
+	}
 
 	[[nodiscard]] Val compile(own<ast::Action>& action) {
 		auto prev = result;
 		Val r;
 		result = &r;
-		// TODO: support debug info
-		// builder->SetCurrentDebugLocation(llvm::DILocation::get(*context, action->line, action->pos, (llvm::Metadata*) nullptr, nullptr));
+		if (current_di_scope) {
+			builder->SetCurrentDebugLocation(llvm::DILocation::get(
+				current_di_scope->getContext(),
+				action->line,
+				action->pos,
+				current_di_scope));
+		}
 		action->match(*this);
 		assert(!r.type || r.type == action->type());
 		if (!r.type)
@@ -408,7 +425,45 @@ struct Generator : ast::ActionScanner {
 		result->lifetime = Val::Retained{};
 	}
 
-	void compile_fn_body(ast::MkLambda& node, llvm::Type* closure_struct = nullptr) {
+	unordered_map<ast::Type*, llvm::DIType*> di_fn_types;
+
+	llvm::DIType* to_di_type(ast::Type& tp) {
+		auto& r = di_fn_types[&tp];
+		if (!r) {
+			struct DiTypeMatcher : ast::TypeMatcher {
+				Generator* gen;
+				llvm::DIType* result = nullptr;
+				DiTypeMatcher(Generator* gen) :gen(gen) {}
+				void on_int64(ast::TpInt64& type) override { result = gen->di_builder->createBasicType("int", 64, llvm::dwarf::DW_ATE_signed); }
+				void on_double(ast::TpDouble& type) override { result = gen->di_builder->createBasicType("double", 64, llvm::dwarf::DW_ATE_float); }
+				void on_function(ast::TpFunction& type) override {
+					vector<llvm::Metadata*> params;
+					params.reserve(type.params.size());
+					params.push_back(gen->to_di_type(*type.params.back()));
+					for (auto& p : type.params) {
+						if (p != type.params.back())
+							params.push_back(gen->to_di_type(*p));
+					}
+					result = gen->di_builder->createSubroutineType(gen->di_builder->getOrCreateTypeArray(params));
+				}
+				void on_lambda(ast::TpLambda& type) override { on_function(type); }
+				void on_cold_lambda(ast::TpColdLambda& type) override { result = gen->di_builder->createBasicType("void", 64, llvm::dwarf::DW_ATE_unsigned); }
+				void on_void(ast::TpVoid&) override { result = gen->di_builder->createBasicType("void", 64, llvm::dwarf::DW_ATE_unsigned); }
+				void on_optional(ast::TpOptional& type) { make_fake(); }
+				void on_class(ast::TpClass& type) override { make_fake(); }
+				void on_ref(ast::TpRef& type) override { make_fake(); }
+				void on_weak(ast::TpWeak& type) override { make_fake(); }
+
+				void make_fake() { result = gen->di_builder->createBasicType("int", 64, llvm::dwarf::DW_ATE_unsigned); }
+			};
+			DiTypeMatcher matcher(this);
+			tp.match(matcher);
+			r = matcher.result;
+		}
+		return r;
+	}
+
+	void compile_fn_body(ast::MkLambda& node, string name, llvm::Type* closure_struct = nullptr) {
 		unordered_map<weak<ast::Var>, llvm::Value*> outer_locals;
 		unordered_map<weak<ast::Var>, int> outer_capture_offsets = capture_offsets;
 		swap(outer_locals, locals);
@@ -417,12 +472,21 @@ struct Generator : ast::ActionScanner {
 		auto prev_builder = builder;
 		llvm::IRBuilder fn_bulder(llvm::BasicBlock::Create(*context, "", current_function));
 		this->builder = &fn_bulder;
-		// llvm::Value* parent_capture_ptr = isa<ast::MkLambda>(node) && closure_struct != nullptr
-		//	? builder->CreateBitCast(&*current_function->arg_begin(), closure_ptr_type)
-		//	: nullptr;
-		//llvm::Value* this_ptr = isa<ast::Method>(node) && closure_ptr_type != nullptr
-		//	? builder->CreateBitCast(&*current_function->arg_begin(), closure_ptr_type)
-		//	: nullptr;
+		llvm::DIScope* prev_di_scope = current_di_scope;
+		if (node.module_name) {
+			if (auto module_scope = di_modules[node.module_name]) {
+				current_di_scope = di_builder->createFunction(
+					module_scope,
+					name,
+					"",  // linkage name
+					module_scope->getFile(),
+					node.line,
+					llvm::cast<llvm::DISubroutineType>(to_di_type(*node.type())),
+					node.line,
+					llvm::DINode::FlagPrototyped,
+					llvm::DISubprogram::SPFlagDefinition);
+			}
+		}
 		bool has_parent_capture_ptr = isa<ast::MkLambda>(node) && closure_struct != nullptr;
 		pin<ast::Var> this_source = isa<ast::Method>(node) ? node.names.front().pinned() : nullptr;
 		llvm::AllocaInst* capture = nullptr;
@@ -503,6 +567,7 @@ struct Generator : ast::ActionScanner {
 			builder->CreateRetVoid();
 		else
 			builder->CreateRet(fn_result.data);
+		current_di_scope = prev_di_scope;
 		builder = prev_builder;
 		if (!captures.empty() && captures.back().first == node.lexical_depth)
 			captures.pop_back();
@@ -521,7 +586,7 @@ struct Generator : ast::ActionScanner {
 			llvm::Function::InternalLinkage,
 			name,
 			module.get());
-		compile_fn_body(node, closure_ptr_type);
+		compile_fn_body(node, name, closure_ptr_type);
 		swap(prev, current_function);
 		compiled_functions[&node] = prev;
 		return prev;
@@ -599,7 +664,7 @@ struct Generator : ast::ActionScanner {
 		*result = handle_block(node, Val{});
 	}
 	void on_make_delegate(ast::MakeDelegate& node) override {
-		node.error("delegates aren't supported yet");
+		internal_error(node, "delegates aren't supported yet");
 	}
 	void on_make_fn_ptr(ast::MakeFnPtr& node) {
 		result->data = functions[node.fn];
@@ -778,7 +843,7 @@ struct Generator : ast::ActionScanner {
 		result->data = builder->CreateNeg(comp_non_ptr(node.p));
 	}
 	void on_ref(ast::RefOp& node) override {
-		node.error("internal error, ref cannot be compiled");
+		internal_error(node, "ref cannot be compiled");
 	}
 	void on_cast(ast::CastOp& node) override {
 		if (!node.p[1]) {
@@ -1370,7 +1435,7 @@ struct Generator : ast::ActionScanner {
 			}
 			return fn;
 		}
-		n.error("internal error, type is not a lambda");
+		internal_error(n, "type is not a lambda");
 	}
 	llvm::FunctionType* function_to_llvm_fn(ast::Node& n, pin<ast::Type> tp) {
 		if (auto as_func = dom::strict_cast<ast::TpFunction>(tp)) {
@@ -1383,8 +1448,9 @@ struct Generator : ast::ActionScanner {
 			}
 			return fn;
 		}
-		n.error("internal error, type is not a function");
+		internal_error(n, "type is not a function");
 	}
+
 	llvm::Type* to_llvm_type(ast::Type& t) {
 		struct Matcher :ast::TypeMatcher {
 			Generator* gen;
@@ -1595,6 +1661,17 @@ struct Generator : ast::ActionScanner {
 				int_type   // obj vmt size (used in casts)
 			});
 		auto initializer_fn_type = llvm::FunctionType::get(void_type, { ptr_type }, false);
+		for (auto& m : ast->module_names) {
+			di_modules.insert({
+				m.weaked(),
+				di_builder->createCompileUnit(
+					llvm::dwarf::DW_LANG_C_plus_plus,
+					di_builder->createFile(
+						m->name + ".ag",
+						ast->absolute_path),
+					m->name + ".ag",
+					true, "", 0) });
+		}
 		// Make LLVM types for classes
 		for (auto& cls : ast->classes) {
 			auto& info = classes[cls];
@@ -1840,14 +1917,14 @@ struct Generator : ast::ActionScanner {
 		for (auto& fn : ast->functions) {
 			if (!fn->is_platform) {
 				current_function = functions[fn];
-				compile_fn_body(*fn);
+				compile_fn_body(*fn, ast::format_str("fn_", fn->name.pinned()));
 			}
 		}
 		current_function = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, {}, false),
 			llvm::Function::ExternalLinkage,
 			"main", module.get());
-		compile_fn_body(*ast->entry_point);
+		compile_fn_body(*ast->entry_point, "main");
 		// Compile tests
 		for (auto& test : ast->tests_by_names) {
 			auto fn = llvm::Function::Create(
@@ -1856,8 +1933,9 @@ struct Generator : ast::ActionScanner {
 				ast::format_str("ag_test_", test.second->name.pinned()),
 				module.get());
 			current_function = fn;
-			compile_fn_body(*test.second);
+			compile_fn_body(*test.second, ast::format_str("test_", test.second->name.pinned()));
 		}
+		di_builder->finalize();
 		return llvm::orc::ThreadSafeModule(std::move(module), std::move(context));
 	}
 

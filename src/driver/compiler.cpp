@@ -104,6 +104,7 @@ int main(int argc, char* argv[]) {
         check_str(out_file_name, "output file");
         ast::initialize();
         auto ast = own<Ast>::make();
+        ast->absolute_path = src_dir_name;
         register_runtime_content(*ast);
         std::unordered_set<ltm::pin<dom::Name>> modules_in_dep_path;
         parse(ast, ast->dom->names()->get(start_module_name), modules_in_dep_path, [&](auto name) {
