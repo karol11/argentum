@@ -13,8 +13,8 @@ void ag_memmove(void*, void*, size_t);
 #define ag_memmove memmove
 #endif
 
-#include "utils/utf8.h"
-#include "runtime/runtime.h"
+#include "../utils/utf8.h"
+#include "../runtime/runtime.h"
 
 #ifndef AG_ALLOC
 #include <stdlib.h>

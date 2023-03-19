@@ -475,7 +475,7 @@ struct Generator : ast::ActionScanner {
 		llvm::DIScope* prev_di_scope = current_di_scope;
 		if (node.module_name) {
 			if (auto module_scope = di_modules[node.module_name]) {
-				current_di_scope = di_builder->createFunction(
+				auto sub = di_builder->createFunction(
 					module_scope,
 					name,
 					"",  // linkage name
@@ -485,6 +485,8 @@ struct Generator : ast::ActionScanner {
 					node.line,
 					llvm::DINode::FlagPrototyped,
 					llvm::DISubprogram::SPFlagDefinition);
+				current_function->setSubprogram(sub);
+				current_di_scope = sub;
 			}
 		}
 		bool has_parent_capture_ptr = isa<ast::MkLambda>(node) && closure_struct != nullptr;
@@ -1945,6 +1947,7 @@ struct Generator : ast::ActionScanner {
 		}
 		di_builder->finalize();
 		module->addModuleFlag(llvm::Module::Warning, "Debug Info Version", llvm::DEBUG_METADATA_VERSION);
+		module->addModuleFlag(llvm::Module::Warning, "CodeView", 1);
 		return llvm::orc::ThreadSafeModule(std::move(module), std::move(context));
 	}
 
