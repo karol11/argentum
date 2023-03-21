@@ -1,3 +1,14 @@
 fn sys_log(sys_String msg);
 
-sys_log("Hello World")
+class Test {
+  fx = 0;
+
+  m(int a, int b, sys_String s) {
+    a += 1;
+    fx += a;
+    sys_log(s);
+  }
+}
+
+t = Test;
+t.m(12, 4, "Hello World")

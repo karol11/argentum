@@ -120,6 +120,7 @@ struct ClassInfo {
 };
 
 struct Generator : ast::ActionScanner {
+	bool debug_info_mode = true;
 	ltm::pin<ast::Ast> ast;
 	std::unique_ptr<llvm::LLVMContext> context;
 	std::unique_ptr<llvm::Module> module;
@@ -136,10 +137,15 @@ struct Generator : ast::ActionScanner {
 	unordered_map<pin<ast::Method>, MethodInfo> methods;
 	unordered_map<pin<ast::Function>, llvm::Function*> functions;
 	
-	// todo - create custom debug info format and custom debugger
-	unordered_map<weak<dom::Name>, llvm::DIScope*> di_modules;
+	llvm::DICompileUnit* di_cu = nullptr;
+	unordered_map<weak<dom::Name>, llvm::DIFile*> di_files;
 	llvm::DIScope* current_di_scope = nullptr;
 	std::unique_ptr<llvm::DIBuilder> di_builder;
+	llvm::DIType* di_double = nullptr;
+	llvm::DIType* di_int = nullptr;
+	llvm::DIType* di_obj_ptr = nullptr;
+	llvm::DIType* di_weak_ptr = nullptr;
+	llvm::DIType* di_opt_int = nullptr;
 
 	llvm::Function* current_function = nullptr;
 	unordered_map<weak<ast::Var>, llvm::Value*> locals;
@@ -176,13 +182,16 @@ struct Generator : ast::ActionScanner {
 	unordered_map<weak<ast::MkLambda>, llvm::Function*> compiled_functions;
 	llvm::Constant* null_weak = nullptr;
 
-	Generator(ltm::pin<ast::Ast> ast)
-		: ast(ast)
+	Generator(ltm::pin<ast::Ast> ast, bool debug_info_mode = true)
+		: debug_info_mode(debug_info_mode)
+		, ast(ast)
 		, context(new llvm::LLVMContext)
 		, layout("")
 	{
 		module = std::make_unique<llvm::Module>("code", *context);
 		di_builder = std::make_unique<llvm::DIBuilder>(*module);
+		if (debug_info_mode)
+			make_di_basic();
 		int_type = llvm::Type::getInt64Ty(*context);
 		double_type = llvm::Type::getDoubleTy(*context);
 		ptr_type = llvm::PointerType::getUnqual(*context);
@@ -255,6 +264,37 @@ struct Generator : ast::ActionScanner {
 			llvm::Function::ExternalLinkage,
 			"ag_deref_weak",
 			*module);
+	}
+
+	void make_di_basic() {
+		const int AG_PTR_WIDTH = 4;
+		auto cu = di_builder->createCompileUnit(
+			llvm::dwarf::DW_LANG_C_plus_plus,
+			di_builder->createFile("sys", ""),
+			"sys",
+			true, "", 0);
+		di_double = di_builder->createBasicType("double", 64, llvm::dwarf::DW_ATE_float);
+		di_int = di_builder->createBasicType("int", 64, llvm::dwarf::DW_ATE_signed);
+		di_obj_ptr = di_builder->createPointerType(di_int, 64);
+		di_weak_ptr = di_builder->createPointerType(
+			di_builder->createStructType(
+				cu, "_weak", cu->getFile(),
+				0, 3 * 64, 0,
+				llvm::DINode::DIFlags::FlagPublic, nullptr,
+				di_builder->getOrCreateArray({
+					di_builder->createMemberType(cu, "target", cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagPublic, di_obj_ptr),
+					di_builder->createMemberType(cu, "counter", cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagPublic, di_int),
+					di_builder->createMemberType(cu, "org_ctr", cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagPublic, di_int) })),
+			64);
+		llvm::DIType* di_opt_int = di_builder->createPointerType(
+			di_builder->createStructType(
+				cu, "_opt_int", cu->getFile(),
+				0, 2 * 64, 0,
+				llvm::DINode::DIFlags::FlagPublic, nullptr,
+				di_builder->getOrCreateArray({
+					di_builder->createMemberType(cu, "opt", cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagPublic, di_int),
+					di_builder->createMemberType(cu, "val", cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagPublic, di_int)})),
+			64);
 	}
 	[[noreturn]] void internal_error(ast::Node& n, const char* message) {
 		n.error("internal error: ", message);
@@ -434,8 +474,8 @@ struct Generator : ast::ActionScanner {
 				Generator* gen;
 				llvm::DIType* result = nullptr;
 				DiTypeMatcher(Generator* gen) :gen(gen) {}
-				void on_int64(ast::TpInt64& type) override { result = gen->di_builder->createBasicType("int", 64, llvm::dwarf::DW_ATE_signed); }
-				void on_double(ast::TpDouble& type) override { result = gen->di_builder->createBasicType("double", 64, llvm::dwarf::DW_ATE_float); }
+				void on_int64(ast::TpInt64& type) override { result = gen->di_int; }
+				void on_double(ast::TpDouble& type) override { result = gen->di_double; }
 				void on_function(ast::TpFunction& type) override {
 					vector<llvm::Metadata*> params;
 					params.reserve(type.params.size());
@@ -449,18 +489,45 @@ struct Generator : ast::ActionScanner {
 				void on_lambda(ast::TpLambda& type) override { on_function(type); }
 				void on_cold_lambda(ast::TpColdLambda& type) override { result = gen->di_builder->createBasicType("void", 64, llvm::dwarf::DW_ATE_unsigned); }
 				void on_void(ast::TpVoid&) override { result = gen->di_builder->createBasicType("void", 64, llvm::dwarf::DW_ATE_unsigned); }
-				void on_optional(ast::TpOptional& type) { make_fake(); }
-				void on_class(ast::TpClass& type) override { make_fake(); }
-				void on_ref(ast::TpRef& type) override { make_fake(); }
-				void on_weak(ast::TpWeak& type) override { make_fake(); }
-
-				void make_fake() { result = gen->di_builder->createBasicType("int", 64, llvm::dwarf::DW_ATE_unsigned); }
+				void on_optional(ast::TpOptional& type) {
+					if (isa<ast::TpVoid>(*type.wrapped)) result = gen->di_opt_int;
+					else if (isa<ast::TpVoid>(*type.wrapped)) result = gen->di_int;
+					else type.wrapped->match(*this);
+				}
+				void on_class(ast::TpClass& type) override { result = gen->di_obj_ptr; }
+				void on_ref(ast::TpRef& type) override { result = gen->di_obj_ptr; }
+				void on_weak(ast::TpWeak& type) override { result = gen->di_weak_ptr; }
 			};
 			DiTypeMatcher matcher(this);
 			tp.match(matcher);
 			r = matcher.result;
 		}
 		return r;
+	}
+
+	void insert_di_var(string name, int line, int pos, llvm::DIType* type, llvm::Value* data_addr) {
+		di_builder->insertDeclare(
+			data_addr,
+			di_builder->createAutoVariable(
+				current_di_scope,
+				name,
+				current_di_scope->getFile(),
+				line,
+				type,
+				true), // preserve
+			di_builder->createExpression(),
+			llvm::DILocation::get(
+				current_di_scope->getContext(),
+				line,
+				pos,
+				current_di_scope),
+			builder->GetInsertBlock());
+	}
+
+	void insert_di_var(pin<ast::Var> p, llvm::DIScope* prev_di_scope, llvm::Value* data_addr) {
+		if (current_di_scope == prev_di_scope)
+			return;
+		insert_di_var(std::to_string(p->name.pinned()), p->line, p->pos, to_di_type(*p->type), data_addr);
 	}
 
 	void compile_fn_body(ast::MkLambda& node, string name, llvm::Type* closure_struct = nullptr) {
@@ -474,12 +541,12 @@ struct Generator : ast::ActionScanner {
 		this->builder = &fn_bulder;
 		llvm::DIScope* prev_di_scope = current_di_scope;
 		if (node.module_name) {
-			if (auto module_scope = di_modules[node.module_name]) {
+			if (auto di_file = di_files[node.module_name]) {
 				auto sub = di_builder->createFunction(
-					module_scope,
+					di_cu,
 					name,
 					"",  // linkage name
-					module_scope->getFile(),
+					di_file,
 					node.line,
 					llvm::cast<llvm::DISubroutineType>(to_di_type(*node.type())),
 					node.line,
@@ -516,6 +583,25 @@ struct Generator : ast::ActionScanner {
 				local,
 				builder->CreateAlloca(to_llvm_type(*(local->type))) });
 		}
+		if (debug_info_mode) {
+			auto param_iter = current_function->arg_begin();
+			if (isa<ast::MkLambda>(node)) {
+				if (closure_struct != nullptr) {
+					auto dbg_param_val = builder->CreateAlloca(ptr_type);
+					insert_di_var("closure", node.line, node.pos, di_obj_ptr, dbg_param_val); // todo: make actual closure type
+					builder->CreateStore(&*param_iter, dbg_param_val);
+				}
+				++param_iter;
+			}
+			for (auto& p : node.names) {
+				if (!p->is_mutable && !p->captured) {
+					auto dbg_param_val = builder->CreateAlloca(to_llvm_type(*p->type));
+					insert_di_var(p, prev_di_scope, dbg_param_val);
+					builder->CreateStore(&*param_iter, dbg_param_val);
+				}
+				++param_iter;
+			}
+		}
 		if (has_parent_capture_ptr)
 			capture_ptrs.push_back(&*current_function->arg_begin());
 		auto param_iter = current_function->arg_begin() + (isa<ast::MkLambda>(node) ? 1 : 0);
@@ -526,11 +612,13 @@ struct Generator : ast::ActionScanner {
 				: is_ptr(p->type);
 			if (p_is_ptr && p->is_mutable)
 				build_retain(&*param_iter, is_weak(p->type));
+
 			if (p->captured) {
 				auto addr = builder->CreateStructGEP(captures.back().second, capture, capture_offsets[p]);
 				builder->CreateStore(p_val, addr);
 				locals.insert({ p, addr });
 			} else if (p->is_mutable) {
+				insert_di_var(p, prev_di_scope, locals[p]);
 				builder->CreateStore(&*param_iter, locals[p]);
 			} else {
 				locals.insert({ p, p_val });
@@ -1663,16 +1751,14 @@ struct Generator : ast::ActionScanner {
 				int_type   // obj vmt size (used in casts)
 			});
 		auto initializer_fn_type = llvm::FunctionType::get(void_type, { ptr_type }, false);
-		for (auto& m : ast->module_names) {
-			di_modules.insert({
-				m.weaked(),
-				di_builder->createCompileUnit(
-					llvm::dwarf::DW_LANG_C_plus_plus,
+		if (debug_info_mode) {
+			for (auto& m : ast->module_names) {
+				di_files.insert({
+					m.weaked(),
 					di_builder->createFile(
-						m->name + ".ag",
-						ast->absolute_path),
-					m->name + ".ag",
-					true, "", 0) });
+							m->name + ".ag",
+							ast->absolute_path)});
+			}
 		}
 		// Make LLVM types for classes
 		for (auto& cls : ast->classes) {
@@ -1867,7 +1953,7 @@ struct Generator : ast::ActionScanner {
 			for (auto& m : cls->new_methods) {
 				auto& m_info = methods[m];
 				info.vmt_fields.push_back(compile_function(*m,
-					ast::format_str("M_", std::to_string(cls->name.pinned()), '_', m->name),
+					ast::format_str("M_", cls->name.pinned(), '_', m->name.pinned()),
 					info.fields->getPointerTo()));
 			}
 			size_t base_index = info.vmt_fields.size();
@@ -1878,7 +1964,7 @@ struct Generator : ast::ActionScanner {
 				for (auto& m : cls->overloads[cls->base_class]) { // for overrides
 					auto& m_info = methods[m];
 					info.vmt_fields[base_index + m_info.ordinal] = compile_function(*m,
-						ast::format_str("M_", std::to_string(cls->name.pinned()), '_', m->name),
+						ast::format_str("M_", cls->name.pinned(), '_', m->name.pinned()),
 						info.fields->getPointerTo());
 				}
 			}
