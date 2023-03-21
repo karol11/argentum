@@ -139,6 +139,7 @@ struct Generator : ast::ActionScanner {
 	llvm::DICompileUnit* di_cu = nullptr;
 	unordered_map<weak<dom::Name>, llvm::DIFile*> di_files;
 	llvm::DIScope* current_di_scope = nullptr;
+	llvm::DIType* current_capture_di_type = nullptr;
 	std::unique_ptr<llvm::DIBuilder> di_builder;
 	llvm::DIType* di_double = nullptr;
 	llvm::DIType* di_int = nullptr;
@@ -280,8 +281,8 @@ struct Generator : ast::ActionScanner {
 				llvm::DINode::DIFlags::FlagPublic, nullptr,
 				di_builder->getOrCreateArray({
 					di_builder->createMemberType(cu, "target", cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagPublic, di_obj_ptr),
-					di_builder->createMemberType(cu, "counter", cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagPublic, di_int),
-					di_builder->createMemberType(cu, "org_ctr", cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagPublic, di_int) })),
+					di_builder->createMemberType(cu, "counter", cu->getFile(), 0, 64, 0, 64, llvm::DINode::DIFlags::FlagPublic, di_int),
+					di_builder->createMemberType(cu, "org_ctr", cu->getFile(), 0, 64, 0, 64*2, llvm::DINode::DIFlags::FlagPublic, di_int) })),
 			64);
 		llvm::DIType* di_opt_int = di_builder->createPointerType(
 			di_builder->createStructType(
@@ -290,7 +291,7 @@ struct Generator : ast::ActionScanner {
 				llvm::DINode::DIFlags::FlagPublic, nullptr,
 				di_builder->getOrCreateArray({
 					di_builder->createMemberType(cu, "opt", cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagPublic, di_int),
-					di_builder->createMemberType(cu, "val", cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagPublic, di_int)})),
+					di_builder->createMemberType(cu, "val", cu->getFile(), 0, 64, 0, 64, llvm::DINode::DIFlags::FlagPublic, di_int)})),
 			64);
 	}
 	[[noreturn]] void internal_error(ast::Node& n, const char* message) {
@@ -556,8 +557,44 @@ struct Generator : ast::ActionScanner {
 		}
 		bool has_parent_capture_ptr = isa<ast::MkLambda>(node) && closure_struct != nullptr;
 		pin<ast::Var> this_source = isa<ast::Method>(node) ? node.names.front().pinned() : nullptr;
+		auto prev_capture_di_type = current_capture_di_type;
 		llvm::AllocaInst* capture = nullptr;
 		if (!node.captured_locals.empty()) {
+			if (di_builder) {
+				vector<llvm::Metadata*> di_captures;
+				size_t offset = 0;
+				if (current_capture_di_type) {
+					di_captures.push_back(di_builder->createMemberType(
+						current_di_scope,
+						"parent",
+						current_di_scope->getFile(),
+						0, 64, 0, offset,
+						llvm::DINode::DIFlags::FlagPublic,
+						current_capture_di_type));
+					offset += 64;
+				}
+				for (auto& p : node.captured_locals) {
+					di_captures.push_back(di_builder->createMemberType(
+						current_di_scope,
+						std::to_string(p->name.pinned()),
+						current_di_scope->getFile(),
+						0, 64, 0, offset,
+						llvm::DINode::DIFlags::FlagPublic,
+						to_di_type(*p->type)));
+					offset += to_llvm_type(*p->type)->getScalarSizeInBits();
+				}
+				current_capture_di_type = di_builder->createPointerType(
+					di_builder->createStructType(
+						current_di_scope,
+						ast::format_str("cap_", name),
+						current_di_scope->getFile(),
+						node.line, offset, 0,
+						llvm::DINode::DIFlags::FlagPublic,
+						nullptr,  // parent
+						di_builder->getOrCreateArray(move(di_captures))),
+					64
+				);
+			}
 			vector<llvm::Type*> captured_local_types;
 			if (has_parent_capture_ptr)
 				captured_local_types.push_back(ptr_type);  // for outer capture
@@ -586,7 +623,7 @@ struct Generator : ast::ActionScanner {
 			if (isa<ast::MkLambda>(node)) {
 				if (closure_struct != nullptr) {
 					auto dbg_param_val = builder->CreateAlloca(ptr_type);
-					insert_di_var("closure", node.line, node.pos, di_obj_ptr, dbg_param_val); // todo: make actual closure type
+					insert_di_var("closure", node.line, node.pos, current_capture_di_type, dbg_param_val);
 					builder->CreateStore(&*param_iter, dbg_param_val);
 				}
 				++param_iter;
@@ -656,6 +693,7 @@ struct Generator : ast::ActionScanner {
 		else
 			builder->CreateRet(fn_result.data);
 		current_di_scope = prev_di_scope;
+		current_capture_di_type = prev_capture_di_type;
 		builder = prev_builder;
 		if (!captures.empty() && captures.back().first == node.lexical_depth)
 			captures.pop_back();
@@ -683,7 +721,7 @@ struct Generator : ast::ActionScanner {
 	void on_mk_lambda(ast::MkLambda& node) override {
 		llvm::Function* function = compile_function(
 			node,
-			ast::format_str("L_", node.line, '_', node.pos, '_', (void*)&node),
+			ast::format_str("L_", node.module_name.pinned(), '_', node.line, '_', node.pos),
 			captures.empty()
 				? nullptr
 				: captures.back().second->getPointerTo());

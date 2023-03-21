@@ -3,12 +3,15 @@ fn sys_log(sys_String msg);
 class Test {
   fx = 0;
 
-  m(int a, int b, sys_String s) {
+  m(int a, int b, sys_String s, (int)void lambda) {
     a += 1;
     fx += a;
+    lambda(b);
     sys_log(s);
   }
 }
 
 t = Test;
-t.m(12, 4, "Hello World")
+t.m(12, 4, "Hello World", (i){
+    t.fx += i;
+})
