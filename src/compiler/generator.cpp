@@ -120,7 +120,6 @@ struct ClassInfo {
 };
 
 struct Generator : ast::ActionScanner {
-	bool debug_info_mode = true;
 	ltm::pin<ast::Ast> ast;
 	std::unique_ptr<llvm::LLVMContext> context;
 	std::unique_ptr<llvm::Module> module;
@@ -183,13 +182,11 @@ struct Generator : ast::ActionScanner {
 	llvm::Constant* null_weak = nullptr;
 
 	Generator(ltm::pin<ast::Ast> ast, bool debug_info_mode = true)
-		: debug_info_mode(debug_info_mode)
-		, ast(ast)
+		: ast(ast)
 		, context(new llvm::LLVMContext)
 		, layout("")
 	{
 		module = std::make_unique<llvm::Module>("code", *context);
-		di_builder = std::make_unique<llvm::DIBuilder>(*module);
 		if (debug_info_mode)
 			make_di_basic();
 		int_type = llvm::Type::getInt64Ty(*context);
@@ -267,7 +264,7 @@ struct Generator : ast::ActionScanner {
 	}
 
 	void make_di_basic() {
-		const int AG_PTR_WIDTH = 4;
+		di_builder = std::make_unique<llvm::DIBuilder>(*module);
 		auto cu = di_builder->createCompileUnit(
 			llvm::dwarf::DW_LANG_C_plus_plus,
 			di_builder->createFile("sys", ""),
@@ -506,6 +503,8 @@ struct Generator : ast::ActionScanner {
 	}
 
 	void insert_di_var(string name, int line, int pos, llvm::DIType* type, llvm::Value* data_addr) {
+		if (!di_builder)
+			return;
 		di_builder->insertDeclare(
 			data_addr,
 			di_builder->createAutoVariable(
@@ -524,10 +523,9 @@ struct Generator : ast::ActionScanner {
 			builder->GetInsertBlock());
 	}
 
-	void insert_di_var(pin<ast::Var> p, llvm::DIScope* prev_di_scope, llvm::Value* data_addr) {
-		if (current_di_scope == prev_di_scope)
-			return;
-		insert_di_var(std::to_string(p->name.pinned()), p->line, p->pos, to_di_type(*p->type), data_addr);
+	void insert_di_var(pin<ast::Var> p, llvm::Value* data_addr) {
+		if (di_builder)
+			insert_di_var(std::to_string(p->name.pinned()), p->line, p->pos, to_di_type(*p->type), data_addr);
 	}
 
 	void compile_fn_body(ast::MkLambda& node, string name, llvm::Type* closure_struct = nullptr) {
@@ -583,7 +581,7 @@ struct Generator : ast::ActionScanner {
 				local,
 				builder->CreateAlloca(to_llvm_type(*(local->type))) });
 		}
-		if (debug_info_mode) {
+		if (di_builder) {
 			auto param_iter = current_function->arg_begin();
 			if (isa<ast::MkLambda>(node)) {
 				if (closure_struct != nullptr) {
@@ -596,7 +594,7 @@ struct Generator : ast::ActionScanner {
 			for (auto& p : node.names) {
 				if (!p->is_mutable && !p->captured) {
 					auto dbg_param_val = builder->CreateAlloca(to_llvm_type(*p->type));
-					insert_di_var(p, prev_di_scope, dbg_param_val);
+					insert_di_var(p, dbg_param_val);
 					builder->CreateStore(&*param_iter, dbg_param_val);
 				}
 				++param_iter;
@@ -618,7 +616,7 @@ struct Generator : ast::ActionScanner {
 				builder->CreateStore(p_val, addr);
 				locals.insert({ p, addr });
 			} else if (p->is_mutable) {
-				insert_di_var(p, prev_di_scope, locals[p]);
+				insert_di_var(p, locals[p]);
 				builder->CreateStore(&*param_iter, locals[p]);
 			} else {
 				locals.insert({ p, p_val });
@@ -700,6 +698,10 @@ struct Generator : ast::ActionScanner {
 	}
 
 	Val handle_block(ast::Block& node, Val parameter) {
+		auto prev_di_scope = current_di_scope;
+		current_di_scope = current_di_scope
+			? di_builder->createLexicalBlock(current_di_scope, current_di_scope->getFile(), node.line, node.pos)
+			: nullptr;
 		vector<Val> to_dispose; // mutable ? addr : initializer_value
 		for (auto& l : node.names) {
 			to_dispose.push_back(l->initializer
@@ -721,6 +723,15 @@ struct Generator : ast::ActionScanner {
 					initializer.data = addr;
 			} else {
 				locals.insert({ l, initializer.data });
+			}
+			if (di_builder && !l->captured) {
+				if (l->is_mutable) {
+					insert_di_var(l, locals[l]);
+				} else {
+					auto addr = builder->CreateAlloca(to_llvm_type(*l->type));
+					builder->CreateStore(initializer.data, addr);
+					insert_di_var(l, addr);
+				}
 			}
 		}
 		for (auto& a : node.body) {
@@ -747,6 +758,7 @@ struct Generator : ast::ActionScanner {
 			}
 			val_iter++;
 		}
+		current_di_scope = prev_di_scope;
 		return r;
 	}
 
@@ -1751,7 +1763,7 @@ struct Generator : ast::ActionScanner {
 				int_type   // obj vmt size (used in casts)
 			});
 		auto initializer_fn_type = llvm::FunctionType::get(void_type, { ptr_type }, false);
-		if (debug_info_mode) {
+		if (di_builder) {
 			for (auto& m : ast->module_names) {
 				di_files.insert({
 					m.weaked(),
