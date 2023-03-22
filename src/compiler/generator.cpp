@@ -146,6 +146,7 @@ struct Generator : ast::ActionScanner {
 	llvm::DIType* di_obj_ptr = nullptr;
 	llvm::DIType* di_weak_ptr = nullptr;
 	llvm::DIType* di_opt_int = nullptr;
+	llvm::DICompositeType* di_obj_variants = nullptr;
 
 	llvm::Function* current_function = nullptr;
 	unordered_map<weak<ast::Var>, llvm::Value*> locals;
@@ -266,32 +267,38 @@ struct Generator : ast::ActionScanner {
 
 	void make_di_basic() {
 		di_builder = std::make_unique<llvm::DIBuilder>(*module);
-		auto cu = di_builder->createCompileUnit(
+		di_cu = di_builder->createCompileUnit(
 			llvm::dwarf::DW_LANG_C_plus_plus,
 			di_builder->createFile("sys", ""),
 			"sys",
 			true, "", 0);
 		di_double = di_builder->createBasicType("double", 64, llvm::dwarf::DW_ATE_float);
 		di_int = di_builder->createBasicType("int", 64, llvm::dwarf::DW_ATE_signed);
-		di_obj_ptr = di_builder->createPointerType(di_int, 64);
+		di_obj_variants = di_builder->createVariantPart(
+			di_cu, "_obj", di_cu->getFile(),
+			0, 0, 0,
+			llvm::DINode::DIFlags::FlagPublic,
+			di_builder->createMemberType(di_cu, "_cls_id", di_cu->getFile(), 0, 64, 0, -64 * 2, llvm::DINode::DIFlags::FlagZero, di_int),
+			di_builder->getOrCreateArray({}));
+		di_obj_ptr = di_builder->createPointerType(di_obj_variants, 64);
 		di_weak_ptr = di_builder->createPointerType(
 			di_builder->createStructType(
-				cu, "_weak", cu->getFile(),
+				di_cu, "_weak", di_cu->getFile(),
 				0, 3 * 64, 0,
 				llvm::DINode::DIFlags::FlagPublic, nullptr,
 				di_builder->getOrCreateArray({
-					di_builder->createMemberType(cu, "target", cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagPublic, di_obj_ptr),
-					di_builder->createMemberType(cu, "counter", cu->getFile(), 0, 64, 0, 64, llvm::DINode::DIFlags::FlagPublic, di_int),
-					di_builder->createMemberType(cu, "org_ctr", cu->getFile(), 0, 64, 0, 64*2, llvm::DINode::DIFlags::FlagPublic, di_int) })),
+					di_builder->createMemberType(di_cu, "target", di_cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagPublic, di_obj_ptr),
+					di_builder->createMemberType(di_cu, "counter", di_cu->getFile(), 0, 64, 0, 64, llvm::DINode::DIFlags::FlagPublic, di_int),
+					di_builder->createMemberType(di_cu, "org_ctr", di_cu->getFile(), 0, 64, 0, 64*2, llvm::DINode::DIFlags::FlagPublic, di_int) })),
 			64);
 		llvm::DIType* di_opt_int = di_builder->createPointerType(
 			di_builder->createStructType(
-				cu, "_opt_int", cu->getFile(),
+				di_cu, "_opt_int", di_cu->getFile(),
 				0, 2 * 64, 0,
 				llvm::DINode::DIFlags::FlagPublic, nullptr,
 				di_builder->getOrCreateArray({
-					di_builder->createMemberType(cu, "opt", cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagPublic, di_int),
-					di_builder->createMemberType(cu, "val", cu->getFile(), 0, 64, 0, 64, llvm::DINode::DIFlags::FlagPublic, di_int)})),
+					di_builder->createMemberType(di_cu, "opt", di_cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagPublic, di_int),
+					di_builder->createMemberType(di_cu, "val", di_cu->getFile(), 0, 64, 0, 64, llvm::DINode::DIFlags::FlagPublic, di_int)})),
 			64);
 	}
 	[[noreturn]] void internal_error(ast::Node& n, const char* message) {
@@ -2080,6 +2087,57 @@ struct Generator : ast::ActionScanner {
 				module.get());
 			current_function = fn;
 			compile_fn_body(*test.second, ast::format_str("test_", test.second->name.pinned()));
+		}
+		if (di_builder) {
+			vector<llvm::Metadata*> cls_di_parts;
+			for (auto& c : ast->classes) {
+				if (c->is_interface)
+					continue;
+				vector<llvm::Metadata*> cls_di_fields;
+				std::function<size_t(ast::TpClass& cl)> field_builder = [&](ast::TpClass& cl) {
+					size_t offset = cl.base_class
+						? field_builder(*cl.base_class.pinned())
+						: 0;
+					for (auto& f : cl.fields) {
+						size_t width = to_llvm_type(*f->initializer->type())
+							->getScalarSizeInBits();
+						cls_di_fields.push_back(di_builder->createMemberType(
+							di_cu,
+							std::to_string(f->name.pinned()),
+							di_cu->getFile(),
+							0,  // line
+							width,
+							0,  // align
+							offset,
+							llvm::DINode::DIFlags::FlagZero,
+							to_di_type(*f->initializer->type())));
+						offset += width;
+					}
+					return offset;
+				};
+				size_t size = field_builder(*c);
+				cls_di_parts.push_back(di_builder->createVariantMemberType(
+					di_obj_variants,
+					ast::format_str("tag_", c->name.pinned()),
+					di_cu->getFile(),
+					0,  // line
+					size,
+					0,  // align
+					0,  // offset
+					classes[c].dispatcher,
+					llvm::DINode::DIFlags::FlagZero,
+					di_builder->createStructType(
+						di_cu,
+						std::to_string(c->name.pinned()),
+						di_cu->getFile(),
+						0,  // line
+						size,
+						0, // align
+						llvm::DINode::DIFlags::FlagZero,
+						nullptr,  // base
+						di_builder->getOrCreateArray(move(cls_di_fields)))));
+			}
+			di_builder->replaceArrays(di_obj_variants, di_builder->getOrCreateArray(move(cls_di_parts)));
 		}
 		di_builder->finalize();
 		module->addModuleFlag(llvm::Module::Warning, "Debug Info Version", llvm::DEBUG_METADATA_VERSION);
