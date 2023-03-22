@@ -38,8 +38,10 @@ void ag_memmove(void*, void*, size_t);
 #define AG_TAG_PTR(TYPE, PTR, TAG) ((TYPE*)(((uintptr_t)(PTR)) | TAG))
 #define AG_UNTAG_PTR(TYPE, PTR)    ((TYPE*)(((uintptr_t)(PTR)) & ~3))
 
-inline AgHead* ag_head(AgObject* obj) { return ((AgHead*)obj) - 1; }
-bool           ag_leak_detector_ok();
+#define ag_head(OBJ) ((AgObject*)(OBJ))
+#define AG_HEAD_SIZE 0
+
+bool  ag_leak_detector_ok();
 
 size_t ag_leak_detector_counter = 0;
 size_t ag_current_allocated = 0;
@@ -106,7 +108,7 @@ void ag_release(AgObject* obj) {
 		ag_release_weak(wb);
 	}
 	((AgVmt*)(ag_head(obj)->dispatcher))[-1].dispose(obj);
-	ag_free((AgHead*)(obj) - 1);
+	ag_free(ag_head(obj));
 }
 
 AgObject* ag_retain(AgObject* obj) {
@@ -121,13 +123,13 @@ AgObject* ag_retain(AgObject* obj) {
 }
 
 AgObject* ag_allocate_obj(size_t size) {
-	AgHead* r = (AgHead*) ag_alloc(size + sizeof(AgHead));
+	AgObject* r = (AgObject*) ag_alloc(size + AG_HEAD_SIZE);
 	if (!r) {  // todo: add more handling
 		exit(-42);
 	}
 	ag_zero_mem(r, size);
 	r->counter = AG_CTR_STEP | AG_CTR_WEAKLESS;
-	return r + 1;
+	return r;
 }
 
 AgObject* ag_copy(AgObject* src) {
@@ -172,9 +174,9 @@ AgObject* ag_copy_object_field(AgObject* src) {
 		return ag_retain(src);
 	}
 	AgVmt* vmt = ((AgVmt*)(ag_head(src)->dispatcher)) - 1;
-	AgHead* dh = (AgHead*) ag_alloc(vmt->instance_alloc_size + sizeof(AgHead));
+	AgObject* dh = (AgObject*) ag_alloc(vmt->instance_alloc_size + AG_HEAD_SIZE);
 	if (!dh) { exit(-42); }
-	ag_memcpy(dh, ag_head(src), vmt->instance_alloc_size + sizeof(AgHead));
+	ag_memcpy(dh, ag_head(src), vmt->instance_alloc_size + AG_HEAD_SIZE);
 	dh->counter = AG_CTR_STEP | AG_CTR_WEAKLESS;
 	vmt->copy_ref_fields((AgObject*)(dh + 1), src);
 	if ((ag_head(src)->counter & AG_CTR_WEAKLESS) == 0) { // has weak block

@@ -33,6 +33,8 @@ using ltm::pin;
 using std::uintptr_t;
 using dom::isa;
 
+const int AG_HEADER_OFFSET = 0; // -1 if dispatcher and counter to be accessed by negative offsets (which speeds up all ffi, but is incompatible with moronic LLVM debug info)
+
 #define AK_STR(X) #X
 #define DUMP(X) dump(AK_STR(X), X)
 template <typename T>
@@ -104,7 +106,7 @@ struct MethodInfo {
 };
 
 struct ClassInfo {
-	llvm::StructType* fields = nullptr; // Only fields. To access dispatcher or counter: cast to obj_ptr and apply offset-1
+	llvm::StructType* fields = nullptr; // header{disp, counter} + fields. To access dispatcher or counter
 										// obj_ptr{dispatcher_fn*, counter}; where dispatcher_fn void*(uint64_t interface_and_method_id)
 										// to access vmt: cast dispatcher_fn to vmt and apply offset -1
 	llvm::StructType* vmt = nullptr;       // only for class { (dispatcher_fn_used_as_id*, methods*)*, copier_fn*, disposer_fn*, instance_size, vmt_size};
@@ -274,32 +276,42 @@ struct Generator : ast::ActionScanner {
 			true, "", 0);
 		di_double = di_builder->createBasicType("double", 64, llvm::dwarf::DW_ATE_float);
 		di_int = di_builder->createBasicType("int", 64, llvm::dwarf::DW_ATE_signed);
-		di_obj_variants = di_builder->createVariantPart(
+		auto obj_struct = di_builder->createStructType(
 			di_cu, "_obj", di_cu->getFile(),
-			0, 0, 0,
-			llvm::DINode::DIFlags::FlagPublic,
-			di_builder->createMemberType(di_cu, "_cls_id", di_cu->getFile(), 0, 64, 0, -64 * 2, llvm::DINode::DIFlags::FlagZero, di_int),
-			di_builder->getOrCreateArray({}));
-		di_obj_ptr = di_builder->createPointerType(di_obj_variants, 64);
+			0, 2 * 64, 0,
+			llvm::DINode::DIFlags::FlagZero, nullptr,
+			di_builder->getOrCreateArray({
+				di_builder->createMemberType(nullptr, "disp", nullptr,    0, 64, 0, 0, llvm::DINode::DIFlags::FlagZero, di_int),
+				di_builder->createMemberType(nullptr, "counter", nullptr, 0, 64, 0, 64, llvm::DINode::DIFlags::FlagZero, di_int),
+				di_obj_variants = di_builder->createVariantPart(
+					nullptr, "_obj_fields", nullptr,
+					0, 0, 0,
+					llvm::DINode::DIFlags::FlagZero,
+					di_builder->createMemberType(nullptr, "_cls_id", nullptr, 0, 64, 0, 0, llvm::DINode::DIFlags::FlagZero, di_int),
+					di_builder->getOrCreateArray({})
+				)
+			})
+		);
+		di_obj_ptr = di_builder->createPointerType(
+			obj_struct,
+			64);
 		di_weak_ptr = di_builder->createPointerType(
 			di_builder->createStructType(
 				di_cu, "_weak", di_cu->getFile(),
 				0, 3 * 64, 0,
-				llvm::DINode::DIFlags::FlagPublic, nullptr,
+				llvm::DINode::DIFlags::FlagZero, nullptr,
 				di_builder->getOrCreateArray({
-					di_builder->createMemberType(di_cu, "target", di_cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagPublic, di_obj_ptr),
-					di_builder->createMemberType(di_cu, "counter", di_cu->getFile(), 0, 64, 0, 64, llvm::DINode::DIFlags::FlagPublic, di_int),
-					di_builder->createMemberType(di_cu, "org_ctr", di_cu->getFile(), 0, 64, 0, 64*2, llvm::DINode::DIFlags::FlagPublic, di_int) })),
+					di_builder->createMemberType(di_cu, "target", di_cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagZero, di_obj_ptr),
+					di_builder->createMemberType(di_cu, "counter", di_cu->getFile(), 0, 64, 0, 64, llvm::DINode::DIFlags::FlagZero, di_int),
+					di_builder->createMemberType(di_cu, "org_ctr", di_cu->getFile(), 0, 64, 0, 64*2, llvm::DINode::DIFlags::FlagZero, di_int) })),
 			64);
-		llvm::DIType* di_opt_int = di_builder->createPointerType(
-			di_builder->createStructType(
+		di_opt_int = di_builder->createStructType(
 				di_cu, "_opt_int", di_cu->getFile(),
 				0, 2 * 64, 0,
-				llvm::DINode::DIFlags::FlagPublic, nullptr,
+				llvm::DINode::DIFlags::FlagZero, nullptr,
 				di_builder->getOrCreateArray({
-					di_builder->createMemberType(di_cu, "opt", di_cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagPublic, di_int),
-					di_builder->createMemberType(di_cu, "val", di_cu->getFile(), 0, 64, 0, 64, llvm::DINode::DIFlags::FlagPublic, di_int)})),
-			64);
+					di_builder->createMemberType(di_cu, "opt", di_cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagZero, di_int),
+					di_builder->createMemberType(di_cu, "val", di_cu->getFile(), 0, 64, 0, 64, llvm::DINode::DIFlags::FlagZero, di_int)}));
 	}
 	[[noreturn]] void internal_error(ast::Node& n, const char* message) {
 		n.error("internal error: ", message);
@@ -466,7 +478,7 @@ struct Generator : ast::ActionScanner {
 		result->data = builder->CreateCall(str.constructor, {});
 		builder->CreateStore(
 			builder->CreateGlobalStringPtr(node.value),
-			builder->CreateStructGEP(str.fields, result->data, 0));
+			builder->CreateStructGEP(str.fields, result->data, 2));
 		result->lifetime = Val::Retained{};
 	}
 
@@ -495,7 +507,7 @@ struct Generator : ast::ActionScanner {
 				void on_cold_lambda(ast::TpColdLambda& type) override { result = gen->di_builder->createBasicType("void", 64, llvm::dwarf::DW_ATE_unsigned); }
 				void on_void(ast::TpVoid&) override { result = gen->di_builder->createBasicType("void", 64, llvm::dwarf::DW_ATE_unsigned); }
 				void on_optional(ast::TpOptional& type) {
-					if (isa<ast::TpVoid>(*type.wrapped)) result = gen->di_opt_int;
+					if (isa<ast::TpInt64>(*type.wrapped)) result = gen->di_opt_int;
 					else if (isa<ast::TpVoid>(*type.wrapped)) result = gen->di_int;
 					else type.wrapped->match(*this);
 				}
@@ -837,7 +849,7 @@ struct Generator : ast::ActionScanner {
 				auto entry_point = builder->CreateCall(
 					llvm::FunctionCallee(
 						dispatcher_fn_type,
-						builder->CreateLoad(ptr_type, builder->CreateConstGEP2_32(obj_struct, receiver, -1, 0))
+						builder->CreateLoad(ptr_type, builder->CreateConstGEP2_32(obj_struct, receiver, AG_HEADER_OFFSET, 0))
 					),
 					{ builder->getInt64(classes[method->cls].interface_ordinal | m_info.ordinal) });
 				result->data = builder->CreateCall(
@@ -852,7 +864,7 @@ struct Generator : ast::ActionScanner {
 							ptr_type,
 							builder->CreateConstGEP2_32(
 								vmt_type,
-								builder->CreateLoad(ptr_type, builder->CreateConstGEP2_32(obj_struct, receiver, -1, 0)),
+								builder->CreateLoad(ptr_type, builder->CreateConstGEP2_32(obj_struct, receiver, AG_HEADER_OFFSET, 0)),
 								-1,
 								m_info.ordinal))),
 					move(params));
@@ -1010,7 +1022,7 @@ struct Generator : ast::ActionScanner {
 			auto id = builder->CreateCall(
 				llvm::FunctionCallee(
 					dispatcher_fn_type,
-					builder->CreateLoad(ptr_type, builder->CreateConstGEP2_32(obj_struct, result->data, -1, 0))
+					builder->CreateLoad(ptr_type, builder->CreateConstGEP2_32(obj_struct, result->data, AG_HEADER_OFFSET, 0))
 				),
 				{ interface_ordinal });
 			*result = compile_if(
@@ -1022,7 +1034,7 @@ struct Generator : ast::ActionScanner {
 				[&] { return Val{ result->type, make_opt_none(result_type), Val::NonPtr{} }; });
 			return;
 		}
-		auto vmt_ptr = builder->CreateLoad(ptr_type, builder->CreateConstGEP2_32(obj_struct, result->data, -1, 0));
+		auto vmt_ptr = builder->CreateLoad(ptr_type, builder->CreateConstGEP2_32(obj_struct, result->data, AG_HEADER_OFFSET, 0));
 		auto vmt_ptr_bb = builder->GetInsertBlock();
 		*result = compile_if(
 			*result_type,
@@ -1755,7 +1767,7 @@ struct Generator : ast::ActionScanner {
 		auto counter_addr = b.CreateConstGEP2_32(
 			obj_struct,
 			&*fn_retain->arg_begin(),
-			-1, 1);
+			AG_HEADER_OFFSET, 1);
 		auto counter = b.CreateLoad(tp_int_ptr, counter_addr);
 		auto bb_with_weak = llvm::BasicBlock::Create(*context, "", fn_retain);
 		auto bb_no_weak = llvm::BasicBlock::Create(*context, "", fn_retain);
@@ -1851,6 +1863,9 @@ struct Generator : ast::ActionScanner {
 					auto& base_fields = classes[cls->base_class].fields->elements();
 					for (auto& f : base_fields)
 						fields.push_back(f);
+				} else {
+					fields.push_back(ptr_type);    // disp
+					fields.push_back(tp_int_ptr);  // counter
 				}
 				for (auto& field : cls->fields) {
 					field->offset = fields.size();
@@ -1933,7 +1948,7 @@ struct Generator : ast::ActionScanner {
 				builder.getInt64(layout.getTypeAllocSize(info.fields)) });
 			builder.CreateCall(info.initializer, { result });
 			auto typed_result = builder.CreateBitOrPointerCast(result, info.fields->getPointerTo());
-			builder.CreateStore(cast_to(info.dispatcher, ptr_type), builder.CreateConstGEP2_32(obj_struct, result, -1, 0));
+			builder.CreateStore(cast_to(info.dispatcher, ptr_type), builder.CreateConstGEP2_32(obj_struct, result, AG_HEADER_OFFSET, 0));
 			builder.CreateRet(typed_result);
 			// Disposer
 			if (special_copy_and_dispose.count(cls) == 0) {
@@ -2127,9 +2142,9 @@ struct Generator : ast::ActionScanner {
 					classes[c].dispatcher,
 					llvm::DINode::DIFlags::FlagZero,
 					di_builder->createStructType(
-						di_cu,
+						nullptr,
 						std::to_string(c->name.pinned()),
-						di_cu->getFile(),
+						nullptr,
 						0,  // line
 						size,
 						0, // align

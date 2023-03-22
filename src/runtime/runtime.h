@@ -26,9 +26,7 @@ typedef struct {
 typedef struct {
 	void**    (*dispatcher) (uint64_t interface_and_method_ordinal);
 	uintptr_t counter;  // pointer_to_weak_block || (number_of_owns_and_refs * AG_CTR_STEP | AG_CTR_* flags)
-} AgHead;
-
-typedef void AgObject;
+} AgObject;
 
 typedef struct {
 	AgObject* target;
@@ -42,11 +40,13 @@ typedef struct {
 } AgStringBuffer;
 
 typedef struct {
+	AgObject        head;
 	const char*     ptr;    // points to current char
 	AgStringBuffer* buffer; // 0 for literals
 } AgString;
 
 typedef struct {
+	AgObject head;
 	uint64_t size;
 	int64_t* data;
 } AgBlob;

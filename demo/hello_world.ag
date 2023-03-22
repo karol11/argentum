@@ -11,7 +11,10 @@ class Test {
   }
 }
 
+oi = +1;
 t = Test;
+w=&t;
+x = 0;
 t.m(12, 4, "Hello World", (i){
-    t.fx += i;
+  x+=i;
 })
