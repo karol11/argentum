@@ -586,33 +586,30 @@ struct Generator : ast::ActionScanner {
 					di_captures.push_back(di_builder->createMemberType(
 						current_di_scope,
 						"parent",
-						current_di_scope->getFile(),
+						nullptr,
 						0, 64, 0, offset,
-						llvm::DINode::DIFlags::FlagPublic,
-						current_capture_di_type));
+						llvm::DINode::DIFlags::FlagZero,
+						di_builder->createPointerType(current_capture_di_type, 64)));
 					offset += 64;
 				}
 				for (auto& p : node.captured_locals) {
 					di_captures.push_back(di_builder->createMemberType(
-						current_di_scope,
+						nullptr,
 						std::to_string(p->name.pinned()),
-						current_di_scope->getFile(),
+						nullptr,
 						0, 64, 0, offset,
-						llvm::DINode::DIFlags::FlagPublic,
+						llvm::DINode::DIFlags::FlagZero,
 						to_di_type(*p->type)));
 					offset += to_llvm_type(*p->type)->getScalarSizeInBits();
 				}
-				current_capture_di_type = di_builder->createPointerType(
-					di_builder->createStructType(
-						current_di_scope,
-						ast::format_str("cap_", name),
-						current_di_scope->getFile(),
-						node.line, offset, 0,
-						llvm::DINode::DIFlags::FlagPublic,
-						nullptr,  // parent
-						di_builder->getOrCreateArray(move(di_captures))),
-					64
-				);
+				current_capture_di_type = di_builder->createStructType(
+					nullptr,
+					ast::format_str("cap_", name),
+					nullptr,
+					node.line, offset, 0,
+					llvm::DINode::DIFlags::FlagZero,
+					nullptr,  // parent
+					di_builder->getOrCreateArray(move(di_captures)));
 			}
 			vector<llvm::Type*> captured_local_types;
 			if (has_parent_capture_ptr)
@@ -629,6 +626,9 @@ struct Generator : ast::ActionScanner {
 			if (has_parent_capture_ptr) {
 				builder->CreateStore(&*current_function->arg_begin(), builder->CreateStructGEP(captures.back().second, capture, 0));
 			}
+			if (di_builder) {
+				insert_di_var("current_closure", node.line, node.pos, current_capture_di_type, capture);
+			}
 		}
 		for (auto& local : node.mutables) {
 			if (local->captured)
@@ -642,7 +642,7 @@ struct Generator : ast::ActionScanner {
 			if (isa<ast::MkLambda>(node)) {
 				if (closure_struct != nullptr) {
 					auto dbg_param_val = builder->CreateAlloca(ptr_type);
-					insert_di_var("closure", node.line, node.pos, current_capture_di_type, dbg_param_val);
+					insert_di_var("parent_closure", node.line, node.pos, di_builder->createPointerType(prev_capture_di_type, 64), dbg_param_val);
 					builder->CreateStore(&*param_iter, dbg_param_val);
 				}
 				++param_iter;
