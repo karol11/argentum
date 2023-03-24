@@ -69,20 +69,23 @@ struct Typer : ast::ActionMatcher {
 		}
 		node.type_ = node.body.back()->type();
 	}
+	void check_fn_proto(ast::Action& node, ast::TpFunction& fn, const vector<pin<ast::Action>>& actual_params, ast::Action& callee) {
+		if (fn.params.size() - 1 != actual_params.size())
+			node.error("Mismatched params count: expected ", fn.params.size() - 1, " provided ", actual_params.size(), " see function definition:", callee);
+		for (size_t i = 0; i < actual_params.size(); i++)
+			expect_type(actual_params[i], Type::promote(fn.params[i]), [&] { return ast::format_str("parameter ", i); });
+		node.type_ = Type::promote(fn.params.back());
+	}
 	void type_call(ast::Action& node, pin<ast::Action> callee, const vector<pin<ast::Action>>& actual_params) {
 		pin<Type> callee_type = callee->type();
 		if (auto as_fn = dom::strict_cast<ast::TpFunction>(callee_type)) {
-			if (as_fn->params.size() - 1 != actual_params.size())
-				node.error("Mismatched params count: expected ", as_fn->params.size() - 1, " provided ", actual_params.size(), " see function definition:", *callee);
-			for (size_t i = 0; i < actual_params.size(); i++)
-				expect_type(actual_params[i], Type::promote(as_fn->params[i]), [&] { return ast::format_str("fn parameter ", i); });
-			node.type_ = Type::promote(as_fn->params.back());
+			check_fn_proto(node, *as_fn, actual_params, *callee);
 		} else if (auto as_lambda = dom::strict_cast<ast::TpLambda>(callee_type)) {
-			if (as_lambda->params.size() - 1 != actual_params.size())
-				node.error("Mismatched params count: expected ", as_lambda->params.size() - 1, " provided ", actual_params.size(), " see function definition:", *callee);
-			for (size_t i = 0; i < actual_params.size(); i++)
-				expect_type(actual_params[i], Type::promote(as_lambda->params[i]), [&] { return ast::format_str("lambda parameter ", i); });
-			node.type_ = Type::promote(as_lambda->params.back());
+			check_fn_proto(node, *as_lambda, actual_params, *callee);
+		} else if (auto as_delegate = dom::strict_cast<ast::TpDelegate>(callee_type)) {
+			check_fn_proto(node, *as_delegate, actual_params, *callee);
+			if (!dom::isa<ast::MakeDelegate>(*callee))
+				node.type_ = ast->tp_optional(node.type_);
 		} else if (auto as_cold = dom::strict_cast<ast::TpColdLambda>(callee_type)) {
 			own<ast::TpLambda> lambda_type;
 			for (auto& weak_fn : as_cold->callees) {
@@ -168,7 +171,7 @@ struct Typer : ast::ActionMatcher {
 	void on_set_at_index(ast::SetAtIndex& node) override { handle_index_op(node, move(node.value), "setAt"); }
 	pin<ast::Function> type_fn(pin<ast::Function> fn) {
 		if (!fn->type_) {
-			bool is_method = dom::isa<ast::Method>(*fn);
+			bool is_method = dom::isa<ast::Method>(*fn) || dom::isa<ast::ImmediateDelegate>(*fn);
 			vector<own<ast::Type>> params;
 			for (size_t i = 0; i < fn->names.size(); i++) {
 				auto& p = fn->names[i];
@@ -179,7 +182,7 @@ struct Typer : ast::ActionMatcher {
 			}
 			params.push_back(find_type(fn->type_expression)->type());
 			fn->type_ = is_method
-				? ast->tp_lambda(move(params))  // TODO: introduce TpDelegate
+				? ast->tp_delegate(move(params))
 				: ast->tp_function(move(params));
 		}
 		return fn;
@@ -457,6 +460,17 @@ struct Typer : ast::ActionMatcher {
 			}
 		}
 		node.context_error(context, "Expected type: ", expected_type, " not ", actual_type);
+	}
+
+	void on_immediate_delegate(ast::ImmediateDelegate& node) override {
+		auto cls = ast->extract_class(find_type(node.base)->type());
+		if (!cls)
+			node.error("delegate should be connected to class pointer, not to ", node.base->type());
+		dom::strict_cast<ast::MkInstance>(node.names[0]->initializer)->cls = cls;
+		type_fn(&node);
+		for (auto& a : node.body)
+			find_type(a);
+		expect_type(node.body.back(), node.type_expression->type(), [] { return "checking immediate delegate result against declared type"; });
 	}
 
 	void process_method(own<ast::Method>& m) {

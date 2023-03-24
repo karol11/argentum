@@ -68,6 +68,7 @@ own<TypeWithFills> TpDouble::dom_type_;
 own<TypeWithFills> TpFunction::dom_type_;
 own<TypeWithFills> TpLambda::dom_type_;
 own<TypeWithFills> TpColdLambda::dom_type_;
+own<TypeWithFills> TpDelegate::dom_type_;
 own<TypeWithFills> TpVoid::dom_type_;
 own<TypeWithFills> TpOptional::dom_type_;
 own<TypeWithFills> TpClass::dom_type_;
@@ -76,6 +77,7 @@ own<TypeWithFills> TpWeak::dom_type_;
 own<TypeWithFills> Field::dom_type_;
 own<TypeWithFills> Method::dom_type_;
 own<TypeWithFills> Function::dom_type_;
+own<TypeWithFills> ImmediateDelegate::dom_type_;
 
 namespace {
 	template<typename CLS>
@@ -158,6 +160,11 @@ void initialize() {
 		->field("is_test", pin<CppField<Function, bool, &Function::is_platform>>::make(cpp_dom->mk_type(Kind::BOOL)))
 		->field("body", pin<CppField<Block, vector<own<Action>>, &Block::body>>::make(own_vector_type))
 		->field("params", pin<CppField<Block, vector<own<Var>>, &Block::names>>::make(own_vector_type));
+	ImmediateDelegate::dom_type_ = (new CppClassType<ImmediateDelegate>(cpp_dom, { "m0", "ImmediateDelegate" }))
+		->field("name", pin<CppField<Function, own<dom::Name>, &Function::name>>::make(atom_type))
+		->field("body", pin<CppField<Block, vector<own<Action>>, &Block::body>>::make(own_vector_type))
+		->field("params", pin<CppField<Block, vector<own<Var>>, &Block::names>>::make(own_vector_type))
+		->field("base", pin<CppField<ImmediateDelegate, own<Action>, &ImmediateDelegate::base>>::make(own_type));
 	Call::dom_type_ = (new CppClassType<Call>(cpp_dom, { "m0", "Call" }))
 		->field("callee", pin<CppField<Call, own<Action>, &Call::callee>>::make(own_type))
 		->field("params", pin<CppField<Call, vector<own<Action>>, &Call::params>>::make(own_vector_type));
@@ -195,6 +202,8 @@ void initialize() {
 	TpFunction::dom_type_ = (new CppClassType<TpFunction>(cpp_dom, { "m0", "Type", "Function" }))
 		->field("params", pin<CppField<TpFunction, vector<own<Type>>, &TpFunction::params>>::make(own_vector_type));
 	TpLambda::dom_type_ = (new CppClassType<TpLambda>(cpp_dom, { "m0", "Type", "Lambda" }))
+		->field("params", pin<CppField<TpFunction, vector<own<Type>>, &TpFunction::params>>::make(own_vector_type));
+	TpDelegate::dom_type_ = (new CppClassType<TpDelegate>(cpp_dom, { "m0", "Type", "Delegate" }))
 		->field("params", pin<CppField<TpFunction, vector<own<Type>>, &TpFunction::params>>::make(own_vector_type));
 	TpColdLambda::dom_type_ = (new CppClassType<TpColdLambda>(cpp_dom, { "m0", "Type", "ColdLambda" }))
 		->field("resolved", pin<CppField<TpColdLambda, own<Type>, &TpColdLambda::resolved>>::make(own_type));
@@ -250,6 +259,7 @@ void Call::match(ActionMatcher& matcher) { matcher.on_call(*this); }
 void GetAtIndex::match(ActionMatcher& matcher) { matcher.on_get_at_index(*this); }
 void SetAtIndex::match(ActionMatcher& matcher) { matcher.on_set_at_index(*this); }
 void MakeDelegate::match(ActionMatcher& matcher) { matcher.on_make_delegate(*this); }
+void ImmediateDelegate::match(ActionMatcher& matcher) { matcher.on_immediate_delegate(*this); }
 void MakeFnPtr::match(ActionMatcher& matcher) { matcher.on_make_fn_ptr(*this); }
 void ToIntOp::match(ActionMatcher& matcher) { matcher.on_to_int(*this); }
 void ToFloatOp::match(ActionMatcher& matcher) { matcher.on_to_float(*this); }
@@ -297,6 +307,7 @@ void ActionMatcher::on_call(Call& node) { on_unmatched(node); }
 void ActionMatcher::on_get_at_index(GetAtIndex& node) { on_unmatched(node); }
 void ActionMatcher::on_set_at_index(SetAtIndex& node) { on_unmatched(node); }
 void ActionMatcher::on_make_delegate(MakeDelegate& node) { on_unmatched(node); }
+void ActionMatcher::on_immediate_delegate(ImmediateDelegate& node) { on_unmatched(node); }
 void ActionMatcher::on_make_fn_ptr(MakeFnPtr& node) { on_unmatched(node); }
 void ActionMatcher::on_to_int(ToIntOp& node) { on_un_op(node); }
 void ActionMatcher::on_to_float(ToFloatOp& node) { on_un_op(node); }
@@ -355,6 +366,11 @@ void ActionScanner::on_set_at_index(SetAtIndex& node) {
 	fix(node.value);
 }
 void ActionScanner::on_make_delegate(MakeDelegate& node) { fix(node.base); }
+void ActionScanner::on_immediate_delegate(ImmediateDelegate& node) {
+	on_block(node);
+	fix(node.type_expression);
+	fix(node.base);
+}
 void ActionScanner::on_block(Block& node) {
 	for (auto& l : node.names)
 		fix(l->initializer);
@@ -372,6 +388,7 @@ void TpDouble::match(TypeMatcher& matcher) { matcher.on_double(*this); }
 void TpFunction::match(TypeMatcher& matcher) { matcher.on_function(*this); }
 void TpLambda::match(TypeMatcher& matcher) { matcher.on_lambda(*this); }
 void TpColdLambda::match(TypeMatcher& matcher) { matcher.on_cold_lambda(*this); }
+void TpDelegate::match(TypeMatcher& matcher) { matcher.on_delegate(*this); }
 void TpVoid::match(TypeMatcher& matcher) { matcher.on_void(*this); }
 void TpOptional::match(TypeMatcher& matcher) { matcher.on_optional(*this); }
 void TpClass::match(TypeMatcher& matcher) { matcher.on_class(*this); }
@@ -455,6 +472,15 @@ pin<TpLambda> Ast::tp_lambda(vector<own<Type>>&& params) {
 	auto r = pin<TpLambda>::make();
 	r->params = move(params);
 	lambda_types_.insert({&r->params, r});
+	return r;
+}
+pin<TpDelegate> Ast::tp_delegate(vector<own<Type>>&& params) {
+	auto at = delegate_types_.find(&params);
+	if (at != delegate_types_.end())
+		return at->second;
+	auto r = pin<TpDelegate>::make();
+	r->params = move(params);
+	delegate_types_.insert({ &r->params, r });
 	return r;
 }
 pin<TpOptional> Ast::tp_optional(pin<Type> wrapped) {
@@ -569,9 +595,9 @@ std::ostream& operator<< (std::ostream& dst, const ast::Node& n) {
 }
 
 std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t) {
-	struct type_matcher : ast::TypeMatcher {
+	struct TypePrinter : ast::TypeMatcher {
 		std::ostream& dst;
-		type_matcher(std::ostream& dst) : dst(dst) {}
+		TypePrinter(std::ostream& dst) : dst(dst) {}
 		void on_int64(ast::TpInt64& type) override { dst << "int"; }
 		void on_double(ast::TpDouble& type) override { dst << "double"; }
 		void on_void(ast::TpVoid& type) override { dst << "void"; }
@@ -604,6 +630,10 @@ std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t) {
 			else
 				dst << "(~)";
 		}
+		void on_delegate(ast::TpDelegate& type) override {
+			dst << "&";
+			out_proto(type);
+		}
 		void on_optional(ast::TpOptional& type) override {
 			if (dom::strict_cast<ast::TpVoid>(type.wrapped)) {
 				for (int i = type.depth; --i >= 0;)
@@ -625,8 +655,8 @@ std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t) {
 			dst << "&" << type.target->name.pinned();
 		}
 	};
-	type_matcher temp_to_pass_by_non_const_ref(dst);  // that's why I'm making my language.
-	t->match(temp_to_pass_by_non_const_ref);
+	TypePrinter printer(dst);
+	t->match(printer);
 	return dst;
 }
 

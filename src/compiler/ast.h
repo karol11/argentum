@@ -48,7 +48,7 @@ struct ActionMatcher;
 
 struct Type : dom::DomItem {
 	Type() { make_shared(); }
-	static own<Type>& promote(own<Type>& to_patch);
+	static own<Type>& promote(own<Type>& to_patch);  // replace cold lambda with a resolved lambda type
 	virtual void match(TypeMatcher& matcher) = 0;
 };
 struct TpInt64 : Type {
@@ -73,6 +73,10 @@ struct TpColdLambda : Type {  // never called not istantiated lambdas with unkno
 	vector<weak<struct MkLambda>> callees;
 	void match(TypeMatcher& matcher) override;
 	DECLARE_DOM_CLASS(TpColdLambda);
+};
+struct TpDelegate : TpFunction {
+	void match(TypeMatcher& matcher) override;
+	DECLARE_DOM_CLASS(TpDelegate);
 };
 struct TpVoid : Type {
 	void match(TypeMatcher& matcher) override;
@@ -139,6 +143,7 @@ struct TypeMatcher {
 	virtual void on_double(TpDouble& type) = 0;
 	virtual void on_function(TpFunction& type) = 0;
 	virtual void on_lambda(TpLambda& type) = 0;
+	virtual void on_delegate(TpDelegate& type) = 0;
 	virtual void on_cold_lambda(TpColdLambda& type) = 0;
 	virtual void on_void(TpVoid& type) = 0;
 	virtual void on_optional(TpOptional& type) =0;
@@ -179,7 +184,8 @@ struct Ast: dom::DomItem {
 	own<dom::Dom> dom;
 	unordered_map<const vector<own<Type>>*, own<TpLambda>, typelist_hasher, typelist_comparer> lambda_types_;
 	unordered_map<const vector<own<Type>>*, own<TpFunction>, typelist_hasher, typelist_comparer> function_types_;
-	unordered_map<own<Type>, vector<own<TpOptional>>> optional_types_;  // maps base types to all levels of its optionals
+	unordered_map<const vector<own<Type>>*, own<TpDelegate>, typelist_hasher, typelist_comparer> delegate_types_;
+	unordered_map<own<Type>, vector<own<TpOptional>>> optional_types_;  // maps base types to all levels of their optionals
 	unordered_map<own<dom::Name>, own<TpClass>> classes_by_names;
 	unordered_map<own<dom::Name>, weak<struct Function>> functions_by_names;
 	unordered_map<own<TpClass>, own<TpRef>> refs;
@@ -209,6 +215,7 @@ struct Ast: dom::DomItem {
 	pin<TpVoid> tp_void();
 	pin<TpFunction> tp_function(vector<own<Type>>&& params);
 	pin<TpLambda> tp_lambda(vector<own<Type>>&& params);
+	pin<TpDelegate> tp_delegate(vector<own<Type>>&& params);
 	pin<TpOptional> tp_optional(pin<Type> wrapped);
 	pin<Type> get_wrapped(pin<TpOptional> opt);
 	pin<TpRef> get_ref(pin<TpClass> target);
@@ -270,6 +277,12 @@ struct Function : MkLambda {  // Cannot be in the tree of ops. Resides in Ast::f
 	bool is_platform = false;
 	bool is_test = false;
 	DECLARE_DOM_CLASS(Function);
+};
+
+struct ImmediateDelegate : Function {
+	own<Action> base;
+	void match(ActionMatcher& matcher) override;
+	DECLARE_DOM_CLASS(ImmediateDelegate);
 };
 
 struct Method : Function {  // Cannot be in the tree of ops. Resides in TpClass::new_methods/overloads.
@@ -487,6 +500,7 @@ struct ActionMatcher {
 	virtual void on_get_at_index(GetAtIndex& node);
 	virtual void on_set_at_index(SetAtIndex& node);
 	virtual void on_make_delegate(MakeDelegate& node);
+	virtual void on_immediate_delegate(ImmediateDelegate& node);
 	virtual void on_make_fn_ptr(MakeFnPtr& node);
 	virtual void on_block(Block& node);
 	virtual void on_cast(CastOp& node);
@@ -529,10 +543,12 @@ struct ActionScanner : ActionMatcher {
 	void on_get_at_index(GetAtIndex& node) override;
 	void on_set_at_index(SetAtIndex& node) override;
 	void on_make_delegate(MakeDelegate& node) override;
+	void on_immediate_delegate(ImmediateDelegate& node) override;
 	void on_block(Block& node) override;
 	void on_set(Set& node) override;
 	void on_get_field(GetField& node) override;
 	void on_set_field(SetField& node) override;
+	// Function and Method are not parts of AST tree
 };
 
 template<typename T>

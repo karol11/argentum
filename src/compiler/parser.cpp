@@ -51,6 +51,7 @@ struct Parser {
 	int32_t line = 1;
 	const char* cur = nullptr;
 	unordered_set<pin<dom::Name>>& modules_in_dep_path;
+	unordered_map<pin<dom::Name>, pin<ast::ImmediateDelegate>> delegates;
 
 	Parser(pin<Ast> ast, pin<Name> module_name, unordered_set<pin<dom::Name>>& modules_in_dep_path)
 		: dom(ast->dom)
@@ -104,16 +105,18 @@ struct Parser {
 		}
 		expect("}");
 	}
-
-	pin<ast::Method> make_method(pin<dom::Name> name, pin<ast::TpClass> cls, bool is_interface) {
-		auto method = make<ast::Method>();
-		method->name = name;
+	void add_this_param(ast::Function& fn, pin<ast::TpClass> cls) {
 		auto this_param = make<ast::Var>();
-		method->names.push_back(this_param);
+		fn.names.push_back(this_param);
 		this_param->name = ast->dom->names()->get("this");
 		auto this_init = make<ast::MkInstance>();
 		this_init->cls = cls;
 		this_param->initializer = this_init;
+	}
+	pin<ast::Method> make_method(pin<dom::Name> name, pin<ast::TpClass> cls, bool is_interface) {
+		auto method = make<ast::Method>();
+		method->name = name;
+		add_this_param(*method, cls);
 		parse_fn_def(method);
 		if (is_interface != method->body.empty()) {
 			error(is_interface ? "empty" : "not empty", " body expected");
@@ -229,18 +232,6 @@ struct Parser {
 			r->p[1] = parse_type();
 			return r;
 		}
-		if (match("&")) {
-			auto r = make<ast::MkWeakOp>();
-			auto get = make<ast::Get>();
-			get->var_name = expect_domain_name("class or interface name");
-			r->p = get;
-			return r;
-		}
-		if (match("@")) {
-			auto get = make<ast::Get>();
-			get->var_name = expect_domain_name("class or interface name");
-			return get;
-		}
 		auto parse_params = [&](pin<ast::MkLambda> fn) {
 			if (!match(")")) {
 				for (;;) {
@@ -254,6 +245,23 @@ struct Parser {
 			fn->body.push_back(parse_type());
 			return fn;
 		};
+		if (match("&")) {
+			if (match("(")) {
+				auto r = make<ast::ImmediateDelegate>();
+				add_this_param(*r, nullptr);  // to be set at type resolution pass
+				return parse_params(r);
+			}
+			auto r = make<ast::MkWeakOp>();
+			auto get = make<ast::Get>();
+			get->var_name = expect_domain_name("class or interface name");
+			r->p = get;
+			return r;
+		}
+		if (match("@")) {
+			auto get = make<ast::Get>();
+			get->var_name = expect_domain_name("class or interface name");
+			return get;
+		}
 		if (match("fn")) {
 			expect("(");
 			return parse_params(make<ast::Function>());
@@ -267,7 +275,6 @@ struct Parser {
 			r->p = get;
 			return r;
 		}
-		// TODO &(T,T)T - delegate
 		error("Expected type name");
 	}
 
@@ -443,32 +450,44 @@ struct Parser {
 					r = gi;
 				}
 			} else if (match(".")) {
-				pin<ast::FieldRef> gf = make<ast::GetField>();
-				gf->field_name = expect_domain_name("field name");
-				if (auto op = match_set_op()) {
-					auto block = make_at_location<ast::Block>(*gf);
-					block->names.push_back(make_at_location<ast::Var>(*r));
-					block->names.back()->initializer = r;
-					auto field_base = make_at_location<ast::Get>(*gf);
-					field_base->var = block->names.back();
-					auto sf = make_at_location<ast::SetField>(*gf);
-					sf->field_name = gf->field_name;
-					sf->base = field_base;
-					gf->base = field_base;
-					sf->val = op;
-					op->p[0] = gf;
-					op->p[1] = parse_expression();
-					block->body.push_back(sf);
-					r = block;
+				if (match("&")) {
+					auto d = make<ast::ImmediateDelegate>();
+					d->base = r;
+					d->name = expect_domain_name("delegate name");
+					auto& d_ref = delegates[d->name];
+					if (d_ref)
+						error("duplicated delegate name, ", d->name.pinned(), " see ", *d_ref);
+					d_ref = d;
+					parse_fn_def(d);
+					r = d;
 				} else {
-					if (match(":=")) {
+					pin<ast::FieldRef> gf = make<ast::GetField>();
+					gf->field_name = expect_domain_name("field name");
+					if (auto op = match_set_op()) {
+						auto block = make_at_location<ast::Block>(*gf);
+						block->names.push_back(make_at_location<ast::Var>(*r));
+						block->names.back()->initializer = r;
+						auto field_base = make_at_location<ast::Get>(*gf);
+						field_base->var = block->names.back();
 						auto sf = make_at_location<ast::SetField>(*gf);
 						sf->field_name = gf->field_name;
-						sf->val = parse_expression();
-						gf = sf;
+						sf->base = field_base;
+						gf->base = field_base;
+						sf->val = op;
+						op->p[0] = gf;
+						op->p[1] = parse_expression();
+						block->body.push_back(sf);
+						r = block;
+					} else {
+						if (match(":=")) {
+							auto sf = make_at_location<ast::SetField>(*gf);
+							sf->field_name = gf->field_name;
+							sf->val = parse_expression();
+							gf = sf;
+						}
+						gf->base = r;
+						r = gf;
 					}
-					gf->base = r;
-					r = gf;
 				}
 			} else if (match(":=")) {
 				r = make_set_op(r, [&] { return parse_expression(); });

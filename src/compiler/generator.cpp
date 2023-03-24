@@ -148,6 +148,7 @@ struct Generator : ast::ActionScanner {
 	llvm::DIType* di_obj_ptr = nullptr;
 	llvm::DIType* di_weak_ptr = nullptr;
 	llvm::DIType* di_opt_int = nullptr;
+	llvm::DIType* di_delegate = nullptr;
 	llvm::DICompositeType* di_obj_variants = nullptr;
 
 	llvm::Function* current_function = nullptr;
@@ -160,8 +161,10 @@ struct Generator : ast::ActionScanner {
 	llvm::Type* tp_bool = nullptr;
 	llvm::Type* tp_opt_bool = nullptr;
 	llvm::Type* tp_opt_lambda = nullptr;
+	llvm::Type* tp_opt_delegate = nullptr;
 	llvm::Type* tp_int_ptr = nullptr;
 	llvm::StructType* lambda_struct = nullptr;
+	llvm::StructType* delegate_struct = nullptr;
 	llvm::StructType* obj_struct = nullptr;
 	llvm::StructType* weak_struct = nullptr;
 	llvm::StructType* obj_vmt_struct = nullptr;
@@ -203,7 +206,9 @@ struct Generator : ast::ActionScanner {
 		tp_opt_double = int_type;
 		tp_bool = llvm::Type::getInt1Ty(*context);
 		tp_opt_lambda = llvm::StructType::get(*context, { tp_int_ptr, tp_int_ptr });
+		tp_opt_delegate = tp_opt_lambda;
 		lambda_struct = llvm::StructType::get(*context, { ptr_type, ptr_type }); // context, entrypoint
+		delegate_struct = lambda_struct;  // also 2 ptrs, but (weak, entrypoint)
 		obj_struct = llvm::StructType::get(*context, { ptr_type, tp_int_ptr });
 		weak_struct = llvm::StructType::get(*context, { ptr_type, tp_int_ptr, tp_int_ptr });
 		empty_mtable = make_const_array("empty_mtable", { llvm::Constant::getNullValue(ptr_type) });
@@ -312,6 +317,13 @@ struct Generator : ast::ActionScanner {
 				di_builder->getOrCreateArray({
 					di_builder->createMemberType(di_cu, "opt", di_cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagZero, di_int),
 					di_builder->createMemberType(di_cu, "val", di_cu->getFile(), 0, 64, 0, 64, llvm::DINode::DIFlags::FlagZero, di_int)}));
+		di_delegate = di_builder->createStructType(
+			di_cu, "_delegate", di_cu->getFile(),
+			0, 2 * 64, 0,
+			llvm::DINode::DIFlags::FlagZero, nullptr,
+			di_builder->getOrCreateArray({
+				di_builder->createMemberType(di_cu, "weak", di_cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagZero, di_weak_ptr),
+				di_builder->createMemberType(di_cu, "fn", di_cu->getFile(), 0, 64, 0, 64, llvm::DINode::DIFlags::FlagZero, di_int) }));
 	}
 	[[noreturn]] void internal_error(ast::Node& n, const char* message) {
 		n.error("internal error: ", message);
@@ -362,13 +374,16 @@ struct Generator : ast::ActionScanner {
 		auto as_opt = dom::strict_cast<ast::TpOptional>(type);
 		if (as_opt)
 			type = as_opt->wrapped;
-		return dom::strict_cast<ast::TpClass>(type) || dom::strict_cast<ast::TpRef>(type) || dom::strict_cast<ast::TpWeak>(type);
+		return dom::strict_cast<ast::TpClass>(type) ||
+			dom::strict_cast<ast::TpRef>(type) ||
+			dom::strict_cast<ast::TpWeak>(type) ||
+			dom::strict_cast<ast::TpDelegate>(type);
 	}
 	bool is_weak(pin<ast::Type> type) {
 		auto as_opt = dom::strict_cast<ast::TpOptional>(type);
 		if (as_opt)
 			type = as_opt->wrapped;
-		return dom::strict_cast<ast::TpWeak>(type);
+		return dom::strict_cast<ast::TpWeak>(type) || dom::strict_cast<ast::TpDelegate>(type);
 	}
 
 	void dispose_val(Val&& val) {
@@ -514,6 +529,7 @@ struct Generator : ast::ActionScanner {
 				void on_class(ast::TpClass& type) override { result = gen->di_obj_ptr; }
 				void on_ref(ast::TpRef& type) override { result = gen->di_obj_ptr; }
 				void on_weak(ast::TpWeak& type) override { result = gen->di_weak_ptr; }
+				void on_delegate(ast::TpDelegate& type) override { result = gen->di_delegate; }
 			};
 			DiTypeMatcher matcher(this);
 			tp.match(matcher);
@@ -548,7 +564,7 @@ struct Generator : ast::ActionScanner {
 			insert_di_var(std::to_string(p->name.pinned()), p->line, p->pos, to_di_type(*p->type), data_addr);
 	}
 
-	void compile_fn_body(ast::MkLambda& node, string name, llvm::Type* closure_struct = nullptr) {
+	void compile_fn_body(ast::MkLambda& node, string di_name, llvm::Type* closure_struct = nullptr) {
 		unordered_map<weak<ast::Var>, llvm::Value*> outer_locals;
 		unordered_map<weak<ast::Var>, int> outer_capture_offsets = capture_offsets;
 		swap(outer_locals, locals);
@@ -562,7 +578,7 @@ struct Generator : ast::ActionScanner {
 			if (auto di_file = di_files[node.module_name]) {
 				auto sub = di_builder->createFunction(
 					di_cu,
-					name,
+					di_name,
 					"",  // linkage name
 					di_file,
 					node.line,
@@ -604,7 +620,7 @@ struct Generator : ast::ActionScanner {
 				}
 				current_capture_di_type = di_builder->createStructType(
 					nullptr,
-					ast::format_str("cap_", name),
+					ast::format_str("cap_", di_name),
 					nullptr,
 					node.line, offset, 0,
 					llvm::DINode::DIFlags::FlagZero,
@@ -823,11 +839,53 @@ struct Generator : ast::ActionScanner {
 		*result = handle_block(node, Val{});
 	}
 	void on_make_delegate(ast::MakeDelegate& node) override {
-		internal_error(node, "delegates aren't supported yet");
+		auto base = compile(node.base);
+		auto method = node.method->base.pinned();
+		auto m_ordinal = methods[method].ordinal;
+		auto disp = builder->CreateLoad(ptr_type, builder->CreateConstGEP2_32(obj_struct, base.data, AG_HEADER_OFFSET, 0));
+		result->data = builder->CreateInsertValue(
+			builder->CreateInsertValue(
+				llvm::UndefValue::get(delegate_struct),
+				builder->CreateCall(fn_mk_weak, { base.data }),
+				{ 0 }),
+			method->cls->is_interface
+				? (llvm::Value*) builder->CreateCall(
+					llvm::FunctionCallee(dispatcher_fn_type, disp),
+					{ builder->getInt64(classes[method->cls].interface_ordinal | m_ordinal) })
+				: (llvm::Value*) builder->CreateLoad(
+					ptr_type,
+					builder->CreateConstGEP2_32(classes[method->cls].vmt, disp, -1, m_ordinal)),
+			{ 1 });
+		result->lifetime = Val::Retained{};
+		dispose_val(move(base));
 	}
+
+	void on_immediate_delegate(ast::ImmediateDelegate& node) override {
+		auto dl_fn = llvm::Function::Create(
+			function_to_llvm_fn(node, node.type()),
+			llvm::Function::InternalLinkage,
+			ast::format_str("ag_dl_", node.name.pinned()),
+			module.get());
+		auto prev_fn = current_function;
+		current_function = dl_fn;
+		compile_fn_body(node, ast::format_str("dl_", node.name.pinned()));
+		current_function = prev_fn;
+		auto base = compile(node.base);
+		result->data = builder->CreateInsertValue(
+			builder->CreateInsertValue(
+				llvm::UndefValue::get(delegate_struct),
+				builder->CreateCall(fn_mk_weak, { base.data }),
+				{ 0 }),
+			dl_fn,
+			{ 1 });
+		result->lifetime = Val::Retained{};
+		dispose_val(move(base));
+	}
+
 	void on_make_fn_ptr(ast::MakeFnPtr& node) {
 		result->data = functions[node.fn];
 	}
+
 	void on_call(ast::Call& node) override {
 		vector<llvm::Value*> params;
 		vector<Val> to_dispose;
@@ -856,19 +914,48 @@ struct Generator : ast::ActionScanner {
 					llvm::FunctionCallee(m_info.type, entry_point),
 					move(params));
 			} else {
-				auto vmt_type = classes[method->cls].vmt;
 				result->data = builder->CreateCall(
 					llvm::FunctionCallee(
 						m_info.type,
 						builder->CreateLoad(  // load ptr to fn
 							ptr_type,
 							builder->CreateConstGEP2_32(
-								vmt_type,
+								classes[method->cls].vmt,
 								builder->CreateLoad(ptr_type, builder->CreateConstGEP2_32(obj_struct, receiver, AG_HEADER_OFFSET, 0)),
 								-1,
 								m_info.ordinal))),
 					move(params));
 			}
+		} else if (auto as_delegate_type = dom::strict_cast<ast::TpDelegate>(node.callee->type())) {
+			auto result_type = dom::strict_cast<ast::TpOptional>(node.type());
+			to_dispose.push_back(compile(node.callee));
+			llvm::Value* retained_receiver_pin = builder->CreateCall(fn_deref_weak,
+				{ builder->CreateExtractValue(to_dispose.back().data, {0}) });
+			params.push_back(retained_receiver_pin); 
+			auto pt = as_delegate_type->params.begin();
+			for (auto& p : node.params) {
+				to_dispose.push_back(comp_to_persistent(p));
+				params.push_back(cast_to(to_dispose.back().data, to_llvm_type(**(pt++))));
+			}
+			*result = compile_if(
+				*result_type,
+				builder->CreateCmp(llvm::CmpInst::Predicate::ICMP_NE,
+					params.front(),
+					llvm::ConstantInt::get(tp_int_ptr, 0)),
+				[&] {
+					return Val{
+						result->type,
+						make_opt_val(
+							builder->CreateCall(
+								llvm::FunctionCallee(
+									lambda_to_llvm_fn(*node.callee, node.callee->type()),
+									builder->CreateExtractValue(to_dispose.back().data, {1})),
+								move(params)),
+							result_type),
+						Val::NonPtr{} };
+				},
+				[&] { return Val{ result->type, make_opt_none(result_type), Val::NonPtr{} }; });
+			build_release(retained_receiver_pin, false);
 		} else {
 			bool is_fn = isa<ast::TpFunction>(*node.callee->type());
 			if (!is_fn)
@@ -1104,10 +1191,8 @@ struct Generator : ast::ActionScanner {
 			void on_int64(ast::TpInt64& type) override { compare_scalar(); }
 			void on_double(ast::TpDouble& type) override { gen.result->data = gen.builder->CreateCmp(llvm::CmpInst::Predicate::FCMP_OEQ, lhs, rhs); }
 			void on_function(ast::TpFunction& type) override { compare_scalar(); }
-			void on_lambda(ast::TpLambda& type) override {
-				compare_pair();
-				//TODO: possible add cast: gen.builder->CreatePtrToInt(gen.builder->CreateExtractValue(lhs, { 1 }), gen.tp_int_ptr),
-			}
+			void on_lambda(ast::TpLambda& type) override { compare_pair(); }
+			void on_delegate(ast::TpDelegate& type) override { compare_pair(); }
 			void on_cold_lambda(ast::TpColdLambda& type) override {}
 			void on_void(ast::TpVoid& type) override { gen.result->data = gen.builder->getInt1(0); }
 			void on_optional(ast::TpOptional& type) override {
@@ -1118,6 +1203,7 @@ struct Generator : ast::ActionScanner {
 					void on_double(ast::TpDouble& type) override { c.compare_scalar(); }
 					void on_function(ast::TpFunction& type) override { c.compare_scalar(); }
 					void on_lambda(ast::TpLambda& type) override { c.compare_pair(); }
+					void on_delegate(ast::TpDelegate& type) override { c.compare_pair(); }
 					void on_cold_lambda(ast::TpColdLambda& type) override { c.compare_scalar(); }
 					void on_void(ast::TpVoid& type) override { c.compare_scalar(); }
 					void on_optional(ast::TpOptional& type) override { assert(false); }
@@ -1198,6 +1284,17 @@ struct Generator : ast::ActionScanner {
 			Generator* gen;
 			int depth;
 			ValMaker(llvm::Value* val, Generator* gen, int depth) : val(val), gen(gen), depth(depth) {}
+			void pack_to_int_ptr_pair() {
+				val = depth > 0
+					? val
+					: gen->builder->CreateInsertValue(
+						gen->builder->CreateInsertValue(
+							llvm::UndefValue::get(gen->tp_opt_lambda),
+							gen->builder->CreateBitCast(gen->builder->CreateExtractValue(val, { 0 }), gen->tp_int_ptr),
+							{ 0 }),
+						gen->builder->CreateBitCast(gen->builder->CreateExtractValue(val, { 1 }), gen->tp_int_ptr),
+						{ 1 });
+			}
 			void on_int64(ast::TpInt64& type) override {
 				val = depth > 0
 					? val
@@ -1219,17 +1316,8 @@ struct Generator : ast::ActionScanner {
 					? val
 					: gen->builder->CreatePtrToInt(val, gen->tp_int_ptr);
 			}
-			void on_lambda(ast::TpLambda& type) override {
-				val = depth > 0
-					? val
-					: gen->builder->CreateInsertValue(
-						gen->builder->CreateInsertValue(
-							llvm::UndefValue::get(gen->tp_opt_lambda),
-							gen->builder->CreateBitCast(gen->builder->CreateExtractValue(val, {0}), gen->tp_int_ptr),
-							{ 0 }),
-						gen->builder->CreateBitCast(gen->builder->CreateExtractValue(val, { 1 }), gen->tp_int_ptr),
-						{ 1 });
-			}
+			void on_lambda(ast::TpLambda& type) override { pack_to_int_ptr_pair(); }
+			void on_delegate(ast::TpDelegate& type) override { pack_to_int_ptr_pair(); }
 			void on_cold_lambda(ast::TpColdLambda& type) override {
 				val = depth > 0
 					? val
@@ -1268,6 +1356,15 @@ struct Generator : ast::ActionScanner {
 			Generator* gen;
 			int depth;
 			NoneMaker(Generator* gen, int depth) : gen(gen), depth(depth) {}
+			void make_int_ptr_pair() {
+				val = gen->builder->CreateInsertValue(
+					gen->builder->CreateInsertValue(
+						llvm::UndefValue::get(gen->tp_opt_lambda),
+						llvm::ConstantInt::get(gen->tp_int_ptr, depth),
+						{ 0 }),
+					llvm::ConstantInt::get(gen->tp_int_ptr, 0),
+					{ 1 });
+			}
 			void on_int64(ast::TpInt64& type) override {
 				val = gen->builder->CreateInsertValue(
 					gen->builder->CreateInsertValue(
@@ -1278,18 +1375,9 @@ struct Generator : ast::ActionScanner {
 					{ 1 });
 			}
 			void on_double(ast::TpDouble& type) override { val = llvm::ConstantInt::get(gen->tp_opt_double, depth); }
-			void on_function(ast::TpFunction& type) override {
-				val = llvm::ConstantInt::get(gen->tp_int_ptr, depth);
-			}
-			void on_lambda(ast::TpLambda& type) override {
-				val = gen->builder->CreateInsertValue(
-					gen->builder->CreateInsertValue(
-						llvm::UndefValue::get(gen->tp_opt_lambda),
-						llvm::ConstantInt::get(gen->tp_int_ptr, depth),
-						{ 0 }),
-					llvm::ConstantInt::get(gen->tp_int_ptr, 0),
-					{ 1 });
-			}
+			void on_function(ast::TpFunction& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
+			void on_lambda(ast::TpLambda& type) override { make_int_ptr_pair(); }
+			void on_delegate(ast::TpDelegate& type) override { make_int_ptr_pair(); }
 			void on_cold_lambda(ast::TpColdLambda& type) override { val = gen->builder->getInt8(depth ? depth + 1 : 0); }
 			void on_void(ast::TpVoid& type) override { val = depth == 0 ? gen->builder->getInt1(false) : gen->builder->getInt8(depth + 1); }
 			void on_optional(ast::TpOptional& type) override { assert(false); }
@@ -1324,6 +1412,11 @@ struct Generator : ast::ActionScanner {
 					llvm::ConstantInt::get(gen->tp_int_ptr, depth));
 			}
 			void on_lambda(ast::TpLambda& type) override {
+				val = gen->builder->CreateICmpNE(
+					gen->builder->CreateExtractValue(val, { 0 }),
+					llvm::ConstantInt::get(gen->tp_int_ptr, depth));
+			}
+			void on_delegate(ast::TpDelegate& type) override {
 				val = gen->builder->CreateICmpNE(
 					gen->builder->CreateExtractValue(val, { 0 }),
 					llvm::ConstantInt::get(gen->tp_int_ptr, depth));
@@ -1368,6 +1461,17 @@ struct Generator : ast::ActionScanner {
 			Generator* gen;
 			int depth;
 			ValMaker(llvm::Value* val, Generator* gen, int depth) : val(val), gen(gen), depth(depth) {}
+			void handle_ptr_pair_struct(llvm::StructType* struct_tp) {
+				if (depth == 0) {
+					val = gen->builder->CreateInsertValue(
+						gen->builder->CreateInsertValue(
+							llvm::UndefValue::get(struct_tp),
+							gen->builder->CreateBitOrPointerCast(gen->builder->CreateExtractValue(val, { 0 }), gen->ptr_type),
+							{ 0 }),
+						gen->builder->CreateBitOrPointerCast(gen->builder->CreateExtractValue(val, { 1 }), gen->ptr_type),
+						{ 1 });
+				}
+			}
 			void on_int64(ast::TpInt64& type) override {
 				val = depth > 0
 					? val
@@ -1383,18 +1487,8 @@ struct Generator : ast::ActionScanner {
 					? val
 					: gen->builder->CreateBitOrPointerCast(val, gen->to_llvm_type(type));
 			}
-			void on_lambda(ast::TpLambda& type) override {
-				if (depth == 0) {
-					auto lambda_type = static_cast<llvm::StructType*>(gen->to_llvm_type(type));
-					val = gen->builder->CreateInsertValue(
-							gen->builder->CreateInsertValue(
-								llvm::UndefValue::get(lambda_type),
-								gen->builder->CreateBitOrPointerCast(gen->builder->CreateExtractValue(val, { 0 }), gen->ptr_type),
-								{ 0 }),
-							gen->builder->CreateBitOrPointerCast(gen->builder->CreateExtractValue(val, { 1 }), lambda_type->getElementType(1)),
-							{ 1 });
-				}
-			}
+			void on_lambda(ast::TpLambda& type) override { handle_ptr_pair_struct(gen->lambda_struct); }
+			void on_delegate(ast::TpDelegate& type) override { handle_ptr_pair_struct(gen->delegate_struct); }
 			void on_cold_lambda(ast::TpColdLambda& type) override {
 				val = depth > 0
 					? val
@@ -1620,6 +1714,7 @@ struct Generator : ast::ActionScanner {
 			void on_double(ast::TpDouble& type) override { result = gen->double_type; }
 			void on_function(ast::TpFunction& type) override { result = gen->ptr_type; }
 			void on_lambda(ast::TpLambda& type) override { result = gen->lambda_struct; }
+			void on_delegate(ast::TpDelegate& type) override { result = gen->delegate_struct; }
 			void on_cold_lambda(ast::TpColdLambda& type) override { type.resolved->match(*this); }
 			void on_void(ast::TpVoid&) override { result = gen->void_type; }
 			void on_optional(ast::TpOptional& type) {
@@ -1633,6 +1728,7 @@ struct Generator : ast::ActionScanner {
 					void on_double(ast::TpDouble& type) override { result = gen->tp_opt_double; }
 					void on_function(ast::TpFunction& type) override { result = gen->tp_int_ptr; }
 					void on_lambda(ast::TpLambda& type) override { result = gen->tp_opt_lambda; }
+					void on_delegate(ast::TpDelegate& type) override { result = gen->tp_opt_delegate; }
 					void on_cold_lambda(ast::TpColdLambda& type) override { result = gen->tp_opt_bool; }
 					void on_void(ast::TpVoid&) override { result = depth == 0 ? gen->tp_bool : gen->tp_opt_bool; }
 					void on_optional(ast::TpOptional& type) { assert(false); };

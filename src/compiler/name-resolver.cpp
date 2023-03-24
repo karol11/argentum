@@ -162,10 +162,10 @@ struct NameResolver : ast::ActionScanner {
 		for (auto& t : ast->tests_by_names)
 			fix_fn(t.second);
 	}
-	void fix_fn(own<ast::Function>& fn) {
+	void fix_fn(pin<ast::Function> fn) {
 		fn->lexical_depth = lambda_levels.size();
 		lambda_levels.push_back(fn);
-		this_var = dom::isa<ast::Method>(*fn)
+		this_var = dom::isa<ast::Method>(*fn) || dom::isa<ast::ImmediateDelegate>(*fn)
 			? fn->names.front().pinned()
 			: nullptr;
 		for (auto& p : fn->names) {
@@ -311,6 +311,14 @@ struct NameResolver : ast::ActionScanner {
 		lambda_levels.push_back(&node);
 		fix_with_params(node.names, node.body);
 		lambda_levels.pop_back();
+	}
+
+	void on_immediate_delegate(ast::ImmediateDelegate& node) override {
+		vector<pin<ast::MkLambda>> prev_ll;
+		swap(prev_ll, lambda_levels);
+		fix_fn(&node);
+		lambda_levels = move(prev_ll);
+		fix(node.base);
 	}
 };
 
