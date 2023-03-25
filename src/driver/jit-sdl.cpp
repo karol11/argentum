@@ -13,7 +13,7 @@
 
 using ltm::own;
 using ast::Ast;
-int64_t generate_and_execute(ltm::pin<Ast> ast, bool dump_ir);  // defined in `generator.h/cpp`
+int64_t generate_and_execute(ltm::pin<Ast> ast, bool add_debug_info, bool dump_ir);  // defined in `generator.h/cpp`
 
 void to_log(AgString* str) {
     std::cout << str->ptr << std::endl;
@@ -110,7 +110,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Checking types" << std::endl;
         check_types(ast);
         std::cout << "Building bitcode" << std::endl;
-        generate_and_execute(ast, false);
+        generate_and_execute(ast, false, false);  // no debug info, no dump
 //    } catch (void*) {  // debug-only  TODO: replace exceptions with `quick_exit`
     } catch (int) {
         return -1;

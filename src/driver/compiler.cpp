@@ -55,6 +55,7 @@ int main(int argc, char* argv[]) {
         auto target_triple = llvm::sys::getDefaultTargetTriple();
         bool output_bitcode = false;
         bool output_asm = false;
+        bool add_debug_info = false;
         string src_dir_name, start_module_name, out_file_name;
         for (auto arg = argv + 1, end = argv + argc; arg != end; arg++) {
             auto param = [&] {
@@ -73,6 +74,7 @@ int main(int argc, char* argv[]) {
                     "  -target <arch><sub>-<vendor>-<sys>-<abi>\n"
                     "          Example: x86_64-unknown-linux-gnu\n"
                     "                or x86_64-w64-microsoft-windows\n"
+                    "  -g : generate debug info\n"
                     "  -emit-llvm : output bitcode\n"
                     "  -S         : output asm file\n";
                 return 0;
@@ -80,6 +82,8 @@ int main(int argc, char* argv[]) {
                 output_asm = true;
             } else if (strcmp(*arg, "-emit-llvm") == 0) {
                 output_bitcode = true;
+            } else if (strcmp(*arg, "-g") == 0) {
+                add_debug_info = true;
             } else if (strcmp(*arg, "-target") == 0) {
                 target_triple = param();
             } else if (strcmp(*arg, "-o") == 0) {
@@ -116,7 +120,7 @@ int main(int argc, char* argv[]) {
         llvm::InitializeAllTargets();
         llvm::InitializeAllTargetMCs();
         llvm::InitializeAllAsmPrinters();
-        auto threadsafe_module = generate_code(ast);
+        auto threadsafe_module = generate_code(ast, add_debug_info);
         threadsafe_module.withModuleDo([&](llvm::Module& module) {
             std::error_code err_code;
             llvm::raw_fd_ostream out_file(out_file_name, err_code, llvm::sys::fs::OF_None);
