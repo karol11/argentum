@@ -29,6 +29,10 @@ struct NameResolver : ast::ActionScanner {
 	unordered_set<pin<ast::TpClass>> active_base_list;
 	vector<own<ast::TpClass>> classes_in_order;
 
+	NameResolver(pin<ast::Ast> ast, pin<dom::Dom> dom)
+		: dom(dom)
+		, ast(ast) {}
+
 	void order_class(pin<ast::TpClass> c) {
 		if (ordered_classes.count(c))
 			return;
@@ -63,10 +67,8 @@ struct NameResolver : ast::ActionScanner {
 		ordered_classes.insert(c);
 		classes_in_order.push_back(move(c));
 	}
-	NameResolver(pin<ast::Ast> ast, pin<dom::Dom> dom)
-		: dom(dom)
-		, ast(ast)
-	{
+
+	void fix_globals() {
 		for (auto& c : ast->classes) {
 			if (c)
 				order_class(c);
@@ -161,6 +163,7 @@ struct NameResolver : ast::ActionScanner {
 			fix_fn(f);
 		for (auto& t : ast->tests_by_names)
 			fix_fn(t.second);
+		fix(ast->entry_point);
 	}
 	void fix_fn(pin<ast::Function> fn) {
 		fn->lexical_depth = lambda_levels.size();
@@ -314,16 +317,27 @@ struct NameResolver : ast::ActionScanner {
 	}
 
 	void on_immediate_delegate(ast::ImmediateDelegate& node) override {
+		if (node.base) // can be null if used as type def
+			fix(node.base);
+	}
+
+	void fix_immediate_delegate(ast::ImmediateDelegate& node, pin<ast::TpClass> cls) {
 		vector<pin<ast::MkLambda>> prev_ll;
 		swap(prev_ll, lambda_levels);
+		this_var = node.names.front();
+		this_class = cls;
 		fix_fn(&node);
 		lambda_levels = move(prev_ll);
-		fix(node.base);
 	}
 };
 
 }  // namespace
 
 void resolve_names(pin<ast::Ast> ast) {
-	NameResolver(ast, ast->dom).fix(ast->entry_point);
+	NameResolver(ast, ast->dom).fix_globals();
+}
+
+void resolve_immediate_delegate(pin<ast::Ast> ast, ast::ImmediateDelegate& node, pin<ast::TpClass> cls)
+{
+	NameResolver(ast, ast->dom).fix_immediate_delegate(node, cls);
 }
