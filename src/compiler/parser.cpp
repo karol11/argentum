@@ -242,14 +242,15 @@ struct Parser {
 					expect(",");
 				}
 			}
-			fn->body.push_back(parse_type());
 			return fn;
 		};
 		if (match("&")) {
 			if (match("(")) {
-				auto r = make<ast::ImmediateDelegate>();
-				add_this_param(*r, nullptr);  // to be set at type resolution pass
-				return parse_params(r);
+				auto fn = make<ast::ImmediateDelegate>();
+				add_this_param(*fn, nullptr);  // to be set at type resolution pass
+				parse_params(fn);
+				fn->type_expression = parse_type();
+				return fn;
 			}
 			auto r = make<ast::MkWeakOp>();
 			auto get = make<ast::Get>();
@@ -264,10 +265,16 @@ struct Parser {
 		}
 		if (match("fn")) {
 			expect("(");
-			return parse_params(make<ast::Function>());
+			auto fn = make<ast::Function>();
+			parse_params(fn);
+			fn->type_expression = parse_type();
+			return fn;
 		}
-		if (match("("))
-			return parse_params(make<ast::MkLambda>());
+		if (match("(")) {
+			auto fn = parse_params(make<ast::MkLambda>());
+			fn->body.push_back(parse_type());
+			return fn;
+		}
 		if (auto name = match_domain_name("class or interface name")) {
 			auto r = make<ast::RefOp>();
 			auto get = make<ast::Get>();
@@ -458,6 +465,7 @@ struct Parser {
 					if (d_ref)
 						error("duplicated delegate name, ", d->name.pinned(), " see ", *d_ref);
 					d_ref = d;
+					add_this_param(*d, nullptr);  // this type to be patched at the type resolver pass
 					parse_fn_def(d);
 					r = d;
 				} else {
