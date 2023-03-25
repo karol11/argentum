@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <vector>
 #include <cassert>
+#include "name-resolver.h"
 
 namespace {
 
@@ -170,7 +171,7 @@ struct Typer : ast::ActionMatcher {
 	void on_get_at_index(ast::GetAtIndex& node) override { handle_index_op(node, nullptr, "getAt"); }
 	void on_set_at_index(ast::SetAtIndex& node) override { handle_index_op(node, move(node.value), "setAt"); }
 	pin<ast::Function> type_fn(pin<ast::Function> fn) {
-		if (!fn->type_) {
+		if (!fn->type_ || fn->type_ == type_in_progress) {
 			bool is_method = dom::isa<ast::Method>(*fn) || dom::isa<ast::ImmediateDelegate>(*fn);
 			vector<own<ast::Type>> params;
 			for (size_t i = 0; i < fn->names.size(); i++) {
@@ -387,6 +388,22 @@ struct Typer : ast::ActionMatcher {
 		assert(dom::strict_cast<ast::TpOptional>(node.type_));
 	}
 
+	void on_immediate_delegate(ast::ImmediateDelegate& node) override {
+		if (!node.base) {
+			type_fn(&node);
+			return;
+		}
+		auto cls = ast->extract_class(find_type(node.base)->type());
+		if (!cls)
+			node.error("delegate should be connected to class pointer, not to ", node.base->type());
+		resolve_immediate_delegate(ast, node, cls);
+		dom::strict_cast<ast::MkInstance>(node.names[0]->initializer)->cls = cls;
+		type_fn(&node);
+		for (auto& a : node.body)
+			find_type(a);
+		expect_type(node.body.back(), node.type_expression->type(), [] { return "checking immediate delegate result against declared type"; });
+	}
+
 	own<ast::Action>& find_type(own<ast::Action>& node) {
 		if (auto type = node->type()) {
 			if (type == type_in_progress)
@@ -460,17 +477,6 @@ struct Typer : ast::ActionMatcher {
 			}
 		}
 		node.context_error(context, "Expected type: ", expected_type, " not ", actual_type);
-	}
-
-	void on_immediate_delegate(ast::ImmediateDelegate& node) override {
-		auto cls = ast->extract_class(find_type(node.base)->type());
-		if (!cls)
-			node.error("delegate should be connected to class pointer, not to ", node.base->type());
-		dom::strict_cast<ast::MkInstance>(node.names[0]->initializer)->cls = cls;
-		type_fn(&node);
-		for (auto& a : node.body)
-			find_type(a);
-		expect_type(node.body.back(), node.type_expression->type(), [] { return "checking immediate delegate result against declared type"; });
 	}
 
 	void process_method(own<ast::Method>& m) {
