@@ -188,7 +188,7 @@ struct Generator : ast::ActionScanner {
 	unordered_map<weak<ast::MkLambda>, llvm::Function*> compiled_functions;
 	llvm::Constant* null_weak = nullptr;
 
-	Generator(ltm::pin<ast::Ast> ast, bool debug_info_mode = true)
+	Generator(ltm::pin<ast::Ast> ast, bool debug_info_mode)
 		: ast(ast)
 		, context(new llvm::LLVMContext)
 		, layout("")
@@ -348,28 +348,6 @@ struct Generator : ast::ActionScanner {
 		return r;
 	}
 
-	void build_retain(llvm::Value* ptr, bool is_weak) {
-		builder->CreateCall(
-			is_weak
-				? fn_retain_weak
-				: fn_retain,
-			{ cast_to(ptr, ptr_type) });  // sometimes it might be optional->int_ptr->i64
-	}
-
-	void build_release(llvm::Value* ptr, bool is_weak) {
-		builder->CreateCall(
-			is_weak
-				? fn_relase_weak
-				: fn_release,
-			{ cast_to(ptr, ptr_type) });  // sometimes it might be optional
-	}
-	
-	llvm::Value* remove_indirection(const ast::Var& var, llvm::Value* val) {
-		return var.is_mutable || var.captured
-			? builder->CreateLoad(to_llvm_type(*var.type),  val)
-			: val;
-	}
-
 	bool is_ptr(pin<ast::Type> type) {
 		auto as_opt = dom::strict_cast<ast::TpOptional>(type);
 		if (as_opt)
@@ -379,18 +357,46 @@ struct Generator : ast::ActionScanner {
 			dom::strict_cast<ast::TpWeak>(type) ||
 			dom::strict_cast<ast::TpDelegate>(type);
 	}
-	bool is_weak(pin<ast::Type> type) {
+
+	template<typename ON_PTR, typename ON_WEAK, typename ON_DELEGATE>
+	void handle_retention(pin<ast::Type> type, ON_PTR on_ptr, ON_WEAK on_weak, ON_DELEGATE on_delegate) {
 		auto as_opt = dom::strict_cast<ast::TpOptional>(type);
 		if (as_opt)
 			type = as_opt->wrapped;
-		return dom::strict_cast<ast::TpWeak>(type) || dom::strict_cast<ast::TpDelegate>(type);
+		if (isa<ast::TpWeak>(*type)) on_weak();
+		else if (isa<ast::TpDelegate>(*type)) on_delegate();
+		else if (isa<ast::TpClass>(*type) || isa<ast::TpRef>(*type)) on_ptr();
+	}
+
+	void build_retain(llvm::Value* ptr, pin<ast::Type> type) {
+		handle_retention(type,
+			[&] { builder->CreateCall(fn_retain, { cast_to(ptr, ptr_type) }); },  // sometimes it might be optional->int_ptr->i64 })
+			[&] { builder->CreateCall(fn_retain_weak, { cast_to(ptr, ptr_type) }); }, 
+			[&] { builder->CreateCall(fn_retain_weak, { builder->CreateExtractValue(ptr, {0}) }); });
+	}
+
+	void build_release_ptr(llvm::Value* ptr) {
+		builder->CreateCall(fn_release, { cast_to(ptr, ptr_type) });
+	}
+
+	void build_release(llvm::Value* ptr, pin<ast::Type> type) {
+		handle_retention(type,
+			[&] { builder->CreateCall(fn_release, { cast_to(ptr, ptr_type) }); },  // sometimes it might be optional->int_ptr->i64 })
+			[&] { builder->CreateCall(fn_relase_weak, { cast_to(ptr, ptr_type) }); },
+			[&] { builder->CreateCall(fn_relase_weak, { builder->CreateExtractValue(ptr, {0}) }); });
+	}
+	
+	llvm::Value* remove_indirection(const ast::Var& var, llvm::Value* val) {
+		return var.is_mutable || var.captured
+			? builder->CreateLoad(to_llvm_type(*var.type),  val)
+			: val;
 	}
 
 	void dispose_val(Val&& val) {
 		if (auto as_retained = get_if<Val::Retained>(&val.lifetime)) {
-			build_release(val.data, is_weak(val.type));
+			build_release(val.data, val.type);
 		} else if (auto as_rfield = get_if<Val::RField>(&val.lifetime)) {
-			build_release(as_rfield->to_release, false);
+			build_release_ptr(as_rfield->to_release);
 		}
 		if (val.optional_br) {
 			auto common_bb = llvm::BasicBlock::Create(*context, "", current_function);
@@ -442,8 +448,8 @@ struct Generator : ast::ActionScanner {
 
 	void persist_rfield(Val& val) {
 		if (auto as_rfield = get_if<Val::RField>(&val.lifetime)) {
-			build_retain(val.data, is_weak(val.type));
-			build_release(as_rfield->to_release, false);
+			build_retain(val.data, val.type);
+			build_release_ptr(as_rfield->to_release);
 			val.lifetime = Val::Retained{};
 		}
 	}
@@ -453,7 +459,7 @@ struct Generator : ast::ActionScanner {
 		persist_rfield(val);
 		if (auto as_temp = get_if<Val::Temp>(&val.lifetime)) {
 			if (!as_temp->var || (as_temp->var->is_mutable && retain_mutable_locals)) {
-				build_retain(val.data, is_weak(val.type));
+				build_retain(val.data, val.type);
 				val.lifetime = Val::Retained{};
 			}
 		}
@@ -463,7 +469,7 @@ struct Generator : ast::ActionScanner {
 	Val make_retained_or_non_ptr(Val&& src) {
 		auto r = persist_val(move(src));
 		if (get_if<Val::Temp>(&r.lifetime)) {
-			build_retain(r.data, is_weak(r.type));
+			build_retain(r.data, r.type);
 			r.lifetime = Val::Retained{};
 		}
 		return r;
@@ -681,7 +687,7 @@ struct Generator : ast::ActionScanner {
 				? true
 				: is_ptr(p->type);
 			if (p_is_ptr && p->is_mutable)
-				build_retain(&*param_iter, is_weak(p->type));
+				build_retain(&*param_iter, p->type);
 
 			if (p->captured) {
 				auto addr = builder->CreateStructGEP(captures.back().second, capture, capture_offsets[p]);
@@ -704,7 +710,7 @@ struct Generator : ast::ActionScanner {
 		auto result_as_temp = get_if<Val::Temp>(&fn_result.lifetime); // null if not temp
 		auto make_result_retained = [&](bool actual_retain = true) {
 			if (actual_retain)
-				build_retain(fn_result.data, is_weak(fn_result.type));
+				build_retain(fn_result.data, fn_result.type);
 			fn_result.lifetime = Val::Retained{};
 			result_as_temp = nullptr;
 		};
@@ -717,7 +723,7 @@ struct Generator : ast::ActionScanner {
 			if (result_as_temp && result_as_temp->var == p) {
 				make_result_retained(!p->is_mutable);
 			} else if (p->is_mutable && is_ptr(p->type)) {
-				build_release(remove_indirection(*p, locals[p]), is_weak(p->type));
+				build_release(remove_indirection(*p, locals[p]), p->type);
 			}
 		}
 		if (get_if<Val::Temp>(&fn_result.lifetime)) {  // if connected to outer local/param
@@ -819,12 +825,12 @@ struct Generator : ast::ActionScanner {
 		for (auto& p : node.names) {
 			if (temp_var == p) { // result is locked by the dying temp ptr.
 				if (!get_if<Val::Retained>(&val_iter->lifetime))
-					build_retain(r.data, is_weak(p->type));
+					build_retain(r.data, p->type);
 				r.type = temp_var->type;  // revert own->pin cohersion
 				r.lifetime = Val::Retained{};
 			} else if (is_ptr(p->type)) {
 				if (p->is_mutable) {
-					build_release(builder->CreateLoad(to_llvm_type(*p->type), val_iter->data), is_weak(p->type));
+					build_release(builder->CreateLoad(to_llvm_type(*p->type), val_iter->data), p->type);
 				} else {
 					dispose_val(move(*val_iter));
 				}
@@ -930,8 +936,8 @@ struct Generator : ast::ActionScanner {
 			auto result_type = dom::strict_cast<ast::TpOptional>(node.type());
 			to_dispose.push_back(compile(node.callee));
 			llvm::Value* retained_receiver_pin = builder->CreateCall(fn_deref_weak,
-				{ builder->CreateExtractValue(to_dispose.back().data, {0}) });
-			params.push_back(retained_receiver_pin); 
+				{ builder->CreateExtractValue(to_dispose.front().data, {0}) });
+			params.push_back(cast_to(retained_receiver_pin, ptr_type)); 
 			auto pt = as_delegate_type->params.begin();
 			for (auto& p : node.params) {
 				to_dispose.push_back(comp_to_persistent(p));
@@ -940,7 +946,7 @@ struct Generator : ast::ActionScanner {
 			*result = compile_if(
 				*result_type,
 				builder->CreateCmp(llvm::CmpInst::Predicate::ICMP_NE,
-					params.front(),
+					retained_receiver_pin,
 					llvm::ConstantInt::get(tp_int_ptr, 0)),
 				[&] {
 					return Val{
@@ -949,13 +955,13 @@ struct Generator : ast::ActionScanner {
 							builder->CreateCall(
 								llvm::FunctionCallee(
 									lambda_to_llvm_fn(*node.callee, node.callee->type()),
-									builder->CreateExtractValue(to_dispose.back().data, {1})),
+									builder->CreateExtractValue(to_dispose.front().data, {1})),
 								move(params)),
 							result_type),
 						Val::NonPtr{} };
 				},
 				[&] { return Val{ result->type, make_opt_none(result_type), Val::NonPtr{} }; });
-			build_release(retained_receiver_pin, false);
+			build_release_ptr(retained_receiver_pin);
 		} else {
 			bool is_fn = isa<ast::TpFunction>(*node.callee->type());
 			if (!is_fn)
@@ -1017,7 +1023,7 @@ struct Generator : ast::ActionScanner {
 		result->type = nullptr;
 		if (is_ptr(node.var->type)) {
 			auto addr = get_data_ref(node.var);
-			build_release(builder->CreateLoad(ptr_type, addr), is_weak(node.var->type));
+			build_release(builder->CreateLoad(ptr_type, addr), node.var->type);
 			builder->CreateStore(result->data, addr);
 			result->lifetime = Val::Temp{ node.var };
 		} else {
@@ -1048,9 +1054,7 @@ struct Generator : ast::ActionScanner {
 		auto class_fields = classes[ast->extract_class(base.type)].fields;
 		if (is_ptr(node.type())) {
 			auto addr = builder->CreateStructGEP(class_fields, base.data, node.field->offset);
-			build_release(
-				builder->CreateLoad(ptr_type, addr),
-				is_weak(node.type()));
+			build_release(builder->CreateLoad(ptr_type, addr), node.type());
 			builder->CreateStore(result->data, addr);
 			if (get_if<Val::Retained>(&base.lifetime)) {
 				result->lifetime = Val::RField{ base.data };
@@ -1678,7 +1682,8 @@ struct Generator : ast::ActionScanner {
 	}
 
 	llvm::FunctionType* lambda_to_llvm_fn(ast::Node& n, pin<ast::Type> tp) {
-		if (auto as_lambda = dom::strict_cast<ast::TpLambda>(tp)) {
+		if (isa<ast::TpLambda>(*tp) || isa<ast::TpDelegate>(*tp)) {
+			auto as_lambda = tp.cast<ast::TpLambda>();
 			auto& fn = lambda_fns[as_lambda];
 			if (!fn) {
 				vector<llvm::Type*> params{ ptr_type }; // closure struct or this
@@ -2065,7 +2070,7 @@ struct Generator : ast::ActionScanner {
 							builder.CreateLoad(
 								ptr_type,
 								builder.CreateStructGEP(info.fields, result, field->offset)),
-							is_weak(field->initializer->type()));
+							field->initializer->type());
 				}
 				builder.CreateRetVoid();
 			}
@@ -2099,20 +2104,35 @@ struct Generator : ast::ActionScanner {
 					if (auto as_opt = dom::strict_cast<ast::TpOptional>(type))
 						type = as_opt->wrapped;
 					auto as_class = dom::strict_cast<ast::TpClass>(type);
-					if (is_weak(type)) {
-						builder.CreateCall(fn_copy_weak_field, {
-							builder.CreateStructGEP(info.fields, dst, f->offset),
-							builder.CreateLoad(
-								ptr_type,
-								builder.CreateStructGEP(info.fields, src, f->offset)) });
-					} else if (is_ptr(type)) {
-						builder.CreateStore(
-							builder.CreateCall(fn_copy_object_field, {
+					handle_retention(type,
+						[&] { // ptr
+							builder.CreateStore(
+								builder.CreateCall(fn_copy_object_field, {
+									builder.CreateLoad(
+										ptr_type,
+										builder.CreateStructGEP(info.fields, src, f->offset)) }),
+								builder.CreateStructGEP(info.fields, dst, f->offset));
+						},
+						[&] { // weak
+							builder.CreateCall(fn_copy_weak_field, {
+								builder.CreateStructGEP(info.fields, dst, f->offset),
 								builder.CreateLoad(
 									ptr_type,
-									builder.CreateStructGEP(info.fields, src, f->offset)) }),
-							builder.CreateStructGEP(info.fields, dst, f->offset));
-					}
+									builder.CreateStructGEP(info.fields, src, f->offset)) });
+						},
+						[&] { // delegate
+							builder.CreateCall(fn_copy_weak_field, {
+								builder.CreateStructGEP(
+									delegate_struct,
+									builder.CreateStructGEP(info.fields, dst, f->offset),
+									0),
+								builder.CreateLoad(
+									ptr_type,
+									builder.CreateStructGEP(
+										delegate_struct,
+										builder.CreateStructGEP(info.fields, src, f->offset),
+										0)) });
+						});
 				}
 				builder.CreateRetVoid();
 			}
@@ -2250,7 +2270,8 @@ struct Generator : ast::ActionScanner {
 			}
 			di_builder->replaceArrays(di_obj_variants, di_builder->getOrCreateArray(move(cls_di_parts)));
 		}
-		di_builder->finalize();
+		if (di_builder)
+			di_builder->finalize();
 		module->addModuleFlag(llvm::Module::Warning, "Debug Info Version", llvm::DEBUG_METADATA_VERSION);
 		module->addModuleFlag(llvm::Module::Warning, "CodeView", 1);
 		return llvm::orc::ThreadSafeModule(std::move(module), std::move(context));
@@ -2267,8 +2288,8 @@ struct Generator : ast::ActionScanner {
 	}
 };
 
-llvm::orc::ThreadSafeModule generate_code(ltm::pin<ast::Ast> ast) {
-	Generator gen(ast);
+llvm::orc::ThreadSafeModule generate_code(ltm::pin<ast::Ast> ast, bool add_debug_info) {
+	Generator gen(ast, add_debug_info);
 	return gen.build();
 }
 
@@ -2313,11 +2334,11 @@ static const char* arg = "";
 static const char** argv = &arg;
 static int argc = 0;
 
-int64_t generate_and_execute(ltm::pin<ast::Ast> ast, bool dump_ir) {
+int64_t generate_and_execute(ltm::pin<ast::Ast> ast, bool add_debug_info, bool dump_ir) {
 	if (!llvm_inited)
 		llvm::InitLLVM X(argc, argv);
 	llvm_inited = true;
-	auto module = generate_code(ast);
+	auto module = generate_code(ast, add_debug_info);
 	std::cout << "LLVM Working" << std::endl;
 	return execute(module, *ast, dump_ir);
 }

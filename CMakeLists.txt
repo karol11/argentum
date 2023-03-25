@@ -85,4 +85,3 @@ add_library (ag_runtime STATIC
     src/runtime/runtime.h
     src/runtime/runtime.c
 )
-
