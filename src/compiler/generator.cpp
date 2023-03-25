@@ -868,7 +868,7 @@ struct Generator : ast::ActionScanner {
 
 	void on_immediate_delegate(ast::ImmediateDelegate& node) override {
 		auto dl_fn = llvm::Function::Create(
-			function_to_llvm_fn(node, node.type()),
+			lambda_to_llvm_fn(node, node.type()),
 			llvm::Function::InternalLinkage,
 			ast::format_str("ag_dl_", node.name.pinned()),
 			module.get());
@@ -1681,7 +1681,7 @@ struct Generator : ast::ActionScanner {
 		dispose_val(move(src));
 	}
 
-	llvm::FunctionType* lambda_to_llvm_fn(ast::Node& n, pin<ast::Type> tp) {
+	llvm::FunctionType* lambda_to_llvm_fn(ast::Node& n, pin<ast::Type> tp) {  // also delegate and method
 		if (isa<ast::TpLambda>(*tp) || isa<ast::TpDelegate>(*tp)) {
 			auto as_lambda = tp.cast<ast::TpLambda>();
 			auto& fn = lambda_fns[as_lambda];

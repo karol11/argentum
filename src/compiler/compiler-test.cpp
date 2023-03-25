@@ -46,21 +46,6 @@ void execute(const char* source_text, bool dump_all = false) {
     generate_and_execute(ast, false, dump_all);
 }
 
-TEST(Parser, Delegates) {
-    execute(R"(
-        class Cl{
-            x = 11;
-            m(int i) int { x + i }
-        }
-        fn f(&(int)int handler) int {
-            handler(42) : 0
-        }
-        c = Cl;
-        assert(53, f(c.m));
-        assert(31, f(c.&diff(int i) int { i - x }))
-    )");
-}
-
 TEST(Parser, Ints) {
     execute("assert(7, (2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1)))");
 }
@@ -636,6 +621,21 @@ TEST(Parser, SetOps) {
         c[4] /= 3; //     x = 5
         c.inc();   //     x=6
         assert(20, c.x + a)    // 20
+    )");
+}
+
+TEST(Parser, Delegates) {
+    execute(R"(
+        class Cl{
+            x = 11;
+            m(int i) int { x + i }
+        }
+        fn f(&(int)int handler) int {
+            handler(42) : 0
+        }
+        c = Cl;
+        assert(53, f(c.m));
+        assert(31, f(c.&diff(int i) int { i - x }))
     )");
 }
 
