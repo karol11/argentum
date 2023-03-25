@@ -178,11 +178,11 @@ AgObject* ag_copy_object_field(AgObject* src) {
 	if (!dh) { exit(-42); }
 	ag_memcpy(dh, ag_head(src), vmt->instance_alloc_size + AG_HEAD_SIZE);
 	dh->counter = AG_CTR_STEP | AG_CTR_WEAKLESS;
-	vmt->copy_ref_fields((AgObject*)(dh + 1), src);
+	vmt->copy_ref_fields((AgObject*)(dh + AG_HEAD_SIZE), src);
 	if ((ag_head(src)->counter & AG_CTR_WEAKLESS) == 0) { // has weak block
 		AgWeak* wb = (AgWeak*)(ag_head(src)->counter);
 		if (wb->target == src) { // no weak copied yet
-			wb->target = AG_TAG_PTR(AgObject, dh + 1, AG_TG_OBJECT);
+			wb->target = AG_TAG_PTR(AgObject, dh + AG_HEAD_SIZE, AG_TG_OBJECT);
 			dh->counter = (uintptr_t) ag_copy_head;
 			ag_copy_head = AG_TAG_PTR(AgObject, src, AG_TG_OBJECT);
 		} else {
@@ -199,14 +199,14 @@ AgObject* ag_copy_object_field(AgObject* src) {
 			}
 			dst_wb->wb_counter = dst_wb_locks;
 			dst_wb->target = (AgObject*) i;
-			wb->target = AG_TAG_PTR(AgObject, dh + 1, AG_TG_OBJECT);
+			wb->target = AG_TAG_PTR(AgObject, dh + AG_HEAD_SIZE, AG_TG_OBJECT);
 		}
 	}
 	while (ag_copy_fixers_count) {  // TODO retain objects in copy_fixers vector.
 		AgCopyFixer* f = ag_copy_fixers + --ag_copy_fixers_count;
 		f->fixer(f->data);
 	}
-	return (AgObject*)(dh + 1);
+	return (AgObject*)(dh + AG_HEAD_SIZE);
 }
 
 void ag_fn_sys_make_shared(AgObject* obj) {  // TODO: implement hierarchy freeze
