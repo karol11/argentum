@@ -6,7 +6,7 @@
 #include "compiler/name-resolver.h"
 #include "compiler/type-checker.h"
 
-int64_t generate_and_execute(ltm::pin<ast::Ast> ast, bool dump_ir);  // defined in `generator.h/cpp`
+int64_t generate_and_execute(ltm::pin<ast::Ast> ast, bool add_debug_info, bool dump_ir);  // defined in `generator.h/cpp`
 
 namespace {
 
@@ -43,10 +43,25 @@ void execute(const char* source_text, bool dump_all = false) {
     if (dump_all)
         std::cout << std::make_pair(ast.pinned(), ast->dom.pinned()) << "\n";
     foreign_test_function_state = 0;
-    generate_and_execute(ast, dump_all);
+    generate_and_execute(ast, false, dump_all);
 }
 
-TEST(Parser, Positive) {
+TEST(Parser, Delegates) {
+    execute(R"(
+        class Cl{
+            x = 11;
+            m(int i) int { x + i }
+        }
+        fn f(&(int)int handler) int {
+            handler(42) : 0
+        }
+        c = Cl;
+        assert(53, f(c.m));
+        assert(31, f(c.&diff(int i) int { i - x }))
+    )");
+}
+
+TEST(Parser, Ints) {
     execute("assert(7, (2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1)))");
 }
 
