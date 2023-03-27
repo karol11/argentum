@@ -503,45 +503,48 @@ struct Generator : ast::ActionScanner {
 		result->lifetime = Val::Retained{};
 	}
 
-	unordered_map<ast::Type*, llvm::DIType*> di_fn_types;
+	unordered_map<ast::Type*, llvm::DISubroutineType*> di_fn_types;
 
-	llvm::DIType* to_di_type(ast::Type& tp) {
+	llvm::DISubroutineType* to_di_fn_type(ast::Type& tp) {
 		auto& r = di_fn_types[&tp];
-		if (!r) {
-			struct DiTypeMatcher : ast::TypeMatcher {
-				Generator* gen;
-				llvm::DIType* result = nullptr;
-				DiTypeMatcher(Generator* gen) :gen(gen) {}
-				void on_int64(ast::TpInt64& type) override { result = gen->di_int; }
-				void on_double(ast::TpDouble& type) override { result = gen->di_double; }
-				void on_function(ast::TpFunction& type) override {
-					vector<llvm::Metadata*> params;
-					params.reserve(type.params.size());
-					params.push_back(gen->to_di_type(*type.params.back()));
-					for (auto& p : type.params) {
-						if (p != type.params.back())
-							params.push_back(gen->to_di_type(*p));
-					}
-					result = gen->di_builder->createSubroutineType(gen->di_builder->getOrCreateTypeArray(params));
-				}
-				void on_lambda(ast::TpLambda& type) override { on_function(type); }
-				void on_cold_lambda(ast::TpColdLambda& type) override { result = gen->di_builder->createBasicType("void", 64, llvm::dwarf::DW_ATE_unsigned); }
-				void on_void(ast::TpVoid&) override { result = gen->di_builder->createBasicType("void", 64, llvm::dwarf::DW_ATE_unsigned); }
-				void on_optional(ast::TpOptional& type) {
-					if (isa<ast::TpInt64>(*type.wrapped)) result = gen->di_opt_int;
-					else if (isa<ast::TpVoid>(*type.wrapped)) result = gen->di_int;
-					else type.wrapped->match(*this);
-				}
-				void on_class(ast::TpClass& type) override { result = gen->di_obj_ptr; }
-				void on_ref(ast::TpRef& type) override { result = gen->di_obj_ptr; }
-				void on_weak(ast::TpWeak& type) override { result = gen->di_weak_ptr; }
-				void on_delegate(ast::TpDelegate& type) override { result = gen->di_delegate; }
-			};
-			DiTypeMatcher matcher(this);
-			tp.match(matcher);
-			r = matcher.result;
+		if (!r && (isa<ast::TpFunction>(tp) || isa < ast::TpLambda>(tp) || isa<ast::TpDelegate>(tp))) {
+			auto type = (ast::TpFunction*) &tp;
+			vector<llvm::Metadata*> params;
+			params.reserve(type->params.size());
+			params.push_back(to_di_type(*type->params.back()));
+			for (auto& p : type->params) {
+				if (p != type->params.back())
+					params.push_back(to_di_type(*p));
+			}
+			r = di_builder->createSubroutineType(di_builder->getOrCreateTypeArray(params));
 		}
 		return r;
+	}
+
+	llvm::DIType* to_di_type(ast::Type& tp) {
+		struct DiTypeMatcher : ast::TypeMatcher {
+			Generator* gen;
+			llvm::DIType* result = nullptr;
+			DiTypeMatcher(Generator* gen) :gen(gen) {}
+			void on_int64(ast::TpInt64& type) override { result = gen->di_int; }
+			void on_double(ast::TpDouble& type) override { result = gen->di_double; }
+			void on_function(ast::TpFunction& type) override { result = gen->di_int; }   // todo: raw ptr
+			void on_lambda(ast::TpLambda& type) override { result = gen->di_int; }  // todo: ptr to { ptr to capture, raw ptr }
+			void on_cold_lambda(ast::TpColdLambda& type) override { result = gen->di_builder->createBasicType("void", 64, llvm::dwarf::DW_ATE_unsigned); }
+			void on_void(ast::TpVoid&) override { result = gen->di_builder->createBasicType("void", 64, llvm::dwarf::DW_ATE_unsigned); }
+			void on_optional(ast::TpOptional& type) {
+				if (isa<ast::TpInt64>(*type.wrapped)) result = gen->di_opt_int;
+				else if (isa<ast::TpVoid>(*type.wrapped)) result = gen->di_int;
+				else type.wrapped->match(*this);
+			}
+			void on_class(ast::TpClass& type) override { result = gen->di_obj_ptr; }
+			void on_ref(ast::TpRef& type) override { result = gen->di_obj_ptr; }
+			void on_weak(ast::TpWeak& type) override { result = gen->di_weak_ptr; }
+			void on_delegate(ast::TpDelegate& type) override { result = gen->di_delegate; }
+		};
+		DiTypeMatcher matcher(this);
+		tp.match(matcher);
+		return matcher.result;
 	}
 
 	void insert_di_var(string name, int line, int pos, llvm::DIType* type, llvm::Value* data_addr) {
@@ -588,7 +591,7 @@ struct Generator : ast::ActionScanner {
 					"",  // linkage name
 					di_file,
 					node.line,
-					llvm::cast<llvm::DISubroutineType>(to_di_type(*node.type())),
+					to_di_fn_type(*node.type()),
 					node.line,
 					llvm::DINode::FlagPrototyped,
 					llvm::DISubprogram::SPFlagDefinition);
