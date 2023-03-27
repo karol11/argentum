@@ -10,11 +10,11 @@ typedef int bool;
 #endif
 
 //
-// Tags in `counter` field
-//
-#define AG_CTR_WEAKLESS ((uintptr_t)    1)
-#define AG_CTR_FROZEN   ((uintptr_t)    2)
-#define AG_CTR_STEP     ((uintptr_t) 0x10)
+// Tags in `parent` field
+// When not in copy op, all not shared obj->wb pointers have to have 0b00 in two LSB bits
+#define AG_F_NO_WEAK  ((uintptr_t) 1)
+#define AG_NO_PARENT  ((AgObject*) 0)
+#define AG_SHARED  ((AgObject*) 2)
 
 typedef struct {
 	void   (*copy_ref_fields)  (void* dst, void* src);
@@ -23,20 +23,21 @@ typedef struct {
 	size_t vmt_size;
 } AgVmt;
 
-typedef struct {
+typedef struct AgObject_tag {
 	void**    (*dispatcher) (uint64_t interface_and_method_ordinal);
-	uintptr_t counter;  // pointer_to_weak_block || (number_of_owns_and_refs * AG_CTR_STEP | AG_CTR_* flags)
+	uintptr_t counter;      // number_of_owns_and_refs point here
+	uintptr_t parent;       // (pointer_to_parent|AG_F_NO_WEAK) || pointer_to_weak_block
 } AgObject;
 
 typedef struct {
 	AgObject* target;
-	int64_t   wb_counter;   // number_of_weaks pointing here
-	int64_t   org_counter;  // copy of obj->counter
+	uintptr_t wb_counter;   // number_of_weaks pointing here
+	uintptr_t org_pointer_to_parent;  // copy of obj->parent
 } AgWeak;
 
 typedef struct {
-	int  counter;
-	char data[1];
+	size_t counter;
+	char   data[1];
 } AgStringBuffer;
 
 typedef struct {
@@ -63,6 +64,7 @@ AgObject* ag_allocate_obj       (size_t size);
 AgObject* ag_copy_object_field  (AgObject* src);
 void      ag_fn_sys_make_shared (AgObject* obj);
 void      ag_reg_copy_fixer     (AgObject* object, void (*fixer)(AgObject*));
+void      ag_set_parent         (AgObject* obj, AgBlob* parent);
 
 //
 // AgWeak support
@@ -125,8 +127,9 @@ void      ag_copy_sys_WeakArray      (AgBlob* dst, AgBlob* src);
 void      ag_dtor_sys_WeakArray      (AgBlob* ptr);
 void      ag_fn_sys_WeakArray_delete (AgBlob* b, uint64_t index, uint64_t count);
 
-void ag_fn_terminate(int);
-void ag_fn_sys_log(AgString* s);
+void      ag_fn_terminate(int);
+void      ag_fn_sys_log(AgString* s);
+AgObject* ag_fn_sys_getParent(AgObject* s);
 
 #ifdef __cplusplus
 }  // extern "C"

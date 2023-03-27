@@ -28,11 +28,15 @@ void ag_memmove(void*, void*, size_t);
 #endif
 
 //
-// Tags in copy operation
-//
+// Tags for copy operation
+// AG_TG_NOWEAK_DST should match AG_F_NO_WEAK
+// AG_TG_WEAK_BLOCK must be 0
+// AG_TG_WEAK_BLOCK - this is object, its parent-wb points to next-in-queue wb-item
+// AG_TG_NOWEAK_DST - this is object, its parent-wb points to parent, its counter points to next-in-queue object
 #define AG_TG_WEAK_BLOCK ((uintptr_t) 0)
-#define AG_TG_OBJECT     ((uintptr_t) 1)
-#define AG_TG_WEAK       ((uintptr_t) 2)
+#define AG_TG_NOWEAK_DST ((uintptr_t) 1)
+#define AG_TG_OBJECT     ((uintptr_t) 2)
+#define AG_TG_WEAK       ((uintptr_t) 3)
 
 #define AG_PTR_TAG(PTR)            (((uintptr_t)PTR) & 3)
 #define AG_TAG_PTR(TYPE, PTR, TAG) ((TYPE*)(((uintptr_t)(PTR)) | TAG))
@@ -96,28 +100,15 @@ AgCopyFixer* ag_copy_fixers;            // Used only for objects with manual aft
 void ag_release(AgObject* obj) {
 	if (!obj || (size_t)obj < 256)
 		return;
-	if ((ag_head(obj)->counter & AG_CTR_WEAKLESS) != 0) {
-		if ((ag_head(obj)->counter -= AG_CTR_STEP) >= AG_CTR_STEP)
-			return;
-	} else {
-		AgWeak* wb = (AgWeak*)(ag_head(obj)->counter);
-		if ((wb->org_counter -= AG_CTR_STEP) >= AG_CTR_STEP)
-			return;
-		wb->target = 0;
-		ag_head(obj)->counter = 0;
-		ag_release_weak(wb);
+	if (--ag_head(obj)->counter == 0) {
+		((AgVmt*)(ag_head(obj)->dispatcher))[-1].dispose(obj);
+		ag_free(ag_head(obj));
 	}
-	((AgVmt*)(ag_head(obj)->dispatcher))[-1].dispose(obj);
-	ag_free(ag_head(obj));
 }
 
 AgObject* ag_retain(AgObject* obj) {
 	if (obj && (size_t)obj >= 256) {
-		if ((ag_head(obj)->counter & AG_CTR_WEAKLESS) != 0) {
-			ag_head(obj)->counter += AG_CTR_STEP;
-		} else {
-			((AgWeak*)(ag_head(obj)->counter))->org_counter += AG_CTR_STEP;
-		}
+		++ag_head(obj)->counter;
 	}
 	return obj;
 }
@@ -128,68 +119,66 @@ AgObject* ag_allocate_obj(size_t size) {
 		exit(-42);
 	}
 	ag_zero_mem(r, size);
-	r->counter = AG_CTR_STEP | AG_CTR_WEAKLESS;
+	r->counter = 1;
 	return r;
 }
 
-AgObject* ag_copy(AgObject* src) {
-	AgObject* dst = ag_copy_object_field(src);
-	AgObject* c = 0;
-	AgWeak* wb = 0;
-	for (AgObject* i = ag_copy_head; i;) {
-		switch (AG_PTR_TAG(i)) {
-		case AG_TG_OBJECT:
-			if (c)
-				ag_head(c)->counter = AG_CTR_STEP | AG_CTR_WEAKLESS;
-			c = AG_UNTAG_PTR(AgObject, i);
-			i = (AgObject*)(ag_head(c)->counter);
-			break;
-		case AG_TG_WEAK_BLOCK:
-			wb = AG_UNTAG_PTR(AgWeak, i);
-			i = wb->target;
-			wb->target = c;
-			c = 0;
-			break;
-		case AG_TG_WEAK: {
-			AgWeak** w = AG_UNTAG_PTR(AgWeak*, i);
-			i = (AgObject*)*w;
-			*w = wb;
-			wb->wb_counter++;
-			break; }
+AgObject* ag_copy(AgObject* src, AgObject* parent) {
+	AgObject* dst = ag_copy_object_field(src, parent);
+	for (AgObject* obj = ag_copy_head; obj;) {
+		if (AG_PTR_TAG(obj) == AG_TG_NOWEAK_DST) {
+			AgObject* dst = AG_UNTAG_PTR(AgObject, obj);
+			obj = (AgObject*) dst->counter;
+			dst->counter = 1;
+		} else {
+			assert(AG_PTR_TAG(obj) == AG_TG_OBJECT);
+			obj = AG_UNTAG_PTR(AgObject, obj);
+			assert(AG_PTR_TAG(src->parent) == AG_TG_WEAK_BLOCK);
+			AgWeak* wb = (AgWeak*) obj->parent;
+			void* next = wb->target;
+			wb->target = obj;
+			while (AG_PTR_TAG(next) == AG_TG_WEAK) {
+				void** w = AG_UNTAG_PTR(void*, next);
+				wb->wb_counter++;
+				next = *w;
+				*w = wb;
+			}
 		}
 	}
-	if (c)
-		ag_head(c)->counter = AG_CTR_STEP | AG_CTR_WEAKLESS;
 	ag_copy_head = 0;
+	while (ag_copy_fixers_count) {  // TODO retain objects in copy_fixers vector.
+		AgCopyFixer* f = ag_copy_fixers + --ag_copy_fixers_count;
+		f->fixer(f->data);
+	}
 	return dst;
 }
 
-AgObject* ag_copy_object_field(AgObject* src) {
+AgObject* ag_copy_object_field(AgObject* src, AgObject* parent) {
 	if (!src || (size_t)src < 256)
 		return src;
-	if ((ag_head(src)->counter & AG_CTR_WEAKLESS
-			? ag_head(src)->counter
-			: ((AgWeak*)ag_head(src)->counter)->org_counter)
-		& AG_CTR_FROZEN) {
-		return ag_retain(src);
-	}
+	if (
+		((ag_head(src)->parent & AG_F_NO_WEAK)
+			? ag_head(src)->parent
+			: ((AgWeak*)ag_head(src)->parent)->org_pointer_to_parent)
+		== AG_SHARED)
+			return ag_retain(src);
 	AgVmt* vmt = ((AgVmt*)(ag_head(src)->dispatcher)) - 1;
 	AgObject* dh = (AgObject*) ag_alloc(vmt->instance_alloc_size + AG_HEAD_SIZE);
 	if (!dh) { exit(-42); }
 	ag_memcpy(dh, ag_head(src), vmt->instance_alloc_size + AG_HEAD_SIZE);
-	dh->counter = AG_CTR_STEP | AG_CTR_WEAKLESS;
+	dh->counter = 1;
+	dh->parent = AG_TAG_PTR(AgObject, parent, AG_F_NO_WEAK);  //NO_WEAK also makes it AG_TG_NOWEAK_DST
 	vmt->copy_ref_fields((AgObject*)(dh + AG_HEAD_SIZE), src);
-	if ((ag_head(src)->counter & AG_CTR_WEAKLESS) == 0) { // has weak block
-		AgWeak* wb = (AgWeak*)(ag_head(src)->counter);
+	if ((ag_head(src)->parent & AG_F_NO_WEAK) == 0) { // has weak block
+		AgWeak* wb = (AgWeak*) ag_head(src)->parent;
 		if (wb->target == src) { // no weak copied yet
-			wb->target = AG_TAG_PTR(AgObject, dh + AG_HEAD_SIZE, AG_TG_OBJECT);
-			dh->counter = (uintptr_t) ag_copy_head;
+			dh->counter = (uintptr_t) ag_copy_head;  // AG_TG_NOWEAK_DST uses counter as link
 			ag_copy_head = AG_TAG_PTR(AgObject, src, AG_TG_OBJECT);
 		} else {
 			AgWeak* dst_wb = (AgWeak*) ag_alloc(sizeof(AgWeak));
-			dh->counter = (uintptr_t) dst_wb;
-			dst_wb->org_counter = AG_CTR_STEP | AG_CTR_WEAKLESS;
-			void* i = ((AgWeak*)(ag_head(src)->counter))->target;
+			dst_wb->org_pointer_to_parent = (uintptr_t) parent;
+			dh->parent = (uintptr_t) dst_wb;  // also clears NO_WEAK
+			void* i = ((AgWeak*)(ag_head(src)->parent))->target;
 			uintptr_t dst_wb_locks = 1;
 			while (AG_PTR_TAG(i) == AG_TG_WEAK) {
 				AgWeak** w = AG_UNTAG_PTR(AgWeak*, i);
@@ -199,22 +188,18 @@ AgObject* ag_copy_object_field(AgObject* src) {
 			}
 			dst_wb->wb_counter = dst_wb_locks;
 			dst_wb->target = (AgObject*) i;
-			wb->target = AG_TAG_PTR(AgObject, dh + AG_HEAD_SIZE, AG_TG_OBJECT);
 		}
-	}
-	while (ag_copy_fixers_count) {  // TODO retain objects in copy_fixers vector.
-		AgCopyFixer* f = ag_copy_fixers + --ag_copy_fixers_count;
-		f->fixer(f->data);
+		wb->target = AG_TAG_PTR(AgObject, dh + AG_HEAD_SIZE, AG_TG_OBJECT);
 	}
 	return (AgObject*)(dh + AG_HEAD_SIZE);
 }
 
 void ag_fn_sys_make_shared(AgObject* obj) {  // TODO: implement hierarchy freeze
-	if ((ag_head(obj)->counter & AG_CTR_WEAKLESS) != 0) {
-		ag_head(obj)->counter |= AG_CTR_FROZEN;
+	if ((ag_head(obj)->parent & AG_F_NO_WEAK) != 0) {
+		ag_head(obj)->parent = (uintptr_t)AG_SHARED | AG_F_NO_WEAK;
 	} else {
-		AgWeak* wb = (AgWeak*)(ag_head(obj)->counter);
-		wb->org_counter |= AG_CTR_FROZEN;
+		AgWeak* wb = (AgWeak*)(ag_head(obj)->parent);
+		wb->org_pointer_to_parent = AG_SHARED;
 	}
 }
 
@@ -251,16 +236,15 @@ void ag_copy_weak_field(void** dst, AgWeak* src) {
 			break;
 		case AG_TG_OBJECT: { // already copied
 			AgObject* copy = AG_UNTAG_PTR(AgObject, src->target);
-			AgWeak* cwb = (AgWeak*)(ag_head(copy)->counter);
-			if (!cwb || AG_PTR_TAG(cwb) == AG_TG_OBJECT) // has no wb yet
-			{
+			AgWeak* cwb;
+			if (ag_head(copy)->parent & AG_F_NO_WEAK) {
 				cwb = (AgWeak*) ag_alloc(sizeof(AgWeak));
-				cwb->org_counter = AG_CTR_STEP;
-				cwb->wb_counter = AG_CTR_STEP;
+				cwb->org_pointer_to_parent = ag_head(copy)->parent & ~AG_F_NO_WEAK;
+				cwb->wb_counter = 1;
 				cwb->target = (AgObject*)(ag_head(copy)->counter);
-				ag_head(copy)->counter = (uintptr_t) AG_TAG_PTR(void, cwb, AG_TG_WEAK_BLOCK);
+				ag_head(copy)->parent = (uintptr_t) cwb;
 			} else
-				cwb = AG_UNTAG_PTR(AgWeak, cwb);
+				cwb = AG_UNTAG_PTR(AgWeak, ag_head(copy)->parent);
 			cwb->wb_counter++;
 			*dst = cwb;
 			break; }
@@ -269,12 +253,12 @@ void ag_copy_weak_field(void** dst, AgWeak* src) {
 }
 
 AgWeak* ag_mk_weak(AgObject* obj) { // obj can't be null
-	if (ag_head(obj)->counter & AG_CTR_WEAKLESS) {
+	if (ag_head(obj)->parent & AG_F_NO_WEAK) {
 		AgWeak* w = (AgWeak*) ag_alloc(sizeof(AgWeak));
-		w->org_counter = ag_head(obj)->counter;
+		w->org_pointer_to_parent = ag_head(obj)->parent & ~AG_F_NO_WEAK;
 		w->target = obj;
 		w->wb_counter = 2; // one from obj and one from `mk_weak` result
-		ag_head(obj)->counter = (uintptr_t) w;
+		ag_head(obj)->parent = (uintptr_t) w;
 		return w;
 	}
 	AgWeak* w = (AgWeak*)(ag_head(obj)->counter);
@@ -286,7 +270,7 @@ AgObject* ag_deref_weak(AgWeak* w) {
 	if (!w || (size_t)w < 256 || !w->target) {
 		return 0;
 	}
-	w->org_counter += AG_CTR_STEP;
+	++w->target->counter;
 	return w->target;
 }
 
@@ -356,7 +340,7 @@ void ag_fn_sys_Array_delete(AgBlob* b, uint64_t index, uint64_t count) {
 	AgObject** data = ((AgObject**)(b->data)) + index;
 	for (uint64_t i = count; i != 0; i--, data++) {
 		ag_release(*data);
-		*data = 0;
+		ag_set_parent(*data, AG_NO_PARENT);
 	}
 	ag_fn_sys_Blob_delete(b, index, count);
 }
@@ -443,11 +427,20 @@ AgWeak* ag_fn_sys_WeakArray_getAt(AgBlob* b, uint64_t index) {
 		: 0;
 }
 
+void ag_set_parent(AgObject* obj, AgBlob* parent) {
+	if (obj->parent & AG_F_NO_WEAK)
+		obj->parent = (uintptr_t)parent | AG_F_NO_WEAK;
+	else
+		((AgWeak*)obj->parent)->org_pointer_to_parent = (uintptr_t)parent;
+}
+
 void ag_fn_sys_Array_setAt(AgBlob* b, uint64_t index, AgObject* val) {
 	if (index < b->size) {
 		AgObject** dst = ((AgObject**)(b->data)) + index;
 		ag_retain(val);
 		ag_release(*dst);
+		ag_set_parent(*dst, AG_NO_PARENT);
+		ag_set_parent(val, b);
 		*dst = val;
 	}
 }
@@ -481,7 +474,7 @@ void ag_copy_sys_Array(AgBlob* d, AgBlob* s) {
 		from < term;
 		from++, to++)
 	{
-		*to = ag_copy_object_field(*from);
+		*to = ag_copy_object_field(*from, d);
 	}
 }
 
@@ -514,6 +507,7 @@ void ag_dtor_sys_Array(AgBlob* p) {
 		ptr++)
 	{
 		ag_release(*ptr);
+		ag_set_parent(*ptr, AG_NO_PARENT);
 	}
 	ag_free(p->data);
 }
