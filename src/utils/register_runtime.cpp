@@ -64,14 +64,13 @@ void register_runtime_content(struct ast::Ast& ast) {
 		ast.mk_field(sys->get("_buffer"), new ast::ConstInt64) });
 	ast.mk_fn(sys->get("String")->get("fromBlob"), FN(ag_fn_sys_String_fromBlob), new ast::ConstBool, { ast.get_ref(ast.string_cls), ast.get_ref(ast.blob), ast.tp_int64(), ast.tp_int64() });
 	ast.mk_fn(sys->get("String")->get("getCh"), FN(ag_fn_sys_String_getCh), new ast::ConstInt64, { ast.get_ref(ast.string_cls) });
+	ast.mk_fn(sys->get("getParent"), FN(ag_fn_sys_getParent), opt_ref_to_object, { ast.get_ref(ast.object) });
 	ast.mk_fn(sys->get("makeShared"), FN(ag_fn_sys_make_shared), new ast::ConstVoid, { ast.get_ref(ast.object) });  // TODO: its a hack till frozen objects were introduced
 
 	ast.platform_exports.insert({
 		{ "ag_copy", FN(ag_copy) },
 		{ "ag_copy_object_field", FN(ag_copy_object_field) },
 		{ "ag_copy_weak_field", FN(ag_copy_weak_field) },
-		{ "ag_release_weak", FN(ag_release_weak) },
-		{ "ag_release", FN(ag_release) },
 		{ "ag_allocate_obj", FN(ag_allocate_obj) },
 		{ "ag_mk_weak", FN(ag_mk_weak) },
 		{ "ag_deref_weak", FN(ag_deref_weak) },

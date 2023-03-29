@@ -168,10 +168,12 @@ struct Generator : ast::ActionScanner {
 	llvm::StructType* obj_struct = nullptr;
 	llvm::StructType* weak_struct = nullptr;
 	llvm::StructType* obj_vmt_struct = nullptr;
-	llvm::Function* fn_release = nullptr;  // void(Obj*) no_throw
+	llvm::Function* fn_release_pin = nullptr;  // void(Obj*) no_throw
+	llvm::Function* fn_release_own = nullptr;  // void(Obj*) no_throw as pin + clears parent
+	llvm::Function* fn_retain_own = nullptr;  // void(Obj*, Obj*parent) no_throw as pin + sets parent, used in set_field
 	llvm::Function* fn_relase_weak = nullptr;  // void(WB*) no_throw
-	llvm::Function* fn_retain = nullptr;   // void(Obj*) no_throw
-	llvm::Function* fn_retain_weak = nullptr;   // void(WB*) no_throw
+	llvm::Function* fn_dispose = nullptr;  // void(Obj*) no_throw // used in releaseObj
+	llvm::Function* fn_free = nullptr;  // void(void*) no_throw // used in release wb
 	llvm::Function* fn_allocate = nullptr; // Obj*(size_t)
 	llvm::Function* fn_copy = nullptr;   // Obj*(Obj*)
 	llvm::Function* fn_mk_weak = nullptr;   // WB*(Obj*)
@@ -187,6 +189,9 @@ struct Generator : ast::ActionScanner {
 	llvm::Constant* empty_mtable = nullptr; // void_ptr[1] = { null }
 	unordered_map<weak<ast::MkLambda>, llvm::Function*> compiled_functions;
 	llvm::Constant* null_weak = nullptr;
+	llvm::Constant* const_1 = llvm::ConstantInt::get(tp_int_ptr, 1);
+	llvm::Constant* const_0 = llvm::ConstantInt::get(tp_int_ptr, 0);
+	llvm::Constant* const_256 = llvm::ConstantInt::get(tp_int_ptr, 256);
 
 	Generator(ltm::pin<ast::Ast> ast, bool debug_info_mode)
 		: ast(ast)
@@ -214,20 +219,30 @@ struct Generator : ast::ActionScanner {
 		empty_mtable = make_const_array("empty_mtable", { llvm::Constant::getNullValue(ptr_type) });
 		null_weak = llvm::Constant::getNullValue(ptr_type);
 
-		fn_retain = llvm::Function::Create(
+		fn_free = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { ptr_type }, false),
-			llvm::Function::InternalLinkage,
-			"ag_retain",
+			llvm::Function::ExternalLinkage,
+			"ag_free",
 			*module);
-		fn_retain_weak = llvm::Function::Create(
+		fn_dispose = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { ptr_type }, false),
-			llvm::Function::InternalLinkage,
-			"ag_retain_weak",
+			llvm::Function::ExternalLinkage,
+			"ag_dispose_obj",
 			*module);
-		fn_release = llvm::Function::Create(
+		fn_retain_own = llvm::Function::Create(
+			llvm::FunctionType::get(void_type, { ptr_type, ptr_type }, false),
+			llvm::Function::ExternalLinkage,
+			"ag_retain_own",
+			*module);
+		fn_release_pin = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { ptr_type }, false),
 			llvm::Function::ExternalLinkage,
 			"ag_release",
+			*module);
+		fn_release_own = llvm::Function::Create(
+			llvm::FunctionType::get(void_type, { ptr_type }, false),
+			llvm::Function::ExternalLinkage,
+			"ag_release_own",
 			*module);
 		fn_relase_weak = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { ptr_type }, false),
@@ -358,32 +373,99 @@ struct Generator : ast::ActionScanner {
 			dom::strict_cast<ast::TpDelegate>(type);
 	}
 
-	template<typename ON_PTR, typename ON_WEAK, typename ON_DELEGATE>
-	void handle_retention(pin<ast::Type> type, ON_PTR on_ptr, ON_WEAK on_weak, ON_DELEGATE on_delegate) {
-		auto as_opt = dom::strict_cast<ast::TpOptional>(type);
-		if (as_opt)
-			type = as_opt->wrapped;
-		if (isa<ast::TpWeak>(*type)) on_weak();
-		else if (isa<ast::TpDelegate>(*type)) on_delegate();
-		else if (isa<ast::TpClass>(*type) || isa<ast::TpRef>(*type)) on_ptr();
+	void build_inc(llvm::Value* addr) {
+		builder->CreateStore(
+			builder->CreateAdd(
+				builder->CreateLoad(tp_int_ptr, addr),
+				const_1),
+			addr);
+	}
+	void build_retain_not_null(llvm::Value* ptr, const ast::Type& type, llvm::Value* maybe_own_parent = nullptr) {
+		if (isa<ast::TpWeak>(type)) {
+			build_inc(builder->CreateStructGEP(weak_struct, ptr, 1));
+		} else if (isa<ast::TpDelegate>(type)) {
+			build_inc(
+				builder->CreateStructGEP(
+					obj_struct,
+					builder->CreateExtractValue(ptr, { 0 }),
+					1));
+		} else if (isa<ast::TpRef>(type)) {
+			build_inc(builder->CreateStructGEP(obj_struct, ptr, 1));
+		} else if (isa<ast::TpClass>(type)) {
+			builder->CreateCall(fn_retain_own, { cast_to(ptr, ptr_type), maybe_own_parent });
+		}
+	}
+	void build_retain(llvm::Value* ptr, pin<ast::Type> type, llvm::Value* maybe_own_parent = nullptr) {
+		if (!is_ptr(type))
+			return;
+		if (auto as_opt = dom::strict_cast<ast::TpOptional>(type)) {
+			if (isa<ast::TpClass>(*as_opt->wrapped) && maybe_own_parent) {
+				builder->CreateCall(fn_retain_own, { cast_to(ptr, ptr_type), maybe_own_parent });
+				return;
+			}
+			auto bb_not_null = llvm::BasicBlock::Create(*context, "", current_function);
+			auto bb_null = llvm::BasicBlock::Create(*context, "", current_function);
+			builder->CreateCondBr(
+				builder->CreateCmp(llvm::CmpInst::Predicate::ICMP_UGT,
+					cast_to(ptr, tp_int_ptr),
+					const_256),
+				bb_not_null,
+				bb_null);
+			builder->SetInsertPoint(bb_not_null);
+			build_retain_not_null(ptr, *as_opt->wrapped);
+			builder->CreateBr(bb_null);
+			builder->SetInsertPoint(bb_null);
+		} else {
+			build_retain_not_null(ptr, *type);
+		}
 	}
 
-	void build_retain(llvm::Value* ptr, pin<ast::Type> type) {
-		handle_retention(type,
-			[&] { builder->CreateCall(fn_retain, { cast_to(ptr, ptr_type) }); },  // sometimes it might be optional->int_ptr->i64 })
-			[&] { builder->CreateCall(fn_retain_weak, { cast_to(ptr, ptr_type) }); }, 
-			[&] { builder->CreateCall(fn_retain_weak, { builder->CreateExtractValue(ptr, {0}) }); });
+	void build_release_not_null(llvm::Value* counter_addr, llvm::Value* addr, llvm::Function* disposer) {
+		llvm::Value* ctr = builder->CreateSub(
+			builder->CreateLoad(tp_int_ptr, counter_addr),
+			const_1);
+		builder->CreateStore(ctr, counter_addr);
+		auto bb_not_zero = llvm::BasicBlock::Create(*context, "", current_function);
+		auto bb_zero = llvm::BasicBlock::Create(*context, "", current_function);
+		builder->CreateCondBr(
+			builder->CreateCmp(llvm::CmpInst::Predicate::ICMP_EQ, ctr, const_0),
+			bb_zero,
+			bb_not_zero);
+		builder->SetInsertPoint(bb_zero);
+		builder->CreateCall(disposer, { cast_to(addr, ptr_type) });
+		builder->CreateBr(bb_not_zero);
+		builder->SetInsertPoint(bb_zero);
 	}
 
-	void build_release_ptr(llvm::Value* ptr) {
-		builder->CreateCall(fn_release, { cast_to(ptr, ptr_type) });
+	void build_release_ptr_not_null(llvm::Value* ptr) {
+		build_release_not_null(builder->CreateStructGEP(obj_struct, ptr, 1), ptr, fn_dispose);
 	}
 
 	void build_release(llvm::Value* ptr, pin<ast::Type> type) {
-		handle_retention(type,
-			[&] { builder->CreateCall(fn_release, { cast_to(ptr, ptr_type) }); },  // sometimes it might be optional->int_ptr->i64 })
-			[&] { builder->CreateCall(fn_relase_weak, { cast_to(ptr, ptr_type) }); },
-			[&] { builder->CreateCall(fn_relase_weak, { builder->CreateExtractValue(ptr, {0}) }); });
+		if (!is_ptr(type))
+			return;
+		if (auto as_opt = dom::strict_cast<ast::TpOptional>(type)) {
+			if (isa<ast::TpWeak>(*type)) {
+				builder->CreateCall(fn_relase_weak, { cast_to(ptr, ptr_type) });
+			} else if (isa<ast::TpDelegate>(*type)) {
+				builder->CreateCall(fn_relase_weak, { builder->CreateExtractValue(ptr, {0}) });
+			} else if (isa<ast::TpRef>(*type)) {
+				builder->CreateCall(fn_release_pin, { cast_to(ptr, ptr_type) });
+			} else if (isa<ast::TpClass>(*type) || isa<ast::TpRef>(*type)) {
+				builder->CreateCall(fn_release_own, { cast_to(ptr, ptr_type) });
+			}
+		} else {
+			if (isa<ast::TpWeak>(*type)) {
+				build_release_not_null(builder->CreateStructGEP(weak_struct, ptr, 1), ptr, fn_free);
+			} else if (isa<ast::TpDelegate>(*type)) {
+				llvm::Value* w = builder->CreateExtractValue(ptr, { 0 });
+				build_release_not_null(builder->CreateStructGEP(weak_struct, w, 1), w, fn_free);
+			} else if (isa<ast::TpRef>(*type)) {
+				build_release_not_null(builder->CreateStructGEP(obj_struct, ptr, 1), ptr, fn_dispose);
+			} else if (isa<ast::TpClass>(*type)) {
+				builder->CreateCall(fn_release_own, { ptr });
+			}
+		}
 	}
 	
 	llvm::Value* remove_indirection(const ast::Var& var, llvm::Value* val) {
@@ -396,7 +478,7 @@ struct Generator : ast::ActionScanner {
 		if (auto as_retained = get_if<Val::Retained>(&val.lifetime)) {
 			build_release(val.data, val.type);
 		} else if (auto as_rfield = get_if<Val::RField>(&val.lifetime)) {
-			build_release_ptr(as_rfield->to_release);
+			build_release_ptr_not_null(as_rfield->to_release);
 		}
 		if (val.optional_br) {
 			auto common_bb = llvm::BasicBlock::Create(*context, "", current_function);
@@ -446,30 +528,30 @@ struct Generator : ast::ActionScanner {
 		val.optional_br = nullptr;
 	}
 
-	void persist_rfield(Val& val) {
+	void persist_rfield(Val& val, llvm::Value* maybe_own_parent = nullptr) {
 		if (auto as_rfield = get_if<Val::RField>(&val.lifetime)) {
-			build_retain(val.data, val.type);
-			build_release_ptr(as_rfield->to_release);
+			build_retain(val.data, val.type, maybe_own_parent);
+			build_release_ptr_not_null(as_rfield->to_release);
 			val.lifetime = Val::Retained{};
 		}
 	}
 
 	// Make value be able to outlive any random field and var assignment. Makes NonPtr, Retained or a var-bounded Temp.
-	Val persist_val(Val&& val, bool retain_mutable_locals = true) {
-		persist_rfield(val);
+	Val persist_val(Val&& val, llvm::Value* maybe_own_parent = nullptr, bool retain_mutable_locals = true) {
+		persist_rfield(val, maybe_own_parent);
 		if (auto as_temp = get_if<Val::Temp>(&val.lifetime)) {
 			if (!as_temp->var || (as_temp->var->is_mutable && retain_mutable_locals)) {
-				build_retain(val.data, val.type);
+				build_retain(val.data, val.type, maybe_own_parent);
 				val.lifetime = Val::Retained{};
 			}
 		}
 		remove_branches(val);
 		return val;
 	}
-	Val make_retained_or_non_ptr(Val&& src) {
-		auto r = persist_val(move(src));
+	Val make_retained_or_non_ptr(Val&& src, llvm::Value* maybe_own_parent = nullptr) {
+		auto r = persist_val(move(src), maybe_own_parent);
 		if (get_if<Val::Temp>(&r.lifetime)) {
-			build_retain(r.data, r.type);
+			build_retain(r.data, r.type, maybe_own_parent);
 			r.lifetime = Val::Retained{};
 		}
 		return r;
@@ -477,7 +559,10 @@ struct Generator : ast::ActionScanner {
 
 	// Make value be able to outlive any random field and var assignment.
 	[[nodiscard]] Val comp_to_persistent(own<ast::Action>& action, bool retain_mutable_locals = true) {
-		return persist_val(compile(action), retain_mutable_locals);
+		return persist_val(
+			compile(action),
+			nullptr,  // maybe_own_parent. Null, because comp_to_persistent never used in set_field value
+			retain_mutable_locals);
 	}
 
 	llvm::Value* cast_to(llvm::Value* value, llvm::Type* expected) {
@@ -952,7 +1037,7 @@ struct Generator : ast::ActionScanner {
 					retained_receiver_pin,
 					llvm::ConstantInt::get(tp_int_ptr, 0)),
 				[&] {
-					return Val{
+					Val r{
 						result->type,
 						make_opt_val(
 							builder->CreateCall(
@@ -962,9 +1047,10 @@ struct Generator : ast::ActionScanner {
 								move(params)),
 							result_type),
 						Val::NonPtr{} };
+					build_release_ptr_not_null(retained_receiver_pin);
+					return move(r);
 				},
 				[&] { return Val{ result->type, make_opt_none(result_type), Val::NonPtr{} }; });
-			build_release_ptr(retained_receiver_pin);
 		} else {
 			bool is_fn = isa<ast::TpFunction>(*node.callee->type());
 			if (!is_fn)
@@ -1052,8 +1138,8 @@ struct Generator : ast::ActionScanner {
 		}
 	}
 	void on_set_field(ast::SetField& node) override {
-		*result = make_retained_or_non_ptr(compile(node.val));
-		auto base = compile(node.base);
+		auto base = comp_to_persistent(node.base);
+		*result = make_retained_or_non_ptr(compile(node.val), base.data);
 		auto class_fields = classes[ast->extract_class(base.type)].fields;
 		if (is_ptr(node.type())) {
 			auto addr = builder->CreateStructGEP(class_fields, base.data, node.field->offset);
@@ -1830,81 +1916,7 @@ struct Generator : ast::ActionScanner {
 		return combined_result;
 	}
 
-	void make_fn_retain_weak() {
-		auto bb = llvm::BasicBlock::Create(*context, "", fn_retain_weak);
-		llvm::IRBuilder<> b(bb);
-		auto bb_not_null = llvm::BasicBlock::Create(*context, "", fn_retain_weak);
-		auto bb_null = llvm::BasicBlock::Create(*context, "", fn_retain_weak);
-		b.CreateCondBr(
-			b.CreateCmp(llvm::CmpInst::Predicate::ICMP_UGT,
-				b.CreateBitOrPointerCast(&*fn_retain_weak->arg_begin(), tp_int_ptr),
-				llvm::ConstantInt::get(tp_int_ptr, 256)),
-			bb_not_null,
-			bb_null);
-		b.SetInsertPoint(bb_not_null);
-		auto counter_addr = b.CreateStructGEP(
-			weak_struct,
-			&*fn_retain_weak->arg_begin(),
-			1);
-		b.CreateStore(
-			b.CreateAdd(
-				b.CreateLoad(tp_int_ptr, counter_addr),
-				llvm::ConstantInt::get(tp_int_ptr, 1)),
-			counter_addr);
-		b.CreateBr(bb_null);
-		b.SetInsertPoint(bb_null);
-		b.CreateRetVoid();
-	}
-
-	void make_fn_retain() {
-		auto bb = llvm::BasicBlock::Create(*context, "", fn_retain);
-		llvm::IRBuilder<> b(bb);
-		auto bb_not_null = llvm::BasicBlock::Create(*context, "", fn_retain);
-		auto bb_null = llvm::BasicBlock::Create(*context, "", fn_retain);
-		b.CreateCondBr(
-			b.CreateCmp(llvm::CmpInst::Predicate::ICMP_UGT,
-				b.CreateBitOrPointerCast(&*fn_retain->arg_begin(), tp_int_ptr),
-				llvm::ConstantInt::get(tp_int_ptr, 256)),
-			bb_not_null,
-			bb_null);
-		b.SetInsertPoint(bb_not_null);
-		auto counter_addr = b.CreateConstGEP2_32(
-			obj_struct,
-			&*fn_retain->arg_begin(),
-			AG_HEADER_OFFSET, 1);
-		auto counter = b.CreateLoad(tp_int_ptr, counter_addr);
-		auto bb_with_weak = llvm::BasicBlock::Create(*context, "", fn_retain);
-		auto bb_no_weak = llvm::BasicBlock::Create(*context, "", fn_retain);
-		b.CreateCondBr(
-			b.CreateCmp(llvm::CmpInst::Predicate::ICMP_NE,
-				b.CreateAnd(
-					counter,
-					llvm::ConstantInt::get(tp_int_ptr, AG_CTR_WEAKLESS)),
-				llvm::ConstantInt::get(tp_int_ptr, 0)),
-			bb_no_weak,
-			bb_with_weak);
-		b.SetInsertPoint(bb_no_weak);
-		b.CreateStore(
-			b.CreateAdd(
-				counter,
-				llvm::ConstantInt::get(tp_int_ptr, AG_CTR_STEP)),
-			counter_addr);
-		b.CreateBr(bb_null);
-		b.SetInsertPoint(bb_with_weak);
-		auto wb_counter_addr = b.CreateStructGEP(weak_struct, b.CreateBitOrPointerCast(counter, ptr_type), 2);
-		b.CreateStore(
-			b.CreateAdd(
-				b.CreateLoad(tp_int_ptr, wb_counter_addr),
-				llvm::ConstantInt::get(tp_int_ptr, AG_CTR_STEP)),
-			wb_counter_addr);
-		b.CreateBr(bb_null);
-		b.SetInsertPoint(bb_null);
-		b.CreateRetVoid();
-	}
-
 	llvm::orc::ThreadSafeModule build() {
-		make_fn_retain();
-		make_fn_retain_weak();
 		std::unordered_set<pin<ast::TpClass>> special_copy_and_dispose = { ast->blob->base_class, ast->blob, ast->own_array, ast->weak_array, ast->string_cls };
 		dispatcher_fn_type = llvm::FunctionType::get(ptr_type, { int_type }, false);
 		auto dispos_fn_type = llvm::FunctionType::get(void_type, { ptr_type }, false);
@@ -1998,7 +2010,6 @@ struct Generator : ast::ActionScanner {
 					auto& m_overridden = methods[m->ovr];
 					m_info.ordinal = m_overridden.ordinal + base_index;
 					m_info.type = m_overridden.type;
-					// TODO maybe support co- contravariant overriding: vmt_content[m_info.ordinal] = m_info.type = find this method type;
 				}
 			} else if (!cls->is_interface)
 				vmt_content.push_back(obj_vmt_struct);
@@ -2106,36 +2117,33 @@ struct Generator : ast::ActionScanner {
 					auto type = f->initializer->type();
 					if (auto as_opt = dom::strict_cast<ast::TpOptional>(type))
 						type = as_opt->wrapped;
-					auto as_class = dom::strict_cast<ast::TpClass>(type);
-					handle_retention(type,
-						[&] { // ptr
-							builder.CreateStore(
-								builder.CreateCall(fn_copy_object_field, {
-									builder.CreateLoad(
-										ptr_type,
-										builder.CreateStructGEP(info.fields, src, f->offset)) }),
-								builder.CreateStructGEP(info.fields, dst, f->offset));
-						},
-						[&] { // weak
-							builder.CreateCall(fn_copy_weak_field, {
+					if (isa<ast::TpWeak>(*type)) {
+						builder.CreateCall(fn_copy_weak_field, {
+							builder.CreateStructGEP(info.fields, dst, f->offset),
+							builder.CreateLoad(
+								ptr_type,
+								builder.CreateStructGEP(info.fields, src, f->offset)) });
+					} else if (isa<ast::TpDelegate>(*type)) {
+						builder.CreateCall(fn_copy_weak_field, {
+							builder.CreateStructGEP(
+								delegate_struct,
 								builder.CreateStructGEP(info.fields, dst, f->offset),
-								builder.CreateLoad(
-									ptr_type,
-									builder.CreateStructGEP(info.fields, src, f->offset)) });
-						},
-						[&] { // delegate
-							builder.CreateCall(fn_copy_weak_field, {
+								0),
+							builder.CreateLoad(
+								ptr_type,
 								builder.CreateStructGEP(
 									delegate_struct,
-									builder.CreateStructGEP(info.fields, dst, f->offset),
-									0),
+									builder.CreateStructGEP(info.fields, src, f->offset),
+									0)) });
+					} else if (isa<ast::TpClass>(*type) || isa<ast::TpRef>(*type)) {
+						builder.CreateStore(
+							builder.CreateCall(fn_copy_object_field, {
 								builder.CreateLoad(
 									ptr_type,
-									builder.CreateStructGEP(
-										delegate_struct,
-										builder.CreateStructGEP(info.fields, src, f->offset),
-										0)) });
-						});
+									builder.CreateStructGEP(info.fields, src, f->offset)),
+								dst }),
+							builder.CreateStructGEP(info.fields, dst, f->offset));
+					}
 				}
 				builder.CreateRetVoid();
 			}

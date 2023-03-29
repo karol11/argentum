@@ -13,8 +13,8 @@ typedef int bool;
 // Tags in `parent` field
 // When not in copy op, all not shared obj->wb pointers have to have 0b00 in two LSB bits
 #define AG_F_NO_WEAK  ((uintptr_t) 1)
-#define AG_NO_PARENT  ((AgObject*) 0)
-#define AG_SHARED  ((AgObject*) 2)
+#define AG_NO_PARENT  ((uintptr_t*) 0)
+#define AG_SHARED     ((uintptr_t*) 2)
 
 typedef struct {
 	void   (*copy_ref_fields)  (void* dst, void* src);
@@ -53,15 +53,18 @@ typedef struct {
 } AgBlob;
 
 bool ag_leak_detector_ok();
-uintptr_t ag_max_mem_ok();
+uintptr_t ag_max_mem();
+void ag_free(void* data);  // used in release_weak
+
 //
 // AgObject support
 //
-void      ag_release  (AgObject* obj);
-AgObject* ag_retain   (AgObject* obj);
-AgObject* ag_copy     (AgObject* src);
+void      ag_release_own        (AgObject* obj);
+void      ag_retain_own         (AgObject* obj, AgObject* parent);
+AgObject* ag_copy               (AgObject* src);
+void      ag_dispose_obj        (AgObject* src);
 AgObject* ag_allocate_obj       (size_t size);
-AgObject* ag_copy_object_field  (AgObject* src);
+AgObject* ag_copy_object_field  (AgObject* src, AgObject* parent);
 void      ag_fn_sys_make_shared (AgObject* obj);
 void      ag_reg_copy_fixer     (AgObject* object, void (*fixer)(AgObject*));
 void      ag_set_parent         (AgObject* obj, AgBlob* parent);
@@ -69,8 +72,6 @@ void      ag_set_parent         (AgObject* obj, AgBlob* parent);
 //
 // AgWeak support
 //
-AgWeak*   ag_retain_weak     (AgWeak* w);
-void      ag_release_weak    (AgWeak* w);
 void      ag_copy_weak_field (void** dst, AgWeak* src);
 AgWeak*   ag_mk_weak         (AgObject* obj);
 AgObject* ag_deref_weak      (AgWeak* w);
@@ -129,7 +130,7 @@ void      ag_fn_sys_WeakArray_delete (AgBlob* b, uint64_t index, uint64_t count)
 
 void      ag_fn_terminate(int);
 void      ag_fn_sys_log(AgString* s);
-AgObject* ag_fn_sys_getParent(AgObject* s);
+AgObject* ag_fn_sys_getParent(AgObject* obj);   // not null
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -43,7 +43,49 @@ void ag_memmove(void*, void*, size_t);
 #define AG_UNTAG_PTR(TYPE, PTR)    ((TYPE*)(((uintptr_t)(PTR)) & ~3))
 
 #define ag_head(OBJ) ((AgObject*)(OBJ))
+#define ag_release_nn(OBJ) if (--ag_head(OBJ)->counter == 0) ag_dispose(OBJ)
+#define ag_retain_nn(OBJ) (++ag_head(OBJ)->counter)
+#define ag_not_null(OBJ) ((OBJ) && (size_t)(OBJ) >= 256)
+#define ag_release_weak_nn(W) if (--(W)->wb_counter == 0) ag_free(W)
+#define ag_retain_weak_nn(W) (++ag_head(W)->counter)
+
 #define AG_HEAD_SIZE 0
+
+inline void ag_set_parent(AgObject * obj, AgBlob * parent) {
+	if (obj->parent & AG_F_NO_WEAK)
+		obj->parent = (uintptr_t)parent | AG_F_NO_WEAK;
+	else
+		((AgWeak*)obj->parent)->org_pointer_to_parent = (uintptr_t)parent;
+}
+
+inline void ag_release(AgObject * obj) {
+	if (ag_not_null(obj)) ag_release_nn(obj);
+}
+inline AgObject* ag_retain(AgObject* obj) {
+	if (ag_not_null(obj)) ag_retain_nn(obj);
+	return obj;
+}
+inline void ag_release_weak(AgWeak* w) {
+	if (ag_not_null(w)) ag_release_weak_nn(w);
+}
+inline AgWeak* ag_retain_weak(AgWeak* w) {
+	if (ag_not_null(w)) ag_retain_weak_nn(w);
+	return w;
+}
+inline void ag_release_own(AgObject* obj) {
+	if (ag_not_null(obj)) {
+		if (--ag_head(obj)->counter == 0)
+			ag_dispose(obj);
+		else
+			ag_set_parent(obj, AG_NO_PARENT);
+	}
+}
+inline void ag_retain_own(AgObject* obj, AgObject* parent) {
+	if (ag_not_null(obj)) {
+		ag_retain_nn(obj);
+		ag_set_parent(obj, parent);
+	}
+}
 
 bool  ag_leak_detector_ok();
 
@@ -76,7 +118,9 @@ void ag_free(void* data) {
 #else
 
 #define ag_alloc AG_ALLOC
-#define ag_free AG_FREE
+void ag_free(void* data) {
+	AG_FREE(data);
+}
 
 #endif
 
@@ -97,20 +141,9 @@ size_t       ag_copy_fixers_count = 0;
 size_t       ag_copy_fixers_alloc = 0;
 AgCopyFixer* ag_copy_fixers;            // Used only for objects with manual afterCopy operators.
 
-void ag_release(AgObject* obj) {
-	if (!obj || (size_t)obj < 256)
-		return;
-	if (--ag_head(obj)->counter == 0) {
-		((AgVmt*)(ag_head(obj)->dispatcher))[-1].dispose(obj);
-		ag_free(ag_head(obj));
-	}
-}
-
-AgObject* ag_retain(AgObject* obj) {
-	if (obj && (size_t)obj >= 256) {
-		++ag_head(obj)->counter;
-	}
-	return obj;
+void ag_dispose_obj(AgObject* obj) {
+	((AgVmt*)(ag_head(obj)->dispatcher))[-1].dispose(obj);
+	ag_free(ag_head(obj));
 }
 
 AgObject* ag_allocate_obj(size_t size) {
@@ -123,8 +156,8 @@ AgObject* ag_allocate_obj(size_t size) {
 	return r;
 }
 
-AgObject* ag_copy(AgObject* src, AgObject* parent) {
-	AgObject* dst = ag_copy_object_field(src, parent);
+AgObject* ag_copy(AgObject* src) {
+	AgObject* dst = ag_copy_object_field(src, 0);
 	for (AgObject* obj = ag_copy_head; obj;) {
 		if (AG_PTR_TAG(obj) == AG_TG_NOWEAK_DST) {
 			AgObject* dst = AG_UNTAG_PTR(AgObject, obj);
@@ -156,12 +189,10 @@ AgObject* ag_copy(AgObject* src, AgObject* parent) {
 AgObject* ag_copy_object_field(AgObject* src, AgObject* parent) {
 	if (!src || (size_t)src < 256)
 		return src;
-	if (
-		((ag_head(src)->parent & AG_F_NO_WEAK)
-			? ag_head(src)->parent
-			: ((AgWeak*)ag_head(src)->parent)->org_pointer_to_parent)
-		== AG_SHARED)
-			return ag_retain(src);
+	if (((ag_head(src)->parent & AG_F_NO_WEAK)
+			? ag_head(src)->parent == AG_SHARED | AG_F_NO_WEAK
+			: ((AgWeak*)ag_head(src)->parent)->org_pointer_to_parent) == AG_SHARED)
+		return ag_retain(src);
 	AgVmt* vmt = ((AgVmt*)(ag_head(src)->dispatcher)) - 1;
 	AgObject* dh = (AgObject*) ag_alloc(vmt->instance_alloc_size + AG_HEAD_SIZE);
 	if (!dh) { exit(-42); }
@@ -201,20 +232,6 @@ void ag_fn_sys_make_shared(AgObject* obj) {  // TODO: implement hierarchy freeze
 		AgWeak* wb = (AgWeak*)(ag_head(obj)->parent);
 		wb->org_pointer_to_parent = AG_SHARED;
 	}
-}
-
-AgWeak* ag_retain_weak(AgWeak* w) {
-	if (w && (size_t)w >= 256)
-		++w->wb_counter;
-	return w;
-}
-
-void ag_release_weak(AgWeak* w) {
-	if (!w || (size_t)w < 256)
-		return;
-	if (--w->wb_counter != 0)
-		return;
-	ag_free(w);
 }
 
 void ag_copy_weak_field(void** dst, AgWeak* src) {
@@ -339,8 +356,7 @@ void ag_fn_sys_Array_delete(AgBlob* b, uint64_t index, uint64_t count) {
 		return;
 	AgObject** data = ((AgObject**)(b->data)) + index;
 	for (uint64_t i = count; i != 0; i--, data++) {
-		ag_release(*data);
-		ag_set_parent(*data, AG_NO_PARENT);
+		ag_release_own(*data);
 	}
 	ag_fn_sys_Blob_delete(b, index, count);
 }
@@ -437,10 +453,8 @@ void ag_set_parent(AgObject* obj, AgBlob* parent) {
 void ag_fn_sys_Array_setAt(AgBlob* b, uint64_t index, AgObject* val) {
 	if (index < b->size) {
 		AgObject** dst = ((AgObject**)(b->data)) + index;
-		ag_retain(val);
-		ag_release(*dst);
-		ag_set_parent(*dst, AG_NO_PARENT);
-		ag_set_parent(val, b);
+		ag_retain_own(val, b);
+		ag_release_own(*dst);
 		*dst = val;
 	}
 }
@@ -448,7 +462,7 @@ void ag_fn_sys_Array_setAt(AgBlob* b, uint64_t index, AgObject* val) {
 void ag_fn_sys_WeakArray_setAt(AgBlob* b, uint64_t index, AgWeak* val) {
 	if (index < b->size) {
 		AgWeak** dst = ((AgWeak**)(b->data)) + index;
-		val = ag_retain_weak(val);
+		ag_retain_weak(val);
 		ag_release_weak(*dst);
 		*dst = val;
 	}
@@ -506,8 +520,7 @@ void ag_dtor_sys_Array(AgBlob* p) {
 		ptr < to;
 		ptr++)
 	{
-		ag_release(*ptr);
-		ag_set_parent(*ptr, AG_NO_PARENT);
+		ag_release_own(*ptr);
 	}
 	ag_free(p->data);
 }
@@ -550,6 +563,12 @@ int64_t ag_fn_sys_Blob_putCh(AgBlob* b, int at, int codepoint) {
 		return 0;
 	put_utf8(codepoint, &cursor, ag_put_fn);
 	return cursor - (char*)(b->data);
+}
+
+AgObject* ag_fn_sys_getParent(AgObject* obj) {  // not null
+	return ag_retain(obj->parent & AG_F_NO_WEAK
+		? obj->parent & ~AG_F_NO_WEAK
+		: ((AgWeak*)obj->parent)->org_pointer_to_parent);
 }
 
 void ag_fn_terminate(int result) {
