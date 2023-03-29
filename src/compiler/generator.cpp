@@ -483,7 +483,7 @@ struct Generator : ast::ActionScanner {
 		if (val.optional_br) {
 			auto common_bb = llvm::BasicBlock::Create(*context, "", current_function);
 			builder->CreateBr(common_bb);
-			for (auto b = val.optional_br; b; b = b->deeper) {
+			for (auto& b = val.optional_br; b; b = b->deeper) {
 				if (b->none_bb) {
 					builder->SetInsertPoint(b->none_bb);
 					builder->CreateBr(common_bb);
@@ -908,7 +908,7 @@ struct Generator : ast::ActionScanner {
 		auto r = compile(node.body.back());
 		persist_rfield(r);
 		auto result_as_temp = get_if<Val::Temp>(&r.lifetime);
-		auto temp_var = result_as_temp ? result_as_temp->var : nullptr;
+		weak<ast::Var> temp_var = result_as_temp ? result_as_temp->var : nullptr;
 		auto val_iter = to_dispose.begin();
 		for (auto& p : node.names) {
 			if (temp_var == p) { // result is locked by the dying temp ptr.
@@ -1772,7 +1772,7 @@ struct Generator : ast::ActionScanner {
 
 	llvm::FunctionType* lambda_to_llvm_fn(ast::Node& n, pin<ast::Type> tp) {  // also delegate and method
 		if (isa<ast::TpLambda>(*tp) || isa<ast::TpDelegate>(*tp)) {
-			auto as_lambda = tp.cast<ast::TpLambda>();
+			pin<ast::TpLambda> as_lambda = tp.cast<ast::TpLambda>();
 			auto& fn = lambda_fns[as_lambda];
 			if (!fn) {
 				vector<llvm::Type*> params{ ptr_type }; // closure struct or this
@@ -1949,7 +1949,7 @@ struct Generator : ast::ActionScanner {
 		for (auto& cls : ast->classes) {
 			auto& info = classes[cls];
 			if (cls->is_interface) {
-				uint64_t id;
+				uint64_t id = 0;
 				do
 					id = uniform_uint64_distribution(random_generator) << 16;
 				while (assigned_interface_ids.count(id) != 0);

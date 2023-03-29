@@ -1,6 +1,7 @@
 #include <stddef.h> // size_t
 #include <stdint.h> // int32_t
 #include <stdio.h> // puts
+#include <assert.h>
 
 #ifdef NO_DEFAULT_LIB
 void ag_zero_mem(void*, size_t);
@@ -43,15 +44,11 @@ void ag_memmove(void*, void*, size_t);
 #define AG_UNTAG_PTR(TYPE, PTR)    ((TYPE*)(((uintptr_t)(PTR)) & ~3))
 
 #define ag_head(OBJ) ((AgObject*)(OBJ))
-#define ag_release_nn(OBJ) if (--ag_head(OBJ)->counter == 0) ag_dispose(OBJ)
-#define ag_retain_nn(OBJ) (++ag_head(OBJ)->counter)
 #define ag_not_null(OBJ) ((OBJ) && (size_t)(OBJ) >= 256)
-#define ag_release_weak_nn(W) if (--(W)->wb_counter == 0) ag_free(W)
-#define ag_retain_weak_nn(W) (++ag_head(W)->counter)
 
 #define AG_HEAD_SIZE 0
 
-inline void ag_set_parent(AgObject * obj, AgBlob * parent) {
+inline void ag_set_parent(AgObject * obj, AgObject* parent) {
 	if (obj->parent & AG_F_NO_WEAK)
 		obj->parent = (uintptr_t)parent | AG_F_NO_WEAK;
 	else
@@ -59,30 +56,38 @@ inline void ag_set_parent(AgObject * obj, AgBlob * parent) {
 }
 
 inline void ag_release(AgObject * obj) {
-	if (ag_not_null(obj)) ag_release_nn(obj);
+	if (ag_not_null(obj)) {
+		if (--ag_head(obj)->counter == 0)
+			ag_dispose_obj(obj);
+	}
 }
 inline AgObject* ag_retain(AgObject* obj) {
-	if (ag_not_null(obj)) ag_retain_nn(obj);
+	if (ag_not_null(obj))
+		++ag_head(obj)->counter;
 	return obj;
 }
 inline void ag_release_weak(AgWeak* w) {
-	if (ag_not_null(w)) ag_release_weak_nn(w);
+	if (ag_not_null(w)) {
+		if (--w->wb_counter == 0) ag_free(w);
+	}
 }
 inline AgWeak* ag_retain_weak(AgWeak* w) {
-	if (ag_not_null(w)) ag_retain_weak_nn(w);
+	if (ag_not_null(w)) {
+		++ag_head(w)->counter;
+	}
 	return w;
 }
 inline void ag_release_own(AgObject* obj) {
 	if (ag_not_null(obj)) {
 		if (--ag_head(obj)->counter == 0)
-			ag_dispose(obj);
+			ag_dispose_obj(obj);
 		else
 			ag_set_parent(obj, AG_NO_PARENT);
 	}
 }
 inline void ag_retain_own(AgObject* obj, AgObject* parent) {
 	if (ag_not_null(obj)) {
-		ag_retain_nn(obj);
+		++ag_head(obj)->counter;
 		ag_set_parent(obj, parent);
 	}
 }
@@ -190,7 +195,7 @@ AgObject* ag_copy_object_field(AgObject* src, AgObject* parent) {
 	if (!src || (size_t)src < 256)
 		return src;
 	if (((ag_head(src)->parent & AG_F_NO_WEAK)
-			? ag_head(src)->parent == AG_SHARED | AG_F_NO_WEAK
+			? ag_head(src)->parent == (AG_SHARED | AG_F_NO_WEAK)
 			: ((AgWeak*)ag_head(src)->parent)->org_pointer_to_parent) == AG_SHARED)
 		return ag_retain(src);
 	AgVmt* vmt = ((AgVmt*)(ag_head(src)->dispatcher)) - 1;
@@ -198,7 +203,7 @@ AgObject* ag_copy_object_field(AgObject* src, AgObject* parent) {
 	if (!dh) { exit(-42); }
 	ag_memcpy(dh, ag_head(src), vmt->instance_alloc_size + AG_HEAD_SIZE);
 	dh->counter = 1;
-	dh->parent = AG_TAG_PTR(AgObject, parent, AG_F_NO_WEAK);  //NO_WEAK also makes it AG_TG_NOWEAK_DST
+	dh->parent = (uintptr_t) AG_TAG_PTR(AgObject, parent, AG_F_NO_WEAK);  //NO_WEAK also makes it AG_TG_NOWEAK_DST
 	vmt->copy_ref_fields((AgObject*)(dh + AG_HEAD_SIZE), src);
 	if ((ag_head(src)->parent & AG_F_NO_WEAK) == 0) { // has weak block
 		AgWeak* wb = (AgWeak*) ag_head(src)->parent;
@@ -443,17 +448,10 @@ AgWeak* ag_fn_sys_WeakArray_getAt(AgBlob* b, uint64_t index) {
 		: 0;
 }
 
-void ag_set_parent(AgObject* obj, AgBlob* parent) {
-	if (obj->parent & AG_F_NO_WEAK)
-		obj->parent = (uintptr_t)parent | AG_F_NO_WEAK;
-	else
-		((AgWeak*)obj->parent)->org_pointer_to_parent = (uintptr_t)parent;
-}
-
 void ag_fn_sys_Array_setAt(AgBlob* b, uint64_t index, AgObject* val) {
 	if (index < b->size) {
 		AgObject** dst = ((AgObject**)(b->data)) + index;
-		ag_retain_own(val, b);
+		ag_retain_own(val, &b->head);
 		ag_release_own(*dst);
 		*dst = val;
 	}
@@ -488,7 +486,7 @@ void ag_copy_sys_Array(AgBlob* d, AgBlob* s) {
 		from < term;
 		from++, to++)
 	{
-		*to = ag_copy_object_field(*from, d);
+		*to = ag_copy_object_field(*from, &d->head);
 	}
 }
 
@@ -566,9 +564,9 @@ int64_t ag_fn_sys_Blob_putCh(AgBlob* b, int at, int codepoint) {
 }
 
 AgObject* ag_fn_sys_getParent(AgObject* obj) {  // not null
-	return ag_retain(obj->parent & AG_F_NO_WEAK
+	return ag_retain((AgObject*)(obj->parent & AG_F_NO_WEAK
 		? obj->parent & ~AG_F_NO_WEAK
-		: ((AgWeak*)obj->parent)->org_pointer_to_parent);
+		: ((AgWeak*)obj->parent)->org_pointer_to_parent));
 }
 
 void ag_fn_terminate(int result) {

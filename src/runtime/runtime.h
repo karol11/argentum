@@ -13,8 +13,8 @@ typedef int bool;
 // Tags in `parent` field
 // When not in copy op, all not shared obj->wb pointers have to have 0b00 in two LSB bits
 #define AG_F_NO_WEAK  ((uintptr_t) 1)
-#define AG_NO_PARENT  ((uintptr_t*) 0)
-#define AG_SHARED     ((uintptr_t*) 2)
+#define AG_NO_PARENT  0
+#define AG_SHARED     ((uintptr_t) 2)
 
 typedef struct {
 	void   (*copy_ref_fields)  (void* dst, void* src);
@@ -67,7 +67,7 @@ AgObject* ag_allocate_obj       (size_t size);
 AgObject* ag_copy_object_field  (AgObject* src, AgObject* parent);
 void      ag_fn_sys_make_shared (AgObject* obj);
 void      ag_reg_copy_fixer     (AgObject* object, void (*fixer)(AgObject*));
-void      ag_set_parent         (AgObject* obj, AgBlob* parent);
+void      ag_set_parent         (AgObject* obj, AgObject* parent);
 
 //
 // AgWeak support
