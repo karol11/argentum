@@ -2053,6 +2053,7 @@ struct Generator : ast::ActionScanner {
 				std::to_string(cls->name.pinned()) + "!disp", module.get());
 			// Initializer
 			llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "", info.initializer));
+			current_function = info.initializer;
 			this->builder = &builder;
 			if (base_info)
 				builder.CreateCall(base_info->initializer, { info.initializer->arg_begin() });
@@ -2066,6 +2067,7 @@ struct Generator : ast::ActionScanner {
 			builder.CreateRetVoid();
 			// Constructor
 			builder.SetInsertPoint(llvm::BasicBlock::Create(*context, "", info.constructor));
+			current_function = info.constructor;
 			result = builder.CreateCall(fn_allocate, {
 				builder.getInt64(layout.getTypeAllocSize(info.fields)) });
 			builder.CreateCall(info.initializer, { result });
@@ -2075,6 +2077,7 @@ struct Generator : ast::ActionScanner {
 			// Disposer
 			if (special_copy_and_dispose.count(cls) == 0) {
 				builder.SetInsertPoint(llvm::BasicBlock::Create(*context, "", info.dispose));
+				current_function = info.dispose;
 				if (auto manual_disposer_name = cls->name->peek("dispose")) {
 					if (auto manual_disposer_fn = ast->functions_by_names.find(manual_disposer_name); manual_disposer_fn != ast->functions_by_names.end()) {
 						builder.CreateCall(
@@ -2104,6 +2107,7 @@ struct Generator : ast::ActionScanner {
 				ast::format_str("ag_copy_", cls->name.pinned()), module.get());
 			if (special_copy_and_dispose.count(cls) == 0) {
 				builder.SetInsertPoint(llvm::BasicBlock::Create(*context, "", info.copier));
+				current_function = info.copier;
 				if (auto manual_fixer_name = cls->name->peek("afterCopy")) {
 					if (auto manual_fixer_fn = ast->functions_by_names.find(manual_fixer_name); manual_fixer_fn != ast->functions_by_names.end()) {
 						builder.CreateCall(
