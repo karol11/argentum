@@ -48,52 +48,6 @@ void ag_memmove(void*, void*, size_t);
 
 #define AG_HEAD_SIZE 0
 
-inline void ag_set_parent(AgObject * obj, AgObject* parent) {
-	if (obj->parent & AG_F_NO_WEAK)
-		obj->parent = (uintptr_t)parent | AG_F_NO_WEAK;
-	else
-		((AgWeak*)obj->parent)->org_pointer_to_parent = (uintptr_t)parent;
-}
-
-inline void ag_release(AgObject * obj) {
-	if (ag_not_null(obj)) {
-		if (--ag_head(obj)->counter == 0)
-			ag_dispose_obj(obj);
-	}
-}
-inline AgObject* ag_retain(AgObject* obj) {
-	if (ag_not_null(obj))
-		++ag_head(obj)->counter;
-	return obj;
-}
-inline void ag_release_weak(AgWeak* w) {
-	if (ag_not_null(w)) {
-		if (--w->wb_counter == 0) ag_free(w);
-	}
-}
-inline AgWeak* ag_retain_weak(AgWeak* w) {
-	if (ag_not_null(w)) {
-		++ag_head(w)->counter;
-	}
-	return w;
-}
-inline void ag_release_own(AgObject* obj) {
-	if (ag_not_null(obj)) {
-		if (--ag_head(obj)->counter == 0)
-			ag_dispose_obj(obj);
-		else
-			ag_set_parent(obj, AG_NO_PARENT);
-	}
-}
-inline void ag_retain_own(AgObject* obj, AgObject* parent) {
-	if (ag_not_null(obj)) {
-		++ag_head(obj)->counter;
-		ag_set_parent(obj, parent);
-	}
-}
-
-bool  ag_leak_detector_ok();
-
 size_t ag_leak_detector_counter = 0;
 size_t ag_current_allocated = 0;
 size_t ag_max_allocated = 0;
@@ -123,11 +77,54 @@ void ag_free(void* data) {
 #else
 
 #define ag_alloc AG_ALLOC
-void ag_free(void* data) {
-	AG_FREE(data);
-}
+#define ag_free AG_FREE
 
 #endif
+
+inline void ag_set_parent(AgObject * obj, AgObject* parent) {
+	if (obj->parent & AG_F_NO_WEAK)
+		obj->parent = (uintptr_t)parent | AG_F_NO_WEAK;
+	else
+		((AgWeak*)obj->parent)->org_pointer_to_parent = (uintptr_t)parent;
+}
+
+inline void ag_release(AgObject * obj) {
+	if (ag_not_null(obj)) {
+		if (--ag_head(obj)->counter == 0)
+			ag_dispose_obj(obj);
+	}
+}
+inline AgObject* ag_retain(AgObject* obj) {
+	if (ag_not_null(obj))
+		++ag_head(obj)->counter;
+	return obj;
+}
+inline void ag_release_weak(AgWeak* w) {
+	if (ag_not_null(w)) {
+		if (--w->wb_counter == 0)
+			ag_free(w);
+	}
+}
+inline AgWeak* ag_retain_weak(AgWeak* w) {
+	if (ag_not_null(w)) {
+		++ag_head(w)->counter;
+	}
+	return w;
+}
+inline void ag_release_own(AgObject* obj) {
+	if (ag_not_null(obj)) {
+		if (--ag_head(obj)->counter == 0)
+			ag_dispose_obj(obj);
+		else
+			ag_set_parent(obj, AG_NO_PARENT);
+	}
+}
+inline void ag_retain_own(AgObject* obj, AgObject* parent) {
+	if (ag_not_null(obj)) {
+		++ag_head(obj)->counter;
+		ag_set_parent(obj, parent);
+	}
+}
 
 bool ag_leak_detector_ok() {
 	return ag_leak_detector_counter == 0;
@@ -190,7 +187,7 @@ AgObject* ag_copy(AgObject* src) {
 		}
 	}
 	ag_copy_head = 0;
-	while (ag_copy_fixers_count) {  // TODO retain objects in copy_fixers vector.
+	while (ag_copy_fixers_count) {  // TODO retain objects in the copy_fixers vector.
 		AgCopyFixer* f = ag_copy_fixers + --ag_copy_fixers_count;
 		f->fixer(f->data);
 	}

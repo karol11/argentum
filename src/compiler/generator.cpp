@@ -173,7 +173,6 @@ struct Generator : ast::ActionScanner {
 	llvm::Function* fn_retain_own = nullptr;  // void(Obj*, Obj*parent) no_throw as pin + sets parent, used in set_field
 	llvm::Function* fn_relase_weak = nullptr;  // void(WB*) no_throw
 	llvm::Function* fn_dispose = nullptr;  // void(Obj*) no_throw // used in releaseObj
-	llvm::Function* fn_free = nullptr;  // void(void*) no_throw // used in release wb
 	llvm::Function* fn_allocate = nullptr; // Obj*(size_t)
 	llvm::Function* fn_copy = nullptr;   // Obj*(Obj*)
 	llvm::Function* fn_mk_weak = nullptr;   // WB*(Obj*)
@@ -222,11 +221,6 @@ struct Generator : ast::ActionScanner {
 		const_1 = llvm::ConstantInt::get(tp_int_ptr, 1);
 		const_256 = llvm::ConstantInt::get(tp_int_ptr, 256);
 
-		fn_free = llvm::Function::Create(
-			llvm::FunctionType::get(void_type, { ptr_type }, false),
-			llvm::Function::ExternalLinkage,
-			"ag_free",
-			*module);
 		fn_dispose = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { ptr_type }, false),
 			llvm::Function::ExternalLinkage,
@@ -423,7 +417,8 @@ struct Generator : ast::ActionScanner {
 		}
 	}
 
-	void build_release_not_null(llvm::Value* counter_addr, llvm::Value* addr, llvm::Function* disposer) {
+	void build_release_ptr_not_null(llvm::Value* ptr) {
+		llvm::Value* counter_addr = builder->CreateStructGEP(obj_struct, ptr, 1);
 		llvm::Value* ctr = builder->CreateSub(
 			builder->CreateLoad(tp_int_ptr, counter_addr),
 			const_1);
@@ -435,13 +430,9 @@ struct Generator : ast::ActionScanner {
 			bb_zero,
 			bb_not_zero);
 		builder->SetInsertPoint(bb_zero);
-		builder->CreateCall(disposer, { cast_to(addr, ptr_type) });
+		builder->CreateCall(fn_dispose, { cast_to(ptr, ptr_type) });
 		builder->CreateBr(bb_not_zero);
 		builder->SetInsertPoint(bb_not_zero);
-	}
-
-	void build_release_ptr_not_null(llvm::Value* ptr) {
-		build_release_not_null(builder->CreateStructGEP(obj_struct, ptr, 1), ptr, fn_dispose);
 	}
 
 	void build_release(llvm::Value* ptr, pin<ast::Type> type) {
@@ -459,12 +450,11 @@ struct Generator : ast::ActionScanner {
 			}
 		} else {
 			if (isa<ast::TpWeak>(*type)) {
-				build_release_not_null(builder->CreateStructGEP(weak_struct, ptr, 1), ptr, fn_free);
+				builder->CreateCall(fn_relase_weak, { cast_to(ptr, ptr_type) });
 			} else if (isa<ast::TpDelegate>(*type)) {
-				llvm::Value* w = builder->CreateExtractValue(ptr, { 0 });
-				build_release_not_null(builder->CreateStructGEP(weak_struct, w, 1), w, fn_free);
+				builder->CreateCall(fn_relase_weak, { builder->CreateExtractValue(ptr, {0}) });
 			} else if (isa<ast::TpRef>(*type)) {
-				build_release_not_null(builder->CreateStructGEP(obj_struct, ptr, 1), ptr, fn_dispose);
+				build_release_ptr_not_null(ptr);
 			} else if (isa<ast::TpClass>(*type)) {
 				builder->CreateCall(fn_release_own, { ptr });
 			}

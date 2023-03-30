@@ -54,7 +54,6 @@ typedef struct {
 
 bool ag_leak_detector_ok();
 uintptr_t ag_max_mem();
-void ag_free(void* data);  // used in release_weak
 
 //
 // AgObject support
@@ -67,7 +66,6 @@ AgObject* ag_allocate_obj       (size_t size);
 AgObject* ag_copy_object_field  (AgObject* src, AgObject* parent);
 void      ag_fn_sys_make_shared (AgObject* obj);
 void      ag_reg_copy_fixer     (AgObject* object, void (*fixer)(AgObject*));
-void      ag_set_parent         (AgObject* obj, AgObject* parent);
 
 //
 // AgWeak support
@@ -75,6 +73,7 @@ void      ag_set_parent         (AgObject* obj, AgObject* parent);
 void      ag_copy_weak_field (void** dst, AgWeak* src);
 AgWeak*   ag_mk_weak         (AgObject* obj);
 AgObject* ag_deref_weak      (AgWeak* w);
+void      ag_release_weak    (AgWeak* obj);
 
 //
 // AgString support
