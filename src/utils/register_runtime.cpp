@@ -77,8 +77,10 @@ void register_runtime_content(struct ast::Ast& ast) {
 		{ "ag_reg_copy_fixer", FN(ag_reg_copy_fixer) },
 		{ "ag_retain_own", FN(ag_retain_own) },
 		{ "ag_release_own", FN(ag_release_own) },
+		{ "ag_release", FN(ag_release) },
 		{ "ag_release_weak", FN(ag_release_weak) },
 		{ "ag_dispose_obj", FN(ag_dispose_obj) },
+		{ "ag_set_parent", FN(ag_set_parent) },
 
 		{ "ag_copy_sys_Container", FN(ag_copy_sys_Container) },
 		{ "ag_dtor_sys_Container", FN(ag_dtor_sys_Container) },

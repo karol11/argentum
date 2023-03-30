@@ -12,9 +12,9 @@ typedef int bool;
 //
 // Tags in `parent` field
 // When not in copy op, all not shared obj->wb pointers have to have 0b00 in two LSB bits
-#define AG_F_NO_WEAK  ((uintptr_t) 1)
-#define AG_NO_PARENT  0
-#define AG_SHARED     ((uintptr_t) 2)
+#define AG_F_PARENT ((uintptr_t) 1)
+#define AG_IN_STACK 0
+#define AG_SHARED   ((uintptr_t) 2)
 
 typedef struct {
 	void   (*copy_ref_fields)  (void* dst, void* src);
@@ -26,7 +26,7 @@ typedef struct {
 typedef struct AgObject_tag {
 	void**    (*dispatcher) (uint64_t interface_and_method_ordinal);
 	uintptr_t counter;      // number_of_owns_and_refs point here
-	uintptr_t parent;       // (pointer_to_parent|AG_F_NO_WEAK) || pointer_to_weak_block
+	uintptr_t wb_p;       // pointer_to_weak_block || (pointer_to_parent|AG_F_PARENT)
 } AgObject;
 
 typedef struct {
@@ -60,7 +60,9 @@ uintptr_t ag_max_mem();
 //
 void      ag_release_own        (AgObject* obj);
 void      ag_retain_own         (AgObject* obj, AgObject* parent);
+void      ag_set_parent         (AgObject* obj, AgObject* parent);
 AgObject* ag_copy               (AgObject* src);
+void      ag_release            (AgObject* obj);
 void      ag_dispose_obj        (AgObject* src);
 AgObject* ag_allocate_obj       (size_t size);
 AgObject* ag_copy_object_field  (AgObject* src, AgObject* parent);

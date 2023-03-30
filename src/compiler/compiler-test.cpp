@@ -46,37 +46,6 @@ void execute(const char* source_text, bool dump_all = false) {
     generate_and_execute(ast, false, dump_all);
 }
 
-
-TEST(Parser, TopoCopy) {
-    execute(R"(
-        class Node {
-          parent = &Node;  // Weak(Node) = null
-          left = ?Node;    // Optional(own(Node)) = null
-          right = ?Node;
-
-          scan(&Node expectedParent) int {
-            lcount = left?_.scan(&this) : 0;
-            rcount = right?_.scan(&this) : 0;
-            this.parent == expectedParent
-                ? lcount + rcount + 1
-                : -100
-          }
-        }
-        root = Node;
-        root.left := +Node;
-        root.right := +Node;
-        root.left?_.parent := &root;
-        root.right?_.parent := &root;
-
-        oldSize = root.scan(&Node);
-
-        root.left := +@root;
-        root.left?_.parent := &root;
-
-        assert(35, oldSize * 10 + root.scan(&Node))
-    )");
-}
-
 TEST(Parser, Ints) {
     execute("assert(7, (2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1)))");
 }
@@ -347,6 +316,35 @@ TEST(Parser, Weak) {
     )");
 }
 
+TEST(Parser, TopoCopy) {
+    execute(R"(
+        class Node {
+          parent = &Node;  // Weak(Node) = null
+          left = ?Node;    // Optional(own(Node)) = null
+          right = ?Node;
+
+          scan(&Node expectedParent) int {
+            lcount = left?_.scan(&this) : 0;
+            rcount = right?_.scan(&this) : 0;
+            this.parent == expectedParent
+                ? lcount + rcount + 1
+                : -100
+          }
+        }
+        root = Node;
+        root.left := +Node;
+        root.right := +Node;
+        root.left?_.parent := &root;
+        root.right?_.parent := &root;
+
+        oldSize = root.scan(&Node);
+
+        root.left := +@root;
+        root.left?_.parent := &root;
+
+        assert(35, oldSize * 10 + root.scan(&Node))
+    )");
+}
 
 TEST(Parser, ForeignFunctionCall) {
     execute(R"(

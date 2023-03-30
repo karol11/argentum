@@ -168,10 +168,11 @@ struct Generator : ast::ActionScanner {
 	llvm::StructType* obj_struct = nullptr;
 	llvm::StructType* weak_struct = nullptr;
 	llvm::StructType* obj_vmt_struct = nullptr;
-	llvm::Function* fn_release_pin = nullptr;  // void(Obj*) no_throw
+	llvm::Function* fn_set_parent = nullptr;   // void(Obj*, Obj* parent)  // used when retained object gets assigned to field
+	llvm::Function* fn_release = nullptr;  // void(Obj*) no_throw // used for pins and local owns, doesn't clear parent
 	llvm::Function* fn_release_own = nullptr;  // void(Obj*) no_throw as pin + clears parent
 	llvm::Function* fn_retain_own = nullptr;  // void(Obj*, Obj*parent) no_throw as pin + sets parent, used in set_field
-	llvm::Function* fn_relase_weak = nullptr;  // void(WB*) no_throw
+	llvm::Function* fn_release_weak = nullptr;  // void(WB*) no_throw
 	llvm::Function* fn_dispose = nullptr;  // void(Obj*) no_throw // used in releaseObj
 	llvm::Function* fn_allocate = nullptr; // Obj*(size_t)
 	llvm::Function* fn_copy = nullptr;   // Obj*(Obj*)
@@ -231,7 +232,12 @@ struct Generator : ast::ActionScanner {
 			llvm::Function::ExternalLinkage,
 			"ag_retain_own",
 			*module);
-		fn_release_pin = llvm::Function::Create(
+		fn_set_parent = llvm::Function::Create(
+			llvm::FunctionType::get(void_type, { ptr_type, ptr_type}, false),
+			llvm::Function::ExternalLinkage,
+			"ag_set_parent",
+			*module);
+		fn_release = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { ptr_type }, false),
 			llvm::Function::ExternalLinkage,
 			"ag_release",
@@ -241,7 +247,7 @@ struct Generator : ast::ActionScanner {
 			llvm::Function::ExternalLinkage,
 			"ag_release_own",
 			*module);
-		fn_relase_weak = llvm::Function::Create(
+		fn_release_weak = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { ptr_type }, false),
 			llvm::Function::ExternalLinkage,
 			"ag_release_weak",
@@ -435,25 +441,25 @@ struct Generator : ast::ActionScanner {
 		builder->SetInsertPoint(bb_not_zero);
 	}
 
-	void build_release(llvm::Value* ptr, pin<ast::Type> type) {
+	void build_release(llvm::Value* ptr, pin<ast::Type> type, bool is_local = true) {
 		if (!is_ptr(type))
 			return;
 		if (auto as_opt = dom::strict_cast<ast::TpOptional>(type)) {
-			if (isa<ast::TpWeak>(*type)) {
-				builder->CreateCall(fn_relase_weak, { cast_to(ptr, ptr_type) });
-			} else if (isa<ast::TpDelegate>(*type)) {
-				builder->CreateCall(fn_relase_weak, { builder->CreateExtractValue(ptr, {0}) });
-			} else if (isa<ast::TpRef>(*type)) {
-				builder->CreateCall(fn_release_pin, { cast_to(ptr, ptr_type) });
-			} else if (isa<ast::TpClass>(*type) || isa<ast::TpRef>(*type)) {
+			if (isa<ast::TpWeak>(*as_opt->wrapped)) {
+				builder->CreateCall(fn_release_weak, { cast_to(ptr, ptr_type) });
+			} else if (isa<ast::TpDelegate>(*as_opt->wrapped)) {
+				builder->CreateCall(fn_release_weak, { builder->CreateExtractValue(ptr, {0}) });
+			} else if (isa<ast::TpRef>(*as_opt->wrapped) || (isa<ast::TpClass>(*as_opt->wrapped) && is_local)) {
+				builder->CreateCall(fn_release, { cast_to(ptr, ptr_type) });
+			} else if (isa<ast::TpClass>(*as_opt->wrapped)) {
 				builder->CreateCall(fn_release_own, { cast_to(ptr, ptr_type) });
 			}
 		} else {
 			if (isa<ast::TpWeak>(*type)) {
-				builder->CreateCall(fn_relase_weak, { cast_to(ptr, ptr_type) });
+				builder->CreateCall(fn_release_weak, { cast_to(ptr, ptr_type) });
 			} else if (isa<ast::TpDelegate>(*type)) {
-				builder->CreateCall(fn_relase_weak, { builder->CreateExtractValue(ptr, {0}) });
-			} else if (isa<ast::TpRef>(*type)) {
+				builder->CreateCall(fn_release_weak, { builder->CreateExtractValue(ptr, {0}) });
+			} else if (isa<ast::TpRef>(*type) || (isa<ast::TpClass>(*type) && is_local)) {
 				build_release_ptr_not_null(ptr);
 			} else if (isa<ast::TpClass>(*type)) {
 				builder->CreateCall(fn_release_own, { ptr });
@@ -467,9 +473,9 @@ struct Generator : ast::ActionScanner {
 			: val;
 	}
 
-	void dispose_val(Val&& val) {
+	void dispose_val(Val&& val, bool is_local = true) {
 		if (auto as_retained = get_if<Val::Retained>(&val.lifetime)) {
-			build_release(val.data, val.type);
+			build_release(val.data, val.type, is_local);
 		} else if (auto as_rfield = get_if<Val::RField>(&val.lifetime)) {
 			build_release_ptr_not_null(as_rfield->to_release);
 		}
@@ -542,6 +548,14 @@ struct Generator : ast::ActionScanner {
 		return val;
 	}
 	Val make_retained_or_non_ptr(Val&& src, llvm::Value* maybe_own_parent = nullptr) {
+		if (maybe_own_parent && get_if<Val::Retained>(&src.lifetime)) {
+			auto type = src.type;
+			if (auto as_opt = dom::strict_cast<ast::TpOptional>(src.type))
+				type = as_opt->wrapped;
+			if (isa<ast::TpClass>(*type))
+				builder->CreateCall(fn_set_parent, { cast_to(src.data, ptr_type), maybe_own_parent });
+			return src;
+		}
 		auto r = persist_val(move(src), maybe_own_parent);
 		if (get_if<Val::Temp>(&r.lifetime)) {
 			build_retain(r.data, r.type, maybe_own_parent);
@@ -577,7 +591,7 @@ struct Generator : ast::ActionScanner {
 		result->data = builder->CreateCall(str.constructor, {});
 		builder->CreateStore(
 			builder->CreateGlobalStringPtr(node.value),
-			builder->CreateStructGEP(str.fields, result->data, 2));
+			builder->CreateStructGEP(str.fields, result->data, 3));
 		result->lifetime = Val::Retained{};
 	}
 
@@ -1040,7 +1054,7 @@ struct Generator : ast::ActionScanner {
 								move(params)),
 							result_type),
 						Val::NonPtr{} };
-					build_release_ptr_not_null(retained_receiver_pin);
+					build_release_ptr_not_null(cast_to(retained_receiver_pin, ptr_type));
 					return move(r);
 				},
 				[&] { return Val{ result->type, make_opt_none(result_type), Val::NonPtr{} }; });
@@ -1071,7 +1085,9 @@ struct Generator : ast::ActionScanner {
 		if (is_ptr(node.type()))
 			result->lifetime = Val::Retained{};
 		for (; !to_dispose.empty(); to_dispose.pop_back())
-			dispose_val(move(to_dispose.back()));
+			dispose_val(
+				move(to_dispose.back()),
+				true);
 	}
 
 	llvm::Value* get_data_ref(const weak<ast::Var>& var) {
@@ -1136,7 +1152,10 @@ struct Generator : ast::ActionScanner {
 			auto base = comp_to_persistent(node.base);
 			*result = make_retained_or_non_ptr(compile(node.val), base.data);
 			auto addr = builder->CreateStructGEP(class_fields, base.data, node.field->offset);
-			build_release(builder->CreateLoad(ptr_type, addr), node.type());
+			build_release(
+				builder->CreateLoad(ptr_type, addr),
+				node.type(),
+				false);  // not local, clear parent
 			builder->CreateStore(result->data, addr);
 			if (get_if<Val::Retained>(&base.lifetime)) {
 				result->lifetime = Val::RField{ base.data };
@@ -2032,7 +2051,7 @@ struct Generator : ast::ActionScanner {
 			if (cls->is_interface)
 				continue;
 			auto& info = classes[cls];
-			ClassInfo* base_info = cls->base_class ? &classes[cls->base_class] : nullptr;
+			ClassInfo* base_info = cls->base_class && cls->base_class != ast->object ? &classes[cls->base_class] : nullptr;
 			info.dispose = llvm::Function::Create(
 				dispos_fn_type,
 				special_copy_and_dispose.count(cls) == 0
@@ -2079,12 +2098,12 @@ struct Generator : ast::ActionScanner {
 					builder.CreateCall(base_info->dispose, { info.dispose->getArg(0) });
 				result = builder.CreateBitOrPointerCast(info.dispose->getArg(0), info.fields->getPointerTo());
 				for (auto& field : cls->fields) {
-					if (is_ptr(field->initializer->type()))
-						build_release(
-							builder.CreateLoad(
-								ptr_type,
-								builder.CreateStructGEP(info.fields, result, field->offset)),
-							field->initializer->type());
+					build_release(
+						builder.CreateLoad(
+							ptr_type,
+							builder.CreateStructGEP(info.fields, result, field->offset)),
+						field->initializer->type(),
+						false);  // not local, clear parent
 				}
 				builder.CreateRetVoid();
 			}
