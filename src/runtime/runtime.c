@@ -148,6 +148,11 @@ AgCopyFixer* ag_copy_fixers;            // Used only for objects with manual aft
 
 void ag_dispose_obj(AgObject* obj) {
 	((AgVmt*)(ag_head(obj)->dispatcher))[-1].dispose(obj);
+	AgWeak* wb = (AgWeak*)(ag_head(obj)->parent);
+	if (((uintptr_t)wb & AG_F_NO_WEAK) == 0) {
+		wb->target = 0;
+		ag_release_weak(wb);
+	}
 	ag_free(ag_head(obj));
 }
 
@@ -158,6 +163,7 @@ AgObject* ag_allocate_obj(size_t size) {
 	}
 	ag_zero_mem(r, size);
 	r->counter = 1;
+	r->parent = AG_NO_PARENT | AG_F_NO_WEAK;
 	return r;
 }
 
@@ -283,7 +289,7 @@ AgWeak* ag_mk_weak(AgObject* obj) { // obj can't be null
 		ag_head(obj)->parent = (uintptr_t) w;
 		return w;
 	}
-	AgWeak* w = (AgWeak*)(ag_head(obj)->counter);
+	AgWeak* w = (AgWeak*)(ag_head(obj)->parent);
 	w->wb_counter++;
 	return w;
 }
@@ -563,7 +569,7 @@ int64_t ag_fn_sys_Blob_putCh(AgBlob* b, int at, int codepoint) {
 	return cursor - (char*)(b->data);
 }
 
-AgObject* ag_fn_sys_getParent(AgObject* obj) {  // not null
+AgObject* ag_fn_sys_getParent(AgObject* obj) {  // obj not null, result is nullable
 	return ag_retain((AgObject*)(obj->parent & AG_F_NO_WEAK
 		? obj->parent & ~AG_F_NO_WEAK
 		: ((AgWeak*)obj->parent)->org_pointer_to_parent));

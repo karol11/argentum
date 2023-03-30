@@ -178,7 +178,7 @@ struct Generator : ast::ActionScanner {
 	llvm::Function* fn_copy = nullptr;   // Obj*(Obj*)
 	llvm::Function* fn_mk_weak = nullptr;   // WB*(Obj*)
 	llvm::Function* fn_deref_weak = nullptr;   // intptr_aka_?obj* (WB*)
-	llvm::Function* fn_copy_object_field = nullptr;   // Obj* (Obj* src)
+	llvm::Function* fn_copy_object_field = nullptr;   // Obj* (Obj* src, Obj* parent)
 	llvm::Function* fn_copy_weak_field = nullptr;   // void(WB** dst, WB* src)
 	llvm::FunctionType* fn_copy_fixer_fn_type = nullptr;  // void (*)(Obj*)
 	llvm::Function* fn_reg_copy_fixer = nullptr;      // void (Obj*, fn_fixer_type)
@@ -189,9 +189,9 @@ struct Generator : ast::ActionScanner {
 	llvm::Constant* empty_mtable = nullptr; // void_ptr[1] = { null }
 	unordered_map<weak<ast::MkLambda>, llvm::Function*> compiled_functions;
 	llvm::Constant* null_weak = nullptr;
-	llvm::Constant* const_1 = llvm::ConstantInt::get(tp_int_ptr, 1);
-	llvm::Constant* const_0 = llvm::ConstantInt::get(tp_int_ptr, 0);
-	llvm::Constant* const_256 = llvm::ConstantInt::get(tp_int_ptr, 256);
+	llvm::Constant* const_0 = nullptr;
+	llvm::Constant* const_1 = nullptr;
+	llvm::Constant* const_256 = nullptr;
 
 	Generator(ltm::pin<ast::Ast> ast, bool debug_info_mode)
 		: ast(ast)
@@ -214,10 +214,13 @@ struct Generator : ast::ActionScanner {
 		tp_opt_delegate = tp_opt_lambda;
 		lambda_struct = llvm::StructType::get(*context, { ptr_type, ptr_type }); // context, entrypoint
 		delegate_struct = lambda_struct;  // also 2 ptrs, but (weak, entrypoint)
-		obj_struct = llvm::StructType::get(*context, { ptr_type, tp_int_ptr });
-		weak_struct = llvm::StructType::get(*context, { ptr_type, tp_int_ptr, tp_int_ptr });
+		obj_struct = llvm::StructType::get(*context, { ptr_type, tp_int_ptr, tp_int_ptr });  // disp, counter, parent/weak
+		weak_struct = llvm::StructType::get(*context, { ptr_type, tp_int_ptr, tp_int_ptr });  // target, w_counter, org_parent
 		empty_mtable = make_const_array("empty_mtable", { llvm::Constant::getNullValue(ptr_type) });
 		null_weak = llvm::Constant::getNullValue(ptr_type);
+		const_0 = llvm::ConstantInt::get(tp_int_ptr, 0);
+		const_1 = llvm::ConstantInt::get(tp_int_ptr, 1);
+		const_256 = llvm::ConstantInt::get(tp_int_ptr, 256);
 
 		fn_free = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { ptr_type }, false),
@@ -260,7 +263,7 @@ struct Generator : ast::ActionScanner {
 			"ag_copy",
 			*module);
 		fn_copy_object_field = llvm::Function::Create(
-			llvm::FunctionType::get(ptr_type, { ptr_type }, false),
+			llvm::FunctionType::get(ptr_type, { ptr_type, ptr_type }, false),
 			llvm::Function::ExternalLinkage,
 			"ag_copy_object_field",
 			*module);
@@ -389,7 +392,7 @@ struct Generator : ast::ActionScanner {
 					obj_struct,
 					builder->CreateExtractValue(ptr, { 0 }),
 					1));
-		} else if (isa<ast::TpRef>(type)) {
+		} else if (isa<ast::TpRef>(type) || (isa<ast::TpClass>(type) && !maybe_own_parent)) {
 			build_inc(builder->CreateStructGEP(obj_struct, ptr, 1));
 		} else if (isa<ast::TpClass>(type)) {
 			builder->CreateCall(fn_retain_own, { cast_to(ptr, ptr_type), maybe_own_parent });
@@ -434,7 +437,7 @@ struct Generator : ast::ActionScanner {
 		builder->SetInsertPoint(bb_zero);
 		builder->CreateCall(disposer, { cast_to(addr, ptr_type) });
 		builder->CreateBr(bb_not_zero);
-		builder->SetInsertPoint(bb_zero);
+		builder->SetInsertPoint(bb_not_zero);
 	}
 
 	void build_release_ptr_not_null(llvm::Value* ptr) {
@@ -1138,10 +1141,10 @@ struct Generator : ast::ActionScanner {
 		}
 	}
 	void on_set_field(ast::SetField& node) override {
-		auto base = comp_to_persistent(node.base);
-		*result = make_retained_or_non_ptr(compile(node.val), base.data);
-		auto class_fields = classes[ast->extract_class(base.type)].fields;
+		auto class_fields = classes[ast->extract_class(node.base->type())].fields;
 		if (is_ptr(node.type())) {
+			auto base = comp_to_persistent(node.base);
+			*result = make_retained_or_non_ptr(compile(node.val), base.data);
 			auto addr = builder->CreateStructGEP(class_fields, base.data, node.field->offset);
 			build_release(builder->CreateLoad(ptr_type, addr), node.type());
 			builder->CreateStore(result->data, addr);
@@ -1151,8 +1154,11 @@ struct Generator : ast::ActionScanner {
 				result->lifetime = Val::RField{ base_as_rfield->to_release };
 			} else {
 				result->lifetime = Val::Temp{};
+				dispose_val(move(base));
 			}
 		} else {
+			*result = make_retained_or_non_ptr(compile(node.val));
+			auto base = compile(node.base);
 			builder->CreateStore(
 				result->data,
 				builder->CreateStructGEP(
@@ -1982,6 +1988,7 @@ struct Generator : ast::ActionScanner {
 				} else {
 					fields.push_back(ptr_type);    // disp
 					fields.push_back(tp_int_ptr);  // counter
+					fields.push_back(tp_int_ptr);  // weak/parent
 				}
 				for (auto& field : cls->fields) {
 					field->offset = fields.size();
@@ -2184,7 +2191,7 @@ struct Generator : ast::ActionScanner {
 					methods.push_back(llvm::ConstantExpr::getBitCast(
 						compile_function(
 							*m.pinned(),
-							ast::format_str("IM_", cls->name.pinned(), '_', i.first->name.pinned(), '_', m->name),
+							ast::format_str("IM_", cls->name.pinned(), '_', i.first->name.pinned(), '_', m->name.pinned()),
 							info.fields->getPointerTo()),
 						ptr_type));
 				}
