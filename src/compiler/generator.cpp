@@ -306,6 +306,7 @@ struct Generator : ast::ActionScanner {
 			di_builder->getOrCreateArray({
 				di_builder->createMemberType(nullptr, "disp", nullptr,    0, 64, 0, 0, llvm::DINode::DIFlags::FlagZero, di_int),
 				di_builder->createMemberType(nullptr, "counter", nullptr, 0, 64, 0, 64, llvm::DINode::DIFlags::FlagZero, di_int),
+				di_builder->createMemberType(nullptr, "wb_p", nullptr, 0, 64, 0, 64, llvm::DINode::DIFlags::FlagZero, di_int),
 				di_obj_variants = di_builder->createVariantPart(
 					nullptr, "_obj_fields", nullptr,
 					0, 0, 0,
@@ -326,7 +327,7 @@ struct Generator : ast::ActionScanner {
 				di_builder->getOrCreateArray({
 					di_builder->createMemberType(di_cu, "target", di_cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagZero, di_obj_ptr),
 					di_builder->createMemberType(di_cu, "counter", di_cu->getFile(), 0, 64, 0, 64, llvm::DINode::DIFlags::FlagZero, di_int),
-					di_builder->createMemberType(di_cu, "org_ctr", di_cu->getFile(), 0, 64, 0, 64*2, llvm::DINode::DIFlags::FlagZero, di_int) })),
+					di_builder->createMemberType(di_cu, "org_parent", di_cu->getFile(), 0, 64, 0, 64*2, llvm::DINode::DIFlags::FlagZero, di_int) })),
 			64);
 		di_opt_int = di_builder->createStructType(
 				di_cu, "_opt_int", di_cu->getFile(),
@@ -385,15 +386,15 @@ struct Generator : ast::ActionScanner {
 	}
 	void build_retain_not_null(llvm::Value* ptr, const ast::Type& type, llvm::Value* maybe_own_parent = nullptr) {
 		if (isa<ast::TpWeak>(type)) {
-			build_inc(builder->CreateStructGEP(weak_struct, ptr, 1));
+			build_inc(builder->CreateStructGEP(weak_struct, cast_to(ptr, ptr_type), 1));
 		} else if (isa<ast::TpDelegate>(type)) {
 			build_inc(
 				builder->CreateStructGEP(
 					obj_struct,
-					builder->CreateExtractValue(ptr, { 0 }),
+					builder->CreateExtractValue(cast_to(ptr, ptr_type), { 0 }),
 					1));
 		} else if (isa<ast::TpRef>(type) || (isa<ast::TpClass>(type) && !maybe_own_parent)) {
-			build_inc(builder->CreateStructGEP(obj_struct, ptr, 1));
+			build_inc(builder->CreateStructGEP(obj_struct, cast_to(ptr, ptr_type), 1));
 		} else if (isa<ast::TpClass>(type)) {
 			builder->CreateCall(fn_retain_own, { cast_to(ptr, ptr_type), maybe_own_parent });
 		}
