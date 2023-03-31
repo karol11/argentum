@@ -492,6 +492,11 @@ struct Parser {
 							sf->field_name = gf->field_name;
 							sf->val = parse_expression();
 							gf = sf;
+						} else if (match("@=")) {
+							auto sf = make_at_location<ast::SpliceField>(*gf);
+							sf->field_name = gf->field_name;
+							sf->val = parse_expression();
+							gf = sf;
 						}
 						gf->base = r;
 						r = gf;

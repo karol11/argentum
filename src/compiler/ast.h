@@ -360,6 +360,11 @@ struct SetField : FieldRef {
 	DECLARE_DOM_CLASS(SetField);
 };
 
+struct SpliceField : SetField {
+	void match(ActionMatcher& matcher) override;
+	DECLARE_DOM_CLASS(SpliceField);
+};
+
 struct MkInstance : Action {
 	own<TpClass> cls;
 	void match(ActionMatcher& matcher) override;
@@ -494,6 +499,7 @@ struct ActionMatcher {
 	virtual void on_set(Set& node);
 	virtual void on_get_field(GetField& node);
 	virtual void on_set_field(SetField& node);
+	virtual void on_splice_field(SpliceField& node);
 	virtual void on_mk_instance(MkInstance& node);
 	virtual void on_mk_lambda(MkLambda& node);
 	virtual void on_call(Call& node);
@@ -548,6 +554,7 @@ struct ActionScanner : ActionMatcher {
 	void on_set(Set& node) override;
 	void on_get_field(GetField& node) override;
 	void on_set_field(SetField& node) override;
+	void on_splice_field(SpliceField& node) override;
 	// Function and Method are not parts of AST tree
 };
 

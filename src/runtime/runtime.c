@@ -88,6 +88,18 @@ inline void ag_set_parent_nn(AgObject * obj, AgObject* parent) {
 		((AgWeak*)obj->wb_p)->org_pointer_to_parent = (uintptr_t)parent;
 }
 
+bool ag_splice(AgObject* obj, AgObject* parent) {
+	if (ag_not_null(obj)) {
+		for (AgObject* p = parent; p; p = ag_fn_sys_getParent(p)) {
+			if (p == obj)
+				return false;
+		}
+		ag_set_parent_nn(obj, parent);
+		++ag_head(obj)->counter;
+	}
+	return true;
+}
+
 void ag_set_parent(AgObject* obj, AgObject* parent) {
 	if (ag_not_null(obj)) {
 		ag_set_parent_nn(obj, parent);
@@ -465,6 +477,18 @@ void ag_fn_sys_Array_setAt(AgBlob* b, uint64_t index, AgObject* val) {
 		ag_release_own(*dst);
 		*dst = val;
 	}
+}
+
+bool ag_fn_sys_Array_spliceAt(AgBlob* b, uint64_t index, AgObject* val) {
+	if (index < b->size) {
+		AgObject** dst = ((AgObject**)(b->data)) + index;
+		if (ag_splice(val, &b->head)) {
+			ag_release_own(*dst);
+			*dst = val;
+			return true;
+		}
+	}
+	return false;
 }
 
 void ag_fn_sys_WeakArray_setAt(AgBlob* b, uint64_t index, AgWeak* val) {

@@ -169,6 +169,7 @@ struct Generator : ast::ActionScanner {
 	llvm::StructType* weak_struct = nullptr;
 	llvm::StructType* obj_vmt_struct = nullptr;
 	llvm::Function* fn_set_parent = nullptr;   // void(Obj*, Obj* parent)  // used when retained object gets assigned to field
+	llvm::Function* fn_splice = nullptr;   // bool(Obj*, Obj* parent)  // checks loops, retains, sets parent
 	llvm::Function* fn_release = nullptr;  // void(Obj*) no_throw // used for pins and local owns, doesn't clear parent
 	llvm::Function* fn_release_own = nullptr;  // void(Obj*) no_throw as pin + clears parent
 	llvm::Function* fn_retain_own = nullptr;  // void(Obj*, Obj*parent) no_throw as pin + sets parent, used in set_field
@@ -236,6 +237,11 @@ struct Generator : ast::ActionScanner {
 			llvm::FunctionType::get(void_type, { ptr_type, ptr_type}, false),
 			llvm::Function::ExternalLinkage,
 			"ag_set_parent",
+			*module);
+		fn_splice = llvm::Function::Create(
+			llvm::FunctionType::get(tp_bool, { ptr_type, ptr_type }, false),
+			llvm::Function::ExternalLinkage,
+			"ag_splice",
 			*module);
 		fn_release = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { ptr_type }, false),
@@ -1177,6 +1183,27 @@ struct Generator : ast::ActionScanner {
 					node.field->offset));
 			dispose_val(move(base));
 		}
+	}
+	void on_splice_field(ast::SpliceField& node) override {
+		auto class_fields = classes[ast->extract_class(node.base->type())].fields;
+		assert(is_ptr(node.type()));
+		auto base = comp_to_persistent(node.base);
+		auto val = compile(node.val);
+		auto bb_ok = llvm::BasicBlock::Create(*context, "", current_function);
+		auto bb_fail = llvm::BasicBlock::Create(*context, "", current_function);
+		result->data = builder->CreateCall(fn_splice, { val.data, base.data });
+		builder->CreateCondBr(result->data, bb_ok, bb_fail);
+		builder->SetInsertPoint(bb_ok);
+		auto addr = builder->CreateStructGEP(class_fields, base.data, node.field->offset);
+		build_release(
+			builder->CreateLoad(ptr_type, addr),
+			node.type(),
+			false);  // not local, clear parent
+		builder->CreateStore(val.data, addr);
+		builder->CreateBr(bb_fail);
+		builder->SetInsertPoint(bb_fail);
+		dispose_val(move(val));
+		dispose_val(move(base));
 	}
 	void on_mk_instance(ast::MkInstance& node) override {
 		result->data = builder->CreateCall(classes[node.cls].constructor, {});

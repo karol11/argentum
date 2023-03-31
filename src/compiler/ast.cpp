@@ -33,6 +33,7 @@ own<TypeWithFills> Get::dom_type_;
 own<TypeWithFills> Set::dom_type_;
 own<TypeWithFills> GetField::dom_type_;
 own<TypeWithFills> SetField::dom_type_;
+own<TypeWithFills> SpliceField::dom_type_;
 own<TypeWithFills> MkInstance::dom_type_;
 
 own<TypeWithFills> ToIntOp::dom_type_;
@@ -127,6 +128,10 @@ void initialize() {
 		->field("field", pin<CppField<FieldRef, weak<Field>, &FieldRef::field>>::make(weak_type))
 		->field("base", pin<CppField<FieldRef, own<Action>, &FieldRef::base>>::make(own_type));
 	SetField::dom_type_ = (new CppClassType<SetField>(cpp_dom, { "m0", "SetField" }))
+		->field("field", pin<CppField<FieldRef, weak<Field>, &FieldRef::field>>::make(weak_type))
+		->field("base", pin<CppField<FieldRef, own<Action>, &FieldRef::base>>::make(own_type))
+		->field("val", pin<CppField<SetField, own<Action>, &SetField::val>>::make(own_type));
+	SpliceField::dom_type_ = (new CppClassType<SpliceField>(cpp_dom, { "m0", "SliceField" }))
 		->field("field", pin<CppField<FieldRef, weak<Field>, &FieldRef::field>>::make(weak_type))
 		->field("base", pin<CppField<FieldRef, own<Action>, &FieldRef::base>>::make(own_type))
 		->field("val", pin<CppField<SetField, own<Action>, &SetField::val>>::make(own_type));
@@ -253,6 +258,7 @@ void Get::match(ActionMatcher& matcher) { matcher.on_get(*this); }
 void Set::match(ActionMatcher& matcher) { matcher.on_set(*this); }
 void GetField::match(ActionMatcher& matcher) { matcher.on_get_field(*this); }
 void SetField::match(ActionMatcher& matcher) { matcher.on_set_field(*this); }
+void SpliceField::match(ActionMatcher& matcher) { matcher.on_splice_field(*this); }
 void MkInstance::match(ActionMatcher& matcher) { matcher.on_mk_instance(*this); }
 void MkLambda::match(ActionMatcher& matcher) { matcher.on_mk_lambda(*this); }
 void Call::match(ActionMatcher& matcher) { matcher.on_call(*this); }
@@ -301,6 +307,7 @@ void ActionMatcher::on_get(Get& node) { on_unmatched(node); }
 void ActionMatcher::on_set(Set& node) { on_unmatched(node); }
 void ActionMatcher::on_get_field(GetField& node) { on_unmatched(node); }
 void ActionMatcher::on_set_field(SetField& node) { on_unmatched(node); }
+void ActionMatcher::on_splice_field(SpliceField& node) { on_unmatched(node); }
 void ActionMatcher::on_mk_lambda(MkLambda& node) { on_unmatched(node); }
 void ActionMatcher::on_mk_instance(MkInstance& node) { on_unmatched(node); }
 void ActionMatcher::on_call(Call& node) { on_unmatched(node); }
@@ -382,6 +389,7 @@ void ActionScanner::on_set_field(SetField& node) {
 	fix(node.base);
 	fix(node.val);
 }
+void ActionScanner::on_splice_field(SpliceField& node) { on_set_field(node); }
 
 void TpInt64::match(TypeMatcher& matcher) { matcher.on_int64(*this); }
 void TpDouble::match(TypeMatcher& matcher) { matcher.on_double(*this); }

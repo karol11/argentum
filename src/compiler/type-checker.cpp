@@ -300,7 +300,7 @@ struct Typer : ast::ActionMatcher {
 			}
 		}
 	}
-	void on_set_field(ast::SetField& node) override {
+	void resolve_set_field(ast::SetField& node) {
 		auto cls = class_from_action(node.base);
 		if (!node.field) {
 			if (!cls->handle_member(node, node.field_name,
@@ -309,8 +309,22 @@ struct Typer : ast::ActionMatcher {
 				[&] { node.error("field name is ambiguous, use cast"); }))
 				node.error("class ", cls->name.pinned(), " doesn't have field/method ", node.field_name.pinned());
 		}
-		node.type_ = node.field->initializer->type();
+		find_type(node.base);
+		node.type_ = find_type(node.field->initializer)->type();
+		if (auto as_class = dom::strict_cast<ast::TpClass>(node.type())) {
+			node.type_ = ast->get_ref(as_class);
+		}
+	}
+	void on_set_field(ast::SetField& node) override {
+		resolve_set_field(node);
 		expect_type(find_type(node.val), node.field->initializer->type(), [&] { return ast::format_str("assign to field ", node.field_name.pinned(), *node.field.pinned()); });
+	}
+	void on_splice_field(ast::SpliceField& node) override {
+		resolve_set_field(node);
+		if (!dom::isa<ast::TpClass>(*node.field->initializer->type()))
+			node.error("Field must be @-pointer, not ", node.field->initializer->type().pinned());
+		expect_type(find_type(node.val), node.type_, [&] { return ast::format_str("splice field ", node.field_name.pinned(), *node.field.pinned()); });
+		node.type_ = tp_bool;
 	}
 	void on_cast(ast::CastOp& node) override {
 		auto src_cls = class_from_action(node.p[0]);

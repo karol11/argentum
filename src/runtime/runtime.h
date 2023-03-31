@@ -61,6 +61,7 @@ uintptr_t ag_max_mem();
 void      ag_release_own        (AgObject* obj);
 void      ag_retain_own         (AgObject* obj, AgObject* parent);
 void      ag_set_parent         (AgObject* obj, AgObject* parent);
+bool      ag_splice             (AgObject* object, AgObject* parent);  // checks if parent is not already in object hierarchy, sets parent, retains
 AgObject* ag_copy               (AgObject* src);
 void      ag_release            (AgObject* obj);
 void      ag_dispose_obj        (AgObject* src);
@@ -114,11 +115,12 @@ void    ag_dtor_sys_Blob         (AgBlob* ptr);
 //
 // AgArray support
 //
-AgObject* ag_fn_sys_Array_getAt  (AgBlob* b, uint64_t index);
-void      ag_fn_sys_Array_setAt  (AgBlob* b, uint64_t index, AgObject* val);
-void	  ag_copy_sys_Array      (AgBlob* dst, AgBlob* src);
-void      ag_dtor_sys_Array      (AgBlob* ptr);
-void      ag_fn_sys_Array_delete (AgBlob* b, uint64_t index, uint64_t count);
+AgObject* ag_fn_sys_Array_getAt    (AgBlob* b, uint64_t index);
+void      ag_fn_sys_Array_setAt    (AgBlob* b, uint64_t index, AgObject* val);
+bool      ag_fn_sys_Array_spliceAt (AgBlob* b, uint64_t index, AgObject* val);
+void	  ag_copy_sys_Array        (AgBlob* dst, AgBlob* src);
+void      ag_dtor_sys_Array        (AgBlob* ptr);
+void      ag_fn_sys_Array_delete   (AgBlob* b, uint64_t index, uint64_t count);
 
 //
 // AgWeakArray support

@@ -50,6 +50,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 	ast.mk_fn(sys->get("Array")->get("getAt"), FN(ag_fn_sys_Array_getAt), opt_ref_to_object, { ast.get_ref(ast.own_array), ast.tp_int64() });
 	ast.mk_fn(sys->get("Array")->get("setAt"), FN(ag_fn_sys_Array_setAt), new ast::ConstVoid, { ast.get_ref(ast.own_array), ast.tp_int64(), ast.tp_optional(ast.object) });
 	ast.mk_fn(sys->get("Array")->get("delete"), FN(ag_fn_sys_Array_delete), new ast::ConstVoid, { ast.get_ref(ast.own_array), ast.tp_int64(), ast.tp_int64() });
+	ast.mk_fn(sys->get("Array")->get("spliceAt"), FN(ag_fn_sys_Array_spliceAt), new ast::ConstBool, { ast.get_ref(ast.own_array), ast.tp_int64(), ast.tp_optional(ast.get_ref(ast.object)) });
 
 	ast.weak_array = ast.mk_class(sys->get("WeakArray"));
 	ast.weak_array->overloads[container];
@@ -81,6 +82,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 		{ "ag_release_weak", FN(ag_release_weak) },
 		{ "ag_dispose_obj", FN(ag_dispose_obj) },
 		{ "ag_set_parent", FN(ag_set_parent) },
+		{ "ag_splice", FN(ag_splice) },
 
 		{ "ag_copy_sys_Container", FN(ag_copy_sys_Container) },
 		{ "ag_dtor_sys_Container", FN(ag_dtor_sys_Container) },
