@@ -310,7 +310,7 @@ struct Typer : ast::ActionMatcher {
 				node.error("class ", cls->name.pinned(), " doesn't have field/method ", node.field_name.pinned());
 		}
 		node.type_ = node.field->initializer->type();
-		expect_type(find_type(node.val), node.field->initializer->type(), [&] { return ast::format_str("assign to field", node.field_name.pinned(), node.field.pinned()); });
+		expect_type(find_type(node.val), node.field->initializer->type(), [&] { return ast::format_str("assign to field ", node.field_name.pinned(), *node.field.pinned()); });
 	}
 	void on_cast(ast::CastOp& node) override {
 		auto src_cls = class_from_action(node.p[0]);

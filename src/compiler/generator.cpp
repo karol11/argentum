@@ -1189,10 +1189,12 @@ struct Generator : ast::ActionScanner {
 		result->data = builder->CreateSIToFP(comp_non_ptr(node.p), double_type);
 	}
 	void on_not(ast::NotOp& node) override {
+		Val param = compile(node.p);
 		result->data = builder->CreateNot(
 			check_opt_has_val(
-				comp_non_ptr(node.p),
+				param.data,
 				dom::strict_cast<ast::TpOptional>(node.p->type())));
+		dispose_val(move(param));
 	}
 	void on_neg(ast::NegOp& node) override {
 		result->data = builder->CreateNeg(comp_non_ptr(node.p));

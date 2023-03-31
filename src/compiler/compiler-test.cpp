@@ -639,4 +639,43 @@ TEST(Parser, Delegates) {
     )");
 }
 
+TEST(Parser, GetParent) {
+    execute(R"(
+        class Cl{
+            x = 0;
+            inner = ?Cl;
+            new(int x) this { this.x := x }
+        }
+        a = Cl.new(11);
+        a.inner := +Cl.new(22);
+        a.inner?_.inner := +Cl.new(33);
+        assert(0, sys_getParent(a) && _~Cl ? _.x : 0);
+        assert(11, a.inner && sys_getParent(_) && _~Cl ? _.x : 0);
+        p = a.inner;
+        a.inner := ?Cl;
+        assert(0, p
+            ? (sys_getParent(_) && _~Cl ? _.x : 0)
+            : -1);
+        assert(22, p && _.inner && sys_getParent(_) && _~Cl ? _.x : 0)
+    )");
+}
+
+TEST(Parser, GetParentArray) {
+    execute(R"(
+        a = sys_Array;
+        sys_Container_insert(a, 0, 10);
+        a[0] := +sys_Object;
+        assert(a[0] && sys_getParent(_) && _==a ? 1:0, 1);
+        v = a[0];
+        sys_Array_delete(a, 0, 1);
+        assert(v && !sys_getParent(_) ? 1 : 0, 1);
+        a[0] := +sys_Object;
+        assert(a[0] && sys_getParent(_) && _==a ? 1:0, 1);
+        v := a[0];
+        a[0] := ?sys_Object;
+        assert(v && !sys_getParent(_) ? 1 : 0, 1);
+        assert(!sys_getParent(a) ? 1 : 0, 1)
+    )");
+}
+
 }  // namespace
