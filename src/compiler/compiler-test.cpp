@@ -678,4 +678,17 @@ TEST(Parser, GetParentArray) {
     )");
 }
 
+TEST(Parser, Splice) {
+    execute(R"(
+        class C{ inner = ?C; }
+        a = C;
+        a.inner := +C;
+        temp = a.inner;
+        a.inner := ?C;
+        assert(temp && !sys_getParent(_) ? 1:0, 1);
+        a.inner @= temp;
+        assert(temp == a.inner ? 1:0, 1)
+    )");
+}
+
 }  // namespace

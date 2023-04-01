@@ -1186,12 +1186,13 @@ struct Generator : ast::ActionScanner {
 	}
 	void on_splice_field(ast::SpliceField& node) override {
 		auto class_fields = classes[ast->extract_class(node.base->type())].fields;
-		assert(is_ptr(node.type()));
 		auto base = comp_to_persistent(node.base);
 		auto val = compile(node.val);
 		auto bb_ok = llvm::BasicBlock::Create(*context, "", current_function);
 		auto bb_fail = llvm::BasicBlock::Create(*context, "", current_function);
-		result->data = builder->CreateCall(fn_splice, { val.data, base.data });
+		result->data = builder->CreateCall(fn_splice, {
+				cast_to(val.data, ptr_type),
+				base.data });
 		builder->CreateCondBr(result->data, bb_ok, bb_fail);
 		builder->SetInsertPoint(bb_ok);
 		auto addr = builder->CreateStructGEP(class_fields, base.data, node.field->offset);

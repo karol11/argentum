@@ -321,7 +321,10 @@ struct Typer : ast::ActionMatcher {
 	}
 	void on_splice_field(ast::SpliceField& node) override {
 		resolve_set_field(node);
-		if (!dom::isa<ast::TpClass>(*node.field->initializer->type()))
+		auto ft = node.field->initializer->type();
+		if (auto as_opt = dom::strict_cast<ast::TpOptional>(ft))
+			ft = as_opt->wrapped;
+		if (!dom::isa<ast::TpClass>(*ft))
 			node.error("Field must be @-pointer, not ", node.field->initializer->type().pinned());
 		expect_type(find_type(node.val), node.type_, [&] { return ast::format_str("splice field ", node.field_name.pinned(), *node.field.pinned()); });
 		node.type_ = tp_bool;
