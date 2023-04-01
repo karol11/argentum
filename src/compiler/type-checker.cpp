@@ -70,14 +70,14 @@ struct Typer : ast::ActionMatcher {
 		}
 		node.type_ = node.body.back()->type();
 	}
-	void check_fn_proto(ast::Action& node, ast::TpFunction& fn, const vector<pin<ast::Action>>& actual_params, ast::Action& callee) {
+	void check_fn_proto(ast::Action& node, ast::TpFunction& fn, vector<own<ast::Action>>& actual_params, ast::Action& callee) {
 		if (fn.params.size() - 1 != actual_params.size())
 			node.error("Mismatched params count: expected ", fn.params.size() - 1, " provided ", actual_params.size(), " see function definition:", callee);
 		for (size_t i = 0; i < actual_params.size(); i++)
 			expect_type(actual_params[i], Type::promote(fn.params[i]), [&] { return ast::format_str("parameter ", i); });
 		node.type_ = Type::promote(fn.params.back());
 	}
-	void type_call(ast::Action& node, pin<ast::Action> callee, const vector<pin<ast::Action>>& actual_params) {
+	void type_call(ast::Action& node, pin<ast::Action> callee, vector<own<ast::Action>>& actual_params) {
 		pin<Type> callee_type = callee->type();
 		if (auto as_fn = dom::strict_cast<ast::TpFunction>(callee_type)) {
 			check_fn_proto(node, *as_fn, actual_params, *callee);
@@ -123,10 +123,9 @@ struct Typer : ast::ActionMatcher {
 		}
 	}
 	void on_call(ast::Call& node) override {
-		vector<pin<ast::Action>> params;
 		for (auto& p : node.params)
-			params.push_back(find_type(p));
-		type_call(node, find_type(node.callee), params);
+			find_type(p);
+		type_call(node, find_type(node.callee), node.params);
 		if (auto as_mk_delegate = dom::strict_cast<ast::MakeDelegate>(node.callee)) {
 			if (as_mk_delegate->method->is_factory)
 				node.type_ = as_mk_delegate->base->type();  // preserve both own/ref and actual this type.
@@ -253,7 +252,11 @@ struct Typer : ast::ActionMatcher {
 					variable_type = ast->get_ref(variable_as_class);
 			}
 		}
-		expect_type(node, value_type, variable_type, [&] { return ast::format_str("assign to vaiable", node.var_name.pinned(), node.var.pinned()); });
+		expect_type(
+			*fix_result,
+			value_type,
+			variable_type,
+			[&] { return ast::format_str("assign to vaiable", node.var_name.pinned(), node.var.pinned()); });
 	}
 	void on_mk_instance(ast::MkInstance& node) override {
 		node.type_ = node.cls;
@@ -445,10 +448,10 @@ struct Typer : ast::ActionMatcher {
 			expect_type(fn->body.back(), Type::promote(lambda->params.back()), [&] { return ast::format_str("lambda result in ", context()); });
 		}
 	}
-	void expect_type(pin<ast::Action> node, pin<ast::Type> expected_type, const function<string()>& context) {
-		expect_type(*node, node->type(), expected_type, context);
+	void expect_type(own<ast::Action>& node, pin<ast::Type> expected_type, const function<string()>& context) {
+		expect_type(node, node->type(), expected_type, context);
 	}
-	void expect_type(ast::Action& node, pin<ast::Type> actual_type, pin<ast::Type> expected_type, const function<string()>& context) {
+	void expect_type(own<ast::Action>& node, pin<ast::Type> actual_type, pin<ast::Type> expected_type, const function<string()>& context) {
 		if (expected_type == ast->tp_void())
 			return;
 		if (actual_type == expected_type)
@@ -477,23 +480,35 @@ struct Typer : ast::ActionMatcher {
 				act_as_cold->callees.clear();
 				return;
 			} else if (auto exp_as_lambda = dom::strict_cast<ast::TpLambda>(expected_type)) {
-				unify(act_as_cold, exp_as_lambda, node, context);
+				unify(act_as_cold, exp_as_lambda, *node, context);
 				return;
 			}
 		} else if (auto act_as_lambda = dom::strict_cast<ast::TpLambda>(actual_type)) {
 			if (auto exp_as_cold = dom::strict_cast<ast::TpColdLambda>(expected_type)) {
-				unify(exp_as_cold, act_as_lambda, node, context);
+				unify(exp_as_cold, act_as_lambda, *node, context);
 				return;
 			}
-		} else if (auto act_as_opt = dom::strict_cast<ast::TpOptional>(actual_type)) {
-			if (auto exp_as_opt = dom::strict_cast<ast::TpOptional>(expected_type)) {
+		} else if (auto exp_as_opt = dom::strict_cast<ast::TpOptional>(expected_type)) {
+			if (auto act_as_opt = dom::strict_cast<ast::TpOptional>(actual_type)) {
 				if (act_as_opt->depth == exp_as_opt->depth) {
 					expect_type(node, act_as_opt->wrapped, exp_as_opt->wrapped, context);
 					return;
 				}
+			} else {
+				expect_type(node, actual_type, exp_as_opt->wrapped, [&] { return ast::format_str("trying to convert to optional while ", context()); });
+				for (size_t d = exp_as_opt->depth + 1; d; d--) {
+					auto r = ast::make_at_location<ast::If>(*node);
+					auto cond = ast::make_at_location<ast::ConstBool>(*node);
+					cond->value = true;
+					r->p[0] = cond;
+					r->p[1] = move(node);
+					node = move(r);
+				}
+				find_type(node);
+				return;
 			}
 		}
-		node.context_error(context, "Expected type: ", expected_type, " not ", actual_type);
+		node->context_error(context, "Expected type: ", expected_type, " not ", actual_type);
 	}
 
 	void process_method(own<ast::Method>& m) {

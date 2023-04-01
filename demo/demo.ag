@@ -22,14 +22,14 @@ class Scene{
         star.init(w, "star.png") ? this
     }
     run() {
-        push(10, (i){ +Flare.initAtBottom(this) });
+        push(10, (i){ Flare.initAtBottom(this) });
         sdl.eventLoop((e){
             w.blt(background, 0, 0, 800, 600, 0, 0, 800, 600);
             paint(w);
             w.blt(foreground, 0, 0, 800, 600, 0, 0, 800, 600);
             w.flip();
             rnd.get(0, 30) == 0 ?
-                push(1, (i){ +Flare.initAtBottom(this) });
+                push(1, (i){ Flare.initAtBottom(this) });
             tick(1000/30);
         });
     }
@@ -55,7 +55,7 @@ class Flare {
             dFade -= 140;
             fade == 0 && scene &&=s s.rnd.get(0, generation) == 0 ?
                 distributeInCircle(s.rnd, s.rnd.get(6, 15), 10 << 16, (dx, dy) {
-                    s.push(1, (i){ +Flare.initAtFlare(this, dx, dy) });
+                    s.push(1, (i){ Flare.initAtFlare(this, dx, dy) });
                 });
             y > -100 << 16 && y <= 600 << 16 && x > 0 && x < 800 << 16 && fade >= 0
         }

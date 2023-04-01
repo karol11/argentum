@@ -41,7 +41,7 @@ class sys_Array{
         }
     }
     setAt(int i, ()@sys_Object generator) bool {
-        i < itemsCount ? sys_Array_setAt(this, i, +generator())
+        i < itemsCount ? sys_Array_setAt(this, i, generator())
     }
 }
 

@@ -332,14 +332,14 @@ TEST(Parser, TopoCopy) {
           }
         }
         root = Node;
-        root.left := +Node;
-        root.right := +Node;
+        root.left := Node;
+        root.right := Node;
         root.left?_.parent := &root;
         root.right?_.parent := &root;
 
         oldSize = root.scan(&Node);
 
-        root.left := +@root;
+        root.left := @root;
         root.left?_.parent := &root;
 
         assert(35, oldSize * 10 + root.scan(&Node))
@@ -414,8 +414,8 @@ TEST(Parser, Arrays) {
         }
         a = sys_Array;
         sys_Container_insert(a, 0, 10);
-        a[0] := +Node;
-        a[1] := +Node;
+        a[0] := Node;
+        a[1] := Node;
         a[1] && _~Node ? {
             _.x := 42;
             _.y := 33;
@@ -459,7 +459,7 @@ TEST(Parser, OpenClasses) {
         }
         a = sys_Array;
         a.insert(0, 10);
-        a[1] := +Node;
+        a[1] := Node;
         c = @a;
         c.delete(0, 1);
         assert(42, c[0]&&_~Node?_.x : -1)
@@ -480,7 +480,7 @@ TEST(Parser, RetOwnPtr) {
         }
         a = sys_Array;
         sys_Container_insert(a, 0, 1);
-        a[0] := +nodeAt(42, 33);  // no copy here!
+        a[0] := nodeAt(42, 33);  // no copy here!
         assert(42, a[0]&&_~Node?_.x : -1)
     )");
 }
@@ -525,7 +525,7 @@ TEST(Parser, TypedArrays) {
             add(()@sys_Object n) {               // `add` accepts lambda and calss it to get @object placed exactly where, when and how much objects needed.
                 at = sys_Container_size(this);
                 sys_Container_insert(this, at, 1);
-                sys_Array_setAt(this, at, +n());
+                sys_Array_setAt(this, at, n());
             }
             size() int { sys_Container_size(this) }
         }
@@ -647,8 +647,8 @@ TEST(Parser, GetParent) {
             new(int x) this { this.x := x }
         }
         a = Cl.new(11);
-        a.inner := +Cl.new(22);
-        a.inner?_.inner := +Cl.new(33);
+        a.inner := Cl.new(22);
+        a.inner?_.inner := Cl.new(33);
         assert(0, sys_getParent(a) && _~Cl ? _.x : 0);
         assert(11, a.inner && sys_getParent(_) && _~Cl ? _.x : 0);
         p = a.inner;
@@ -664,12 +664,12 @@ TEST(Parser, GetParentArray) {
     execute(R"(
         a = sys_Array;
         sys_Container_insert(a, 0, 10);
-        a[0] := +sys_Object;
+        a[0] := sys_Object;
         assert(a[0] && sys_getParent(_) && _==a ? 1:0, 1);
         v = a[0];
         sys_Array_delete(a, 0, 1);
         assert(v && !sys_getParent(_) ? 1 : 0, 1);
-        a[0] := +sys_Object;
+        a[0] := sys_Object;
         assert(a[0] && sys_getParent(_) && _==a ? 1:0, 1);
         v := a[0];
         a[0] := ?sys_Object;
@@ -682,7 +682,7 @@ TEST(Parser, Splice) {
     execute(R"(
         class C{ inner = ?C; }
         a = C;
-        a.inner := +C;
+        a.inner := C;
         temp = a.inner;
         a.inner := ?C;
         assert(temp && !sys_getParent(_) ? 1:0, 1);
