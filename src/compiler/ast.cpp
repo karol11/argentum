@@ -41,6 +41,7 @@ own<TypeWithFills> ToFloatOp::dom_type_;
 own<TypeWithFills> NotOp::dom_type_;
 own<TypeWithFills> NegOp::dom_type_;
 own<TypeWithFills> RefOp::dom_type_;
+own<TypeWithFills> FreezeOp::dom_type_;
 own<TypeWithFills> Block::dom_type_;
 own<TypeWithFills> CastOp::dom_type_;
 own<TypeWithFills> AddOp::dom_type_;
@@ -74,6 +75,7 @@ own<TypeWithFills> TpVoid::dom_type_;
 own<TypeWithFills> TpOptional::dom_type_;
 own<TypeWithFills> TpClass::dom_type_;
 own<TypeWithFills> TpRef::dom_type_;
+own<TypeWithFills> TpShared::dom_type_;
 own<TypeWithFills> TpWeak::dom_type_;
 own<TypeWithFills> Field::dom_type_;
 own<TypeWithFills> Method::dom_type_;
@@ -144,6 +146,8 @@ void initialize() {
 	NegOp::dom_type_ = (new CppClassType<NegOp>(cpp_dom, { "m0", "Neg" }))
 		->field("p", pin<CppField<UnaryOp, own<Action>, &UnaryOp::p>>::make(own_type));
 	RefOp::dom_type_ = (new CppClassType<RefOp>(cpp_dom, { "m0", "Ref" }))
+		->field("p", pin<CppField<UnaryOp, own<Action>, &UnaryOp::p>>::make(own_type));
+	FreezeOp::dom_type_ = (new CppClassType<FreezeOp>(cpp_dom, { "m0", "Freeze" }))
 		->field("p", pin<CppField<UnaryOp, own<Action>, &UnaryOp::p>>::make(own_type));
 	Loop::dom_type_ = (new CppClassType<Loop>(cpp_dom, { "m0", "Loop" }))
 		->field("p", pin<CppField<UnaryOp, own<Action>, &UnaryOp::p>>::make(own_type));
@@ -222,6 +226,8 @@ void initialize() {
 		->field("name", pin<CppField<Function, own<dom::Name>, &Function::name>>::make(atom_type))
 		->field("body", pin<CppField<Block, vector<own<Action>>, &Block::body>>::make(own_vector_type))
 		->field("result_type", pin<CppField<Function, own<Action>, &Function::type_expression>>::make(own_type))
+		->field("is_factory", pin<CppField<Method, bool, &Method::is_factory>>::make(cpp_dom->mk_type(Kind::BOOL)))
+		->field("mut", pin<CppField<Method, int, &Method::mut>>::make(cpp_dom->mk_type(Kind::INT)))
 		->field("params", pin<CppField<Block, vector<own<Var>>, &Block::names>>::make(own_vector_type));
 	TpClass::dom_type_ = (new CppClassType<TpClass>(cpp_dom, { "m0", "Type", "Class" }))
 		->field("name", pin<CppField<TpClass, own<dom::Name>, &TpClass::name>>::make(atom_type))
@@ -231,6 +237,8 @@ void initialize() {
 		->field("fields", pin<CppField<TpClass, vector<own<Field>>, &TpClass::fields>>::make(own_vector_type))
 		->field("methods", pin<CppField<TpClass, vector<own<Method>>, &TpClass::new_methods>>::make(own_vector_type));
 	TpRef::dom_type_ = (new CppClassType<TpRef>(cpp_dom, { "m0", "Type", "Ref" }))
+		->field("target", pin<CppField<TpRef, own<TpClass>, &TpRef::target>>::make(own_type));
+	TpShared::dom_type_ = (new CppClassType<TpShared>(cpp_dom, { "m0", "Type", "Shared" }))
 		->field("target", pin<CppField<TpRef, own<TpClass>, &TpRef::target>>::make(own_type));
 	TpWeak::dom_type_ = (new CppClassType<TpWeak>(cpp_dom, { "m0", "Type", "Weak" }))
 		->field("target", pin<CppField<TpRef, own<TpClass>, &TpRef::target>>::make(own_type));
@@ -272,6 +280,7 @@ void ToFloatOp::match(ActionMatcher& matcher) { matcher.on_to_float(*this); }
 void NotOp::match(ActionMatcher& matcher) { matcher.on_not(*this); }
 void NegOp::match(ActionMatcher& matcher) { matcher.on_neg(*this); }
 void RefOp::match(ActionMatcher& matcher) { matcher.on_ref(*this); }
+void FreezeOp::match(ActionMatcher& matcher) { matcher.on_freeze(*this); }
 void Loop::match(ActionMatcher& matcher) { matcher.on_loop(*this); }
 void CopyOp::match(ActionMatcher& matcher) { matcher.on_copy(*this); }
 void MkWeakOp::match(ActionMatcher& matcher) { matcher.on_mk_weak(*this); }
@@ -321,6 +330,7 @@ void ActionMatcher::on_to_float(ToFloatOp& node) { on_un_op(node); }
 void ActionMatcher::on_not(NotOp& node) { on_un_op(node); }
 void ActionMatcher::on_neg(NegOp& node) { on_un_op(node); }
 void ActionMatcher::on_ref(RefOp& node) { on_un_op(node); }
+void ActionMatcher::on_freeze(FreezeOp& node) { on_un_op(node); }
 void ActionMatcher::on_loop(Loop& node) { on_un_op(node); }
 void ActionMatcher::on_copy(CopyOp& node) { on_un_op(node); }
 void ActionMatcher::on_mk_weak(MkWeakOp& node) { on_un_op(node); }
@@ -401,6 +411,7 @@ void TpVoid::match(TypeMatcher& matcher) { matcher.on_void(*this); }
 void TpOptional::match(TypeMatcher& matcher) { matcher.on_optional(*this); }
 void TpClass::match(TypeMatcher& matcher) { matcher.on_class(*this); }
 void TpRef::match(TypeMatcher& matcher) { matcher.on_ref(*this); }
+void TpShared::match(TypeMatcher& matcher) { matcher.on_shared(*this); }
 void TpWeak::match(TypeMatcher& matcher) { matcher.on_weak(*this); }
 
 size_t typelist_hasher::operator() (const vector<own<Type>>* v) const {
@@ -522,6 +533,15 @@ pin<TpRef> Ast::get_ref(pin<TpClass> target) {
 	return r;
 }
 
+pin<TpShared> Ast::get_shared(pin<TpClass> target) {
+	auto& r = shareds[target];
+	if (!r) {
+		r = new TpShared;
+		r->target = target;
+	}
+	return r;
+}
+
 pin<TpWeak> Ast::get_weak(pin<TpClass> target) {
 	auto& w = weaks[target];
 	if (!w) {
@@ -549,6 +569,8 @@ pin<TpClass> Ast::peek_class(pin<dom::Name> name) {
 pin<TpClass> Ast::extract_class(pin<Type> pointer) {
 	if (auto as_ref = dom::strict_cast<ast::TpRef>(pointer))
 		return as_ref->target;
+	if (auto as_shared = dom::strict_cast<ast::TpShared>(pointer))
+		return as_shared->target;
 	if (auto as_class = dom::strict_cast<ast::TpClass>(pointer))
 		return as_class;
 	// no weaks here, their targets are not directly accessible without a null check
@@ -658,6 +680,9 @@ std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t) {
 		}
 		void on_ref(ast::TpRef& type) override {
 			dst << type.target->name.pinned();
+		}
+		void on_shared(ast::TpShared& type) override {
+			dst << "*" << type.target->name.pinned();
 		}
 		void on_weak(ast::TpWeak& type) override {
 			dst << "&" << type.target->name.pinned();

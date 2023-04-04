@@ -131,6 +131,10 @@ struct TpRef : Type {
 	void match(TypeMatcher& matcher) override;
 	DECLARE_DOM_CLASS(TpRef);
 };
+struct TpShared : TpRef {
+	void match(TypeMatcher& matcher) override;
+	DECLARE_DOM_CLASS(TpShared);
+};
 struct TpWeak : Type {
 	own<TpClass> target;
 	void match(TypeMatcher& matcher) override;
@@ -149,6 +153,7 @@ struct TypeMatcher {
 	virtual void on_optional(TpOptional& type) =0;
 	virtual void on_class(TpClass& type) = 0;
 	virtual void on_ref(TpRef& type) = 0;
+	virtual void on_shared(TpShared& type) = 0;
 	virtual void on_weak(TpWeak& type) = 0;
 };
 
@@ -189,6 +194,7 @@ struct Ast: dom::DomItem {
 	unordered_map<own<dom::Name>, own<TpClass>> classes_by_names;
 	unordered_map<own<dom::Name>, weak<struct Function>> functions_by_names;
 	unordered_map<own<TpClass>, own<TpRef>> refs;
+	unordered_map<own<TpClass>, own<TpShared>> shareds;
 	unordered_map<own<TpClass>, own<TpWeak>> weaks;
 	unordered_set<pin<dom::Name>> module_names;
 	unordered_map<own<dom::Name>, own<struct Function>> tests_by_names;
@@ -219,6 +225,7 @@ struct Ast: dom::DomItem {
 	pin<TpOptional> tp_optional(pin<Type> wrapped);
 	pin<Type> get_wrapped(pin<TpOptional> opt);
 	pin<TpRef> get_ref(pin<TpClass> target);
+	pin<TpShared> get_shared(pin<TpClass> target);
 	pin<TpWeak> get_weak(pin<TpClass> target);
 	pin<TpClass> get_class(pin<dom::Name> name); // gets or creates class
 	pin<TpClass> peek_class(pin<dom::Name> name); // gets class or null
@@ -290,7 +297,8 @@ struct Method : Function {  // Cannot be in the tree of ops. Resides in TpClass:
 	weak<Method> base; // first original class/interface method that was implemented by this one
 	weak<TpClass> cls;  // class in which this method is declared.
 	int ordinal = 0; // index int cls->new_methods.
-	bool is_factory = 0; // @-method
+	bool is_factory = false; // @-method
+	int mut = 1;  // 1=mutable, -1=frozen(*), 0=any(-)
 	DECLARE_DOM_CLASS(Method);
 };
 
@@ -483,7 +491,10 @@ struct RefOp : UnaryOp { // converts TpClass to TpRef, used only in type definit
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(RefOp);
 };
-
+struct FreezeOp : UnaryOp { // converts TpClass/TpRef to TpShared.
+	void match(ActionMatcher& matcher) override;
+	DECLARE_DOM_CLASS(FreezeOp);
+};
 
 struct ActionMatcher {
 	virtual void on_unmatched(Action& node);
@@ -536,6 +547,7 @@ struct ActionMatcher {
 	virtual void on_not(NotOp& node);
 	virtual void on_neg(NegOp& node);
 	virtual void on_ref(RefOp& node);
+	virtual void on_freeze(FreezeOp& node);
 
 	own<Action>* fix_result = nullptr;
 	void fix(own<Action>& ptr);

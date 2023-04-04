@@ -188,8 +188,15 @@ struct Typer : ast::ActionMatcher {
 		return fn;
 	}
 	void on_make_delegate(ast::MakeDelegate& node) override {
-		find_type(node.base);
+		class_from_action(node.base);
 		node.type_ = type_fn(node.method)->type_;
+		if (dom::isa<ast::TpShared>(*node.base->type())) {
+			if (node.method->mut == 1)
+				node.error("cannot call a mutaing method on a shared object");
+		} else {
+			if (node.method->mut == -1)
+				node.error("cannot call a *method on a non-shared object");
+		}
 	}
 	void on_to_int(ast::ToIntOp& node) override {
 		node.type_ = ast->tp_int64();
@@ -200,7 +207,7 @@ struct Typer : ast::ActionMatcher {
 		if (auto param_as_ref = dom::strict_cast<ast::TpRef>(param_type))
 			node.type_ = param_as_ref->target;
 		else
-			node.error("copy parameter should be a reference, not ", param_type);
+			node.error("copy operand should be a reference, not ", param_type);
 	}
 	void on_to_float(ast::ToFloatOp& node) override {
 		node.type_ = ast->tp_double();
@@ -221,6 +228,10 @@ struct Typer : ast::ActionMatcher {
 		if (!as_class)
 			node.p->error("expected own class or interface, not ", node.p->type());
 		node.type_ = ast->get_ref(as_class);
+	}
+	void on_freeze(ast::FreezeOp& node) override {
+		auto cls = class_from_action(node.p);
+		node.type_ = ast->get_shared(cls);
 	}
 	void on_loop(ast::Loop& node) override {
 		find_type(node.p);
@@ -299,7 +310,9 @@ struct Typer : ast::ActionMatcher {
 			find_type(node.base);
 			node.type_ = find_type(node.field->initializer)->type();
 			if (auto as_class = dom::strict_cast<ast::TpClass>(node.type())) {
-				node.type_ = ast->get_ref(as_class);
+				node.type_ = dom::isa<ast::TpShared>(*node.base->type())
+					? ast->get_shared(as_class)
+					: ast->get_ref(as_class);
 			}
 		}
 	}
@@ -312,7 +325,8 @@ struct Typer : ast::ActionMatcher {
 				[&] { node.error("field name is ambiguous, use cast"); }))
 				node.error("class ", cls->name.pinned(), " doesn't have field/method ", node.field_name.pinned());
 		}
-		find_type(node.base);
+		if (dom::isa<ast::TpShared>(*node.base->type()))
+			node.error("Cannot assign to a shared object field ", node.field->name.pinned());
 		node.type_ = find_type(node.field->initializer)->type();
 		if (auto as_class = dom::strict_cast<ast::TpClass>(node.type())) {
 			node.type_ = ast->get_ref(as_class);
@@ -466,9 +480,14 @@ struct Typer : ast::ActionMatcher {
 				if (actual_class->overloads.count(exp_as_class))
 					return;
 			}
+		} else if (auto exp_as_shared = dom::strict_cast<ast::TpShared>(expected_type)) {
+			if (auto actual_as_shared = dom::strict_cast<ast::TpShared>(actual_type)) {
+				if (actual_as_shared->target->overloads.count(exp_as_shared->target))
+					return;
+			}
 		} else if (auto exp_as_weak = dom::strict_cast<ast::TpWeak>(expected_type)) {
 			if (auto actual_as_weak = dom::strict_cast<ast::TpWeak>(actual_type)) {
-				if (actual_as_weak == exp_as_weak->target || actual_as_weak->target->overloads.count(exp_as_weak->target))
+				if (actual_as_weak->target->overloads.count(exp_as_weak->target))
 					return;
 			}
 		} else if (auto act_as_cold = dom::strict_cast<ast::TpColdLambda>(actual_type)) {

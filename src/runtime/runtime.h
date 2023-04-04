@@ -63,6 +63,7 @@ void      ag_retain_own         (AgObject* obj, AgObject* parent);
 void      ag_set_parent         (AgObject* obj, AgObject* parent);
 bool      ag_splice             (AgObject* object, AgObject* parent);  // checks if parent is not already in object hierarchy, sets parent, retains
 AgObject* ag_copy               (AgObject* src);
+AgObject* ag_freeze             (AgObject* src);
 void      ag_release            (AgObject* obj);
 void      ag_dispose_obj        (AgObject* src);
 AgObject* ag_allocate_obj       (size_t size);

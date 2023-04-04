@@ -114,6 +114,7 @@ struct NameResolver : ast::ActionScanner {
 									ovr_method->error("method is already implemented here", base_method);
 								ovr_method->base = base_method->base;
 								ovr_method->ovr = base_method;
+								ovr_method->mut = base_method->mut;
 								assert(ovr_method->ordinal < vmt.size());
 								vmt[ovr_method->ordinal] = ovr_method;
 								auto& named = c->this_names[ovr_method->name];
@@ -171,6 +172,13 @@ struct NameResolver : ast::ActionScanner {
 		this_var = dom::isa<ast::Method>(*fn) || dom::isa<ast::ImmediateDelegate>(*fn)
 			? fn->names.front().pinned()
 			: nullptr;
+		if (auto as_method = dom::strict_cast<ast::Method>(fn)) {
+			if (as_method->mut == -1) {
+				auto freeze = ast::make_at_location<ast::FreezeOp>(*this_var->initializer);
+				freeze->p = move(this_var->initializer);
+				this_var->initializer = freeze;
+			}
+		}
 		for (auto& p : fn->names) {
 			if (p->initializer)
 				fix(p->initializer);

@@ -177,6 +177,7 @@ struct Generator : ast::ActionScanner {
 	llvm::Function* fn_dispose = nullptr;  // void(Obj*) no_throw // used in releaseObj
 	llvm::Function* fn_allocate = nullptr; // Obj*(size_t)
 	llvm::Function* fn_copy = nullptr;   // Obj*(Obj*)
+	llvm::Function* fn_freeze = nullptr;   // Obj*(Obj*)
 	llvm::Function* fn_mk_weak = nullptr;   // WB*(Obj*)
 	llvm::Function* fn_deref_weak = nullptr;   // intptr_aka_?obj* (WB*)
 	llvm::Function* fn_copy_object_field = nullptr;   // Obj* (Obj* src, Obj* parent)
@@ -267,6 +268,11 @@ struct Generator : ast::ActionScanner {
 			llvm::FunctionType::get(ptr_type, { ptr_type }, false),
 			llvm::Function::ExternalLinkage,
 			"ag_copy",
+			*module);
+		fn_freeze = llvm::Function::Create(
+			llvm::FunctionType::get(ptr_type, { ptr_type }, false),
+			llvm::Function::ExternalLinkage,
+			"ag_freeze",
 			*module);
 		fn_copy_object_field = llvm::Function::Create(
 			llvm::FunctionType::get(ptr_type, { ptr_type, ptr_type }, false),
@@ -380,6 +386,7 @@ struct Generator : ast::ActionScanner {
 		return dom::strict_cast<ast::TpClass>(type) ||
 			dom::strict_cast<ast::TpRef>(type) ||
 			dom::strict_cast<ast::TpWeak>(type) ||
+			dom::strict_cast<ast::TpShared>(type) ||
 			dom::strict_cast<ast::TpDelegate>(type);
 	}
 
@@ -399,7 +406,7 @@ struct Generator : ast::ActionScanner {
 					obj_struct,
 					builder->CreateExtractValue(cast_to(ptr, ptr_type), { 0 }),
 					1));
-		} else if (isa<ast::TpRef>(type) || (isa<ast::TpClass>(type) && !maybe_own_parent)) {
+		} else if (isa<ast::TpRef>(type) || isa<ast::TpShared>(type) || (isa<ast::TpClass>(type) && !maybe_own_parent)) {
 			build_inc(builder->CreateStructGEP(obj_struct, cast_to(ptr, ptr_type), 1));
 		} else if (isa<ast::TpClass>(type)) {
 			builder->CreateCall(fn_retain_own, { cast_to(ptr, ptr_type), maybe_own_parent });
@@ -456,7 +463,7 @@ struct Generator : ast::ActionScanner {
 				builder->CreateCall(fn_release_weak, { cast_to(ptr, ptr_type) });
 			} else if (isa<ast::TpDelegate>(*as_opt->wrapped)) {
 				builder->CreateCall(fn_release_weak, { builder->CreateExtractValue(ptr, {0}) });
-			} else if (isa<ast::TpRef>(*as_opt->wrapped) || (isa<ast::TpClass>(*as_opt->wrapped) && is_local)) {
+			} else if (isa<ast::TpRef>(*as_opt->wrapped) || isa<ast::TpShared>(*as_opt->wrapped) || (isa<ast::TpClass>(*as_opt->wrapped) && is_local)) {
 				builder->CreateCall(fn_release, { cast_to(ptr, ptr_type) });
 			} else if (isa<ast::TpClass>(*as_opt->wrapped)) {
 				builder->CreateCall(fn_release_own, { cast_to(ptr, ptr_type) });
@@ -466,7 +473,7 @@ struct Generator : ast::ActionScanner {
 				builder->CreateCall(fn_release_weak, { cast_to(ptr, ptr_type) });
 			} else if (isa<ast::TpDelegate>(*type)) {
 				builder->CreateCall(fn_release_weak, { builder->CreateExtractValue(ptr, {0}) });
-			} else if (isa<ast::TpRef>(*type) || (isa<ast::TpClass>(*type) && is_local)) {
+			} else if (isa<ast::TpRef>(*type) || isa<ast::TpShared>(*type) || (isa<ast::TpClass>(*type) && is_local)) {
 				build_release_ptr_not_null(ptr);
 			} else if (isa<ast::TpClass>(*type)) {
 				builder->CreateCall(fn_release_own, { ptr });
@@ -638,6 +645,7 @@ struct Generator : ast::ActionScanner {
 			}
 			void on_class(ast::TpClass& type) override { result = gen->di_obj_ptr; }
 			void on_ref(ast::TpRef& type) override { result = gen->di_obj_ptr; }
+			void on_shared(ast::TpShared& type) override { result = gen->di_obj_ptr; }
 			void on_weak(ast::TpWeak& type) override { result = gen->di_weak_ptr; }
 			void on_delegate(ast::TpDelegate& type) override { result = gen->di_delegate; }
 		};
@@ -1230,6 +1238,12 @@ struct Generator : ast::ActionScanner {
 	void on_ref(ast::RefOp& node) override {
 		internal_error(node, "ref cannot be compiled");
 	}
+	void on_freeze(ast::FreezeOp& node) override {
+		auto src = compile(node.p);
+		result->data = builder->CreateCall(fn_freeze, { src.data });
+		result->lifetime = Val::Retained{};
+		dispose_val(move(src));
+	}
 	void on_cast(ast::CastOp& node) override {
 		if (!node.p[1]) {
 			*result = compile(node.p[0]);
@@ -1348,6 +1362,7 @@ struct Generator : ast::ActionScanner {
 					void on_optional(ast::TpOptional& type) override { assert(false); }
 					void on_class(ast::TpClass& type) override { c.compare_scalar(); }
 					void on_ref(ast::TpRef& type) override { c.compare_scalar(); }
+					void on_shared(ast::TpShared& type) override { c.compare_scalar(); }
 					void on_weak(ast::TpWeak& type) override { c.compare_scalar(); }
 				};
 				OptComparer opt_comparer{ *this };
@@ -1355,6 +1370,7 @@ struct Generator : ast::ActionScanner {
 			}
 			void on_class(ast::TpClass& type) override { compare_scalar(); }
 			void on_ref(ast::TpRef& type) override { compare_scalar(); }
+			void on_shared(ast::TpShared& type) override { compare_scalar(); }
 			void on_weak(ast::TpWeak& type) override { compare_scalar(); }
 		};
 		auto lhs = compile(node.p[0]);
@@ -1478,6 +1494,11 @@ struct Generator : ast::ActionScanner {
 					? val
 					: gen->builder->CreatePtrToInt(val, gen->tp_int_ptr);
 			}
+			void on_shared(ast::TpShared& type) override {
+				val = depth > 0
+					? val
+					: gen->builder->CreatePtrToInt(val, gen->tp_int_ptr);
+			}
 			void on_weak(ast::TpWeak& type) override {
 				val = depth > 0
 					? val
@@ -1522,6 +1543,7 @@ struct Generator : ast::ActionScanner {
 			void on_optional(ast::TpOptional& type) override { assert(false); }
 			void on_class(ast::TpClass& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
 			void on_ref(ast::TpRef& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
+			void on_shared(ast::TpShared& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
 			void on_weak(ast::TpWeak& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
 		};
 		NoneMaker none_maker(this, type->depth);
@@ -1579,6 +1601,11 @@ struct Generator : ast::ActionScanner {
 					llvm::ConstantInt::get(gen->tp_int_ptr, depth));
 			}
 			void on_ref(ast::TpRef& type) override {
+				val = gen->builder->CreateICmpNE(
+					val,
+					llvm::ConstantInt::get(gen->tp_int_ptr, depth));
+			}
+			void on_shared(ast::TpShared& type) override {
 				val = gen->builder->CreateICmpNE(
 					val,
 					llvm::ConstantInt::get(gen->tp_int_ptr, depth));
@@ -1645,6 +1672,11 @@ struct Generator : ast::ActionScanner {
 					: gen->builder->CreateBitOrPointerCast(val, gen->to_llvm_type(type));
 			}
 			void on_ref(ast::TpRef& type) override {
+				val = depth > 0
+					? val
+					: gen->builder->CreateBitOrPointerCast(val, gen->to_llvm_type(type));
+			}
+			void on_shared(ast::TpShared& type) override {
 				val = depth > 0
 					? val
 					: gen->builder->CreateBitOrPointerCast(val, gen->to_llvm_type(type));
@@ -1874,6 +1906,7 @@ struct Generator : ast::ActionScanner {
 					void on_optional(ast::TpOptional& type) { assert(false); };
 					void on_class(ast::TpClass& type) override { result = gen->tp_int_ptr; }
 					void on_ref(ast::TpRef& type) override { result = gen->tp_int_ptr; }
+					void on_shared(ast::TpShared& type) override { result = gen->tp_int_ptr; }
 					void on_weak(ast::TpWeak& type) override { result = gen->tp_int_ptr; }
 				};
 				OptionalMatcher matcher(gen, type.depth);
@@ -1882,6 +1915,7 @@ struct Generator : ast::ActionScanner {
 			}
 			void on_class(ast::TpClass& type) override { result = gen->ptr_type; }
 			void on_ref(ast::TpRef& type) override { result = gen->ptr_type; }
+			void on_shared(ast::TpShared& type) override { result = gen->ptr_type; }
 			void on_weak(ast::TpWeak& type) override { result = gen->ptr_type; }
 		} matcher(this);
 		t.match(matcher);

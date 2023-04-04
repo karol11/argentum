@@ -160,6 +160,7 @@ AgObject*    ag_copy_head = 0;          // must be threadlocal
 size_t       ag_copy_fixers_count = 0;
 size_t       ag_copy_fixers_alloc = 0;
 AgCopyFixer* ag_copy_fixers;            // Used only for objects with manual afterCopy operators.
+bool         ag_copy_freeze = false;
 
 void ag_dispose_obj(AgObject* obj) {
 	((AgVmt*)(ag_head(obj)->dispatcher))[-1].dispose(obj);
@@ -181,7 +182,12 @@ AgObject* ag_allocate_obj(size_t size) {
 	r->wb_p = AG_IN_STACK | AG_F_PARENT;
 	return r;
 }
-
+AgObject* ag_freeze(AgObject* src) {
+	ag_copy_freeze = true;
+	AgObject* r = ag_copy(src); // todo make optimized version
+	ag_copy_freeze = false;
+	return r;
+}
 AgObject* ag_copy(AgObject* src) {
 	AgObject* dst = ag_copy_object_field(src, 0);
 	for (AgObject* obj = ag_copy_head; obj;) {
@@ -214,6 +220,8 @@ AgObject* ag_copy(AgObject* src) {
 }
 
 AgObject* ag_copy_object_field(AgObject* src, AgObject* parent) {
+	if (ag_copy_freeze)
+		parent = (AgObject*) AG_SHARED;
 	if (!src || (size_t)src < 256)
 		return src;
 	if (((ag_head(src)->wb_p & AG_F_PARENT)
@@ -598,9 +606,12 @@ int64_t ag_fn_sys_Blob_putCh(AgBlob* b, int at, int codepoint) {
 }
 
 AgObject* ag_fn_sys_getParent(AgObject* obj) {  // obj not null, result is nullable
-	return ag_retain((AgObject*)(obj->wb_p & AG_F_PARENT
+	uintptr_t r = obj->wb_p & AG_F_PARENT
 		? obj->wb_p & ~AG_F_PARENT
-		: ((AgWeak*)obj->wb_p)->org_pointer_to_parent));
+		: ((AgWeak*)obj->wb_p)->org_pointer_to_parent;
+	return r < AG_SHARED
+		? 0
+		: ag_retain((AgObject*)(r));
 }
 
 void ag_fn_terminate(int result) {

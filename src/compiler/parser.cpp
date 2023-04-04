@@ -163,14 +163,19 @@ struct Parser {
 							expect(";");
 						}
 					} else {
+						int is_mut = match("*") ? -1 :
+							match("-") ? 0 : 1;
 						auto member_name = expect_domain_name("method or field name");
 						if (match("=")) {
+							if (is_mut != 1)
+								error("field can't have '-' or '*' markers");
 							cls->fields.push_back(make<ast::Field>());
 							cls->fields.back()->name = member_name;
 							cls->fields.back()->initializer = parse_expression();
 							expect(";");
 						} else {
 							cls->new_methods.push_back(make_method(member_name, cls, is_interface));
+							cls->new_methods.back()->mut = is_mut;
 						}
 					}
 				}
@@ -252,11 +257,14 @@ struct Parser {
 				fn->type_expression = parse_type();
 				return fn;
 			}
-			auto r = make<ast::MkWeakOp>();
 			auto get = make<ast::Get>();
 			get->var_name = expect_domain_name("class or interface name");
-			r->p = get;
-			return r;
+			return fill(make<ast::MkWeakOp>(), get);
+		}
+		if (match("*")) {
+			auto get = make<ast::Get>();
+			get->var_name = expect_domain_name("class or interface name");
+			return fill(make<ast::FreezeOp>(), get);
 		}
 		if (match("@")) {
 			auto get = make<ast::Get>();
@@ -546,6 +554,8 @@ struct Parser {
 			}
 			lambda->error("expected single expression in parentesis or lambda {body}");
 		}
+		if (match("*"))
+			return fill(make<ast::FreezeOp>(), parse_unar());
 		if (match("@"))
 			return fill(make<ast::CopyOp>(), parse_unar());
 		if (match("&"))

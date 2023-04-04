@@ -1,0 +1,22 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "run ag demo",
+            "type": "shell",
+            "command": "${workspaceFolder}/out/build/x64-Debug/ag-jit-sdl.exe",
+            "args": [
+                ".",
+                "demo"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/demo"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        }
+    ]
+}

@@ -83,6 +83,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 		{ "ag_dispose_obj", FN(ag_dispose_obj) },
 		{ "ag_set_parent", FN(ag_set_parent) },
 		{ "ag_splice", FN(ag_splice) },
+		{ "ag_freeze", FN(ag_freeze) },
 
 		{ "ag_copy_sys_Container", FN(ag_copy_sys_Container) },
 		{ "ag_dtor_sys_Container", FN(ag_dtor_sys_Container) },

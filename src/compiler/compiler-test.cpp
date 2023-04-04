@@ -691,4 +691,22 @@ TEST(Parser, Splice) {
     )");
 }
 
+TEST(Parser, Shared) {
+    execute(R"-(
+      class Point {
+         x = 0;
+         y = 0;
+         at(int x, int y) this {
+            this.x := x;
+            this.y := y
+         }
+         *sum() int { x+y }
+      }
+      p = *Point.at(1, 2);
+      p2 = p;
+      assert(p2.sum(), 3);
+      assert(p == p2 ? 1:0, 1)
+    )-");
+}
+
 }  // namespace
