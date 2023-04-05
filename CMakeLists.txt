@@ -52,14 +52,13 @@ set(ag_sources
 
 add_executable(ag-jit-sdl
     ${ag_sources}
-    src/runtime/runtime.h
-    src/runtime/runtime.c
     src/driver/jit-sdl.cpp
 )
 target_link_libraries(ag-jit-sdl
     ${SDL2_LIBRARIES}
     ${SDL2_IMAGE_LIBRARIES}
-    ${llvm_libs})
+    ${llvm_libs}
+    ag_runtime)
 
 add_executable(ag-tests
     ${ag_sources}
@@ -84,4 +83,7 @@ target_link_libraries(agc ${llvm_libs})
 add_library (ag_runtime STATIC
     src/runtime/runtime.h
     src/runtime/runtime.c
+    src/runtime/sdl-bindings.h
+    src/runtime/sdl-bindings.c
 )
+

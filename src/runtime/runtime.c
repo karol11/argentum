@@ -621,3 +621,27 @@ void ag_fn_terminate(int result) {
 void ag_fn_sys_log(AgString* s) {
 	puts(s->ptr);
 }
+
+void ag_make_blob_fit(AgBlob* b, size_t required_size) {
+	required_size = (required_size + sizeof(int64_t) - 1) / sizeof(int64_t);
+	if (b->size < required_size)
+		ag_fn_sys_Container_insert(b, b->size, required_size - b->size);
+}
+
+int64_t ag_fn_sys_readFile(AgString* name, AgBlob* content) {
+	FILE* f = fopen(name->ptr, "rb");
+	fseek(f, 0, SEEK_END);
+	int64_t size = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	ag_make_blob_fit(content, size);
+	int64_t read_size = fread(content->data, 1, size, f);
+	fclose(f);
+	return read_size == size ? size : -1;
+}
+bool ag_fn_sys_writeFile(AgString* name, int64_t at, int64_t byte_size, AgBlob* content) {
+	FILE* f = fopen(name->ptr, "wb");
+	if (!f) return -1;
+	int64_t size_written = fwrite((char*)content->data + at, 1, byte_size, f);
+	fclose(f);
+	return size_written == byte_size;
+}

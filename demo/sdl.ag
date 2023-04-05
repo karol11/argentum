@@ -1,31 +1,38 @@
+//
 // Low level unsafe API
-fn sys_log(sys_String text);
-
+//
 fn sys_sdl_init(int flags) int;
+fn sys_sdl_quit();
+
 fn sys_sdl_createWindow(sys_String title, int x,int y, int w, int h, int flags) int;
+fn sys_sdl_destroyWindow(int windowId);
+
 fn sys_sdl_createRenderer(int windowId, int index, int flags) int;
+fn sys_sdl_destroyRenderer(int rendererId);
+
 fn sys_sdl_waitEvent(sys_Blob event);
 fn sys_sdl_pollEvent(sys_Blob event);
+fn sys_sdl_delay(int millisec);
+
 fn sys_sdl_setRendererDrawColor(int rendererId, int r, int g, int b, int a);
 fn sys_sdl_rendererClear(int rendererId);
 fn sys_sdl_rendererFillRect(int rendererId, int x, int y, int w, int h);
-fn sys_sdl_rendererPresent(int rendererId);
-fn sys_sdl_destroyRenderer(int rendererId);
-fn sys_sdl_destroyWindow(int windowId);
-fn sys_sdl_quit();
-fn sys_sdl_delay(int millisec);
-fn sys_sdl_createTextureFromSurface(int rendererId, int surfaceId) int;
 fn sys_sdl_blt(int rendererId, int textureId, int sx, int sy, int sw, int sh, int dx, int dy, int dw, int dh);
-fn sys_sdl_freeSurface(int surfaceId);
+fn sys_sdl_rendererPresent(int rendererId);
+
+fn sys_sdl_createTextureFromSurface(int rendererId, int surfaceId) int;
 fn sys_sdl_destroyTexture(int textureId);
 fn sys_sdl_setTextureAlphaMod(int texId, int multiplier);
 fn sys_sdl_setTextureColorMod(int id, int color);
 
 fn sys_img_init(int flags) int;
-fn sys_img_load(sys_String fileName) int;
 fn sys_img_quit();
+fn sys_img_load(sys_String fileName) int; // returns surfaceId
+fn sys_sdl_freeSurface(int surfaceId);
 
-// Hi level safe API
+//
+// High level safe API
+//
 class Sdl {
     initVideo() bool {
         sys_sdl_init(0x7231) == 0 && // SDL_INIT_EVERYTHING
