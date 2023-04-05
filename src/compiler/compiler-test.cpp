@@ -696,6 +696,7 @@ TEST(Parser, Shared) {
       class Point {
          x = 0;
          y = 0;
+         z = *"";
          at(int x, int y) this {
             this.x := x;
             this.y := y

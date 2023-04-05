@@ -146,7 +146,7 @@ int main(int argc, char* argv[]) {
                     "generic",  // cpu
                     "",         // features
                     llvm::TargetOptions(),
-                    llvm::Optional<llvm::Reloc::Model>());
+                    std::optional<llvm::Reloc::Model>());
                 module.setDataLayout(target_machine->createDataLayout());
                 llvm::legacy::PassManager pass_manager;
                 if (target_machine->addPassesToEmitFile(pass_manager, out_file, nullptr, output_asm
