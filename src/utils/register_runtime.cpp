@@ -36,7 +36,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 	ast.mk_fn(sys->get("Blob")->get("delete"), FN(ag_fn_sys_Blob_delete), new ast::ConstVoid, { ast.get_ref(ast.blob), ast.tp_int64(), ast.tp_int64() });
 	ast.mk_fn(sys->get("Blob")->get("copy"), FN(ag_fn_sys_Blob_copy), new ast::ConstBool, { ast.get_ref(ast.blob), ast.tp_int64(), ast.get_ref(container), ast.tp_int64(), ast.tp_int64() });
 	ast.mk_fn(sys->get("Blob")->get("putCh"), FN(ag_fn_sys_Blob_putCh), new ast::ConstInt64, { ast.get_ref(ast.blob), ast.tp_int64(), ast.tp_int64() });
-	ast.mk_fn(sys->get("terminate"), FN(ag_fn_terminate), new ast::ConstVoid, { ast.tp_int64() });
+	ast.mk_fn(sys->get("terminate"), FN(ag_fn_sys_terminate), new ast::ConstVoid, { ast.tp_int64() });
 
 	auto inst = new ast::MkInstance;
 	inst->cls = ast.object.pinned();

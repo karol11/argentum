@@ -134,7 +134,7 @@ void      ag_copy_sys_WeakArray      (AgBlob* dst, AgBlob* src);
 void      ag_dtor_sys_WeakArray      (AgBlob* ptr);
 void      ag_fn_sys_WeakArray_delete (AgBlob* b, uint64_t index, uint64_t count);
 
-void      ag_fn_terminate     (int);
+void      ag_fn_sys_terminate (int);
 void      ag_fn_sys_log       (AgString* s);
 int64_t   ag_fn_sys_readFile  (AgString* name, AgBlob* content);  // returns bytes read or -1
 bool      ag_fn_sys_writeFile (AgString* name, int64_t at, int64_t byte_size, AgBlob* content);
