@@ -23,7 +23,7 @@
         },
         {
           "name": "LLVM_DIR",
-          "value": "D:/Docs/cpp_proj/llvm-16.0.0-all/lib/cmake/llvm",
+          "value": "D:/Docs/cpp_proj/llvm-16.0.0-Dbg-MDd/lib/cmake/llvm",
           "type": "PATH"
         }
       ]
@@ -51,7 +51,7 @@
         },
         {
           "name": "LLVM_DIR",
-          "value": "D:/Docs/cpp_proj/llvm-16.0.0-all/lib/cmake/llvm",
+          "value": "D:/Docs/cpp_proj/llvm-16.0.0-Rel-MT/lib/cmake/llvm",
           "type": "PATH"
         }
       ]
