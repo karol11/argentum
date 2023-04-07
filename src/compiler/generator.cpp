@@ -35,6 +35,12 @@ using dom::isa;
 
 const int AG_HEADER_OFFSET = 0; // -1 if dispatcher and counter to be accessed by negative offsets (which speeds up all ffi, but is incompatible with moronic LLVM debug info)
 
+// TODO remove when LLVM get sane: in release builds on Windows LLVM inserts call to these functions but doesn't define them.
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeWebAssemblyTargetInfo() {}
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeWebAssemblyTarget() {}
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeWebAssemblyTargetMC() {}
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeWebAssemblyAsmPrinter() {}
+
 #define AK_STR(X) #X
 #define DUMP(X) dump(AK_STR(X), X)
 template <typename T>
@@ -2199,7 +2205,7 @@ struct Generator : ast::ActionScanner {
 				auto dst = builder.CreateBitOrPointerCast(info.copier->getArg(0), info.fields->getPointerTo());
 				auto src = builder.CreateBitOrPointerCast(info.copier->getArg(1), info.fields->getPointerTo());
 				for (auto& f : cls->fields) {
-					auto type = f->initializer->type();
+					pin<ast::Type> type = f->initializer->type();
 					if (auto as_opt = dom::strict_cast<ast::TpOptional>(type))
 						type = as_opt->wrapped;
 					if (isa<ast::TpWeak>(*type)) {
