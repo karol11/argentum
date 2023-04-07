@@ -66,7 +66,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 	ast.mk_fn(sys->get("String")->get("fromBlob"), FN(ag_fn_sys_String_fromBlob), new ast::ConstBool, { ast.get_ref(ast.string_cls), ast.get_ref(ast.blob), ast.tp_int64(), ast.tp_int64() });
 	ast.mk_fn(sys->get("String")->get("getCh"), FN(ag_fn_sys_String_getCh), new ast::ConstInt64, { ast.get_ref(ast.string_cls) });
 	ast.mk_fn(sys->get("getParent"), FN(ag_fn_sys_getParent), opt_ref_to_object, { ast.get_ref(ast.object) });
-	ast.mk_fn(sys->get("makeShared"), FN(ag_fn_sys_make_shared), new ast::ConstVoid, { ast.get_ref(ast.object) });  // TODO: its a hack till frozen objects were introduced
+	ast.mk_fn(sys->get("log"), FN(ag_fn_sys_log), new ast::ConstVoid, { ast.get_ref(ast.string_cls) });
 
 	ast.platform_exports.insert({
 		{ "ag_copy", FN(ag_copy) },
