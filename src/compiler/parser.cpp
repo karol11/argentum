@@ -212,7 +212,7 @@ struct Parser {
 
 	void parse_statement_sequence(vector<own<Action>>& body) {
 		do {
-			if (*cur == '}') {
+			if (*cur == '}' || !*cur) {
 				body.push_back(make<ast::ConstVoid>());
 				break;
 			}
@@ -619,21 +619,44 @@ struct Parser {
 		if (match_ns("\"")) {
 			auto r = make<ast::ConstString>();
 			for (;;) {
+				auto prev_cur = cur;
 				int c = get_utf8(&cur);
-				if (!c) {
+				pos += (int32_t) (cur - prev_cur);
+				if (!c)
 					error("incomplete string constant");
-				} if (c == '"') {
-					if (*cur != '"')
+				if (c < ' ')
+					error("control characters in the string constant");
+				if (c == '"')
 						break;
-					r->value += '"';
+				if (c == '\\') {
+					if (*cur == '\\') {
+						c = '\\';
+					} else if (*cur == '"') {
+						c = '"';
+					} else if (*cur == 'n') {
+						c = '\n';
+					} else if (*cur == 'r') {
+						c = '\r';
+					} else if (*cur == 't') {
+						c = '\t';
+					} else {
+						c = 0;
+						for (int d = get_digit(*cur); d < 16; cur++, pos++, d = get_digit(*cur))
+							c = c * 16 + d;
+						if (c == 0 || c > 0x10ffff)
+							error("character code is outside the range 1..10ffff");
+						if (*cur != '\\')
+							error("expected closing '\\'");
+					}
 					cur++;
-				} else {
-					put_utf8(c, &r->value, [](void* ctx, int c) {
-						*(string*)ctx += c;
-						return 1;
-					});
+					pos++;
 				}
+				put_utf8(c, &r->value, [](void* ctx, int c) {
+					*(string*)ctx += c;
+					return 1;
+				});
 			}
+			match_ws();
 			return r;
 		}
 		if (auto name = match_domain_name("domain name")) {
@@ -690,12 +713,8 @@ struct Parser {
 	}
 
 	variant<uint64_t, double> expect_number() {
-		if (auto n = match_num()) {
-			if (auto v = get_if<uint64_t>(&*n))
-				return *v;
-			if (auto v = get_if<double>(&*n))
-				return *v;
-		}
+		if (auto n = match_num())
+			return *n;
 		error("expected number");
 	}
 
@@ -824,7 +843,7 @@ struct Parser {
 			if (digit == 255)
 				break;
 			if (digit >= radix)
-				error("bad symbols in number");
+				error("digit with value ", digit, " is not allowed in ", radix, "-base number");
 			uint64_t next = result * radix + digit;
 			if (next / radix != result)
 				error("overflow");
