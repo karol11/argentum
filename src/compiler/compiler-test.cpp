@@ -603,6 +603,21 @@ TEST(Parser, LiteralStrings) {
     )");
 }
 
+TEST(Parser, StringEscapes) {
+    execute(R"-(
+        s = "\n\t\r\"\\\1090e\\65\!";
+        assert(0x0a, sys_String_getCh(s));
+        assert(9, sys_String_getCh(s));
+        assert(0x0d, sys_String_getCh(s));
+        assert('"', sys_String_getCh(s));
+        assert('\', sys_String_getCh(s));
+        assert(0x1090e, sys_String_getCh(s));
+        assert(0x65, sys_String_getCh(s));
+        assert('!', sys_String_getCh(s));
+        assert(0, sys_String_getCh(s));
+    )-");
+}
+
 TEST(Parser, SetOps) {
     execute(R"(
         class Cl{
