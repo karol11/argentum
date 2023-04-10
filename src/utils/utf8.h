@@ -8,8 +8,6 @@ restart_and_reload:
 	(*ptr)++;
 restart:
 	n = 2;
-	if (r <= 0)
-		return r;
 	if ((r & 0x80) == 0)
 		return r;
 	if ((r & 0xe0) == 0xc0) r &= 0x1f;
@@ -21,8 +19,6 @@ restart:
 		int c = **ptr;
 		(*ptr)++;
 		if ((c & 0xc0) != 0x80) {
-			if (c <= 0)
-				return c;
 			r = c;
 			goto restart;
 		}
