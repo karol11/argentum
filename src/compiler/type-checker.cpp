@@ -459,7 +459,14 @@ struct Typer : ast::ActionMatcher {
 				fn->names[i]->type = Type::promote(lambda->params[i]);
 			for (auto& a : fn->body)
 				find_type(a);
-			expect_type(fn->body.back(), Type::promote(lambda->params.back()), [&] { return ast::format_str("lambda result in ", context()); });
+			auto result_type = Type::promote(lambda->params.back());
+			if (dom::isa<ast::TpVoid>(*result_type) && !dom::isa<ast::TpVoid>(*fn->body.back()->type())) {
+				auto c_void = ast::make_at_location<ast::ConstVoid>(*fn->body.back());
+				c_void->type_ = result_type;
+				fn->body.push_back(c_void);
+			} else {
+				expect_type(fn->body.back(), result_type, [&] { return ast::format_str("lambda result in ", context()); });
+			}
 		}
 	}
 	void expect_type(own<ast::Action>& node, pin<ast::Type> expected_type, const function<string()>& context) {
