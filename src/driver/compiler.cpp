@@ -162,7 +162,7 @@ int main(int argc, char* argv[]) {
         });
 //    } catch (void*) {  // debug-only  TODO: replace exceptions with `quick_exit`
     } catch (int) {
-        return -1;
+        return 1;
     }
     return 0;
 }
