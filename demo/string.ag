@@ -1,0 +1,45 @@
+class sys_String{
+    get() int { sys_String_getCh(this) }
+}
+class string_Builder {
+    +sys_Blob;
+    pos = 0;
+    reserve(int qwords) {
+        size = sys_Container_size(this);
+        growStep = size * 2 + 4;
+        pos + qwords >= size ?
+            sys_Container_insert(this, size, growStep);
+    }
+    putCh(int codePoint) this {
+        reserve(1);
+        pos := sys_Blob_putCh(this, pos, codePoint)
+    }
+    putStr(sys_String s) this {
+        loop !{
+            c = sys_String_getCh(s);
+            c != 0 ? putCh(c)
+        }
+    }
+    putInt(int val) this {
+        reserve(3);
+        isNeg = val < 0;
+        isNeg ? val *= -1;
+        p = pos + 21;
+        loop {
+            sys_Blob_setByteAt(this, p -= 1, val % 10 + '0');
+            (val /= 10) == 0
+        };
+        isNeg ? sys_Blob_setByteAt(this, p -= 1, '-');
+        sys_Blob_copy(this, pos, this, p, pos + 21 - p);
+        pos += pos + 21 - p;
+    }
+    newLine() this {
+        putCh(0x0a);
+    }
+    toStr() @sys_String {
+        r = sys_String;
+        sys_String_fromBlob(r, this, 0, pos);
+        pos := 0;
+        r
+    }
+}
