@@ -1,5 +1,7 @@
 # Argentum Programming Language
 
+See: [Project site](aglang.org)
+
 ## Main language features:
 
 * Simplicity
@@ -17,8 +19,11 @@
 * Strict type system
 * Tiny runtime (it is designed with wasm in mind)
 
-Presentation slides: [here](https://docs.google.com/presentation/d/1Cqbh30gTnfoFL3xJh3hhW4Hqhdk9tHw4akZExtiSivA/edit?usp=share_link)
-Documentaion: [here](https://docs.google.com/document/d/1QCvxUGr2kce67jht8PLH822ZuZSXHvMIFgsACsbV4Y4/edit?usp=sharing)
+## Links
+* Presentation slides: [here](https://docs.google.com/presentation/d/1Cqbh30gTnfoFL3xJh3hhW4Hqhdk9tHw4akZExtiSivA/edit?usp=share_link)
+* Documentaion: [here](https://docs.google.com/document/d/1QCvxUGr2kce67jht8PLH822ZuZSXHvMIFgsACsbV4Y4/edit?usp=sharing)
+* Site: [aglang.org](aglang.org)
+* Hackaday: [project page](https://hackaday.io/project/190397-argentum-programming-language)
 
 ## Why not X
 
