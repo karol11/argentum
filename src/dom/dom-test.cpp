@@ -257,4 +257,31 @@ TEST(Dom, Cpp) {
 	}
 }
 
+TEST(Dom, MapsSets) {
+	auto dom = pin<Dom>::make();
+	auto int_type = dom->mk_type(Kind::INT, sizeof(int));
+	auto str_type = dom->mk_type(Kind::STRING);
+	auto map_t = new dom::UnorderedMapType<std::string, int>(str_type, int_type);
+	auto set_t = new dom::UnorderedSetType<std::string>(str_type);
+	std::unordered_map<std::string, int> test_map = { {"asdf", 1}, {"qwer", 42} };
+	std::unordered_set<std::string> test_set;
+	char* m = reinterpret_cast<char*>(&test_map);
+	char* s = reinterpret_cast<char*>(&test_set);
+	EXPECT_TRUE(map_t->get_kind() == dom::Kind::MAP);
+	EXPECT_TRUE(map_t->get_key_type() == str_type);
+	EXPECT_TRUE(map_t->get_element_type() == int_type);
+	EXPECT_TRUE(set_t->get_kind() == dom::Kind::SET);
+	EXPECT_TRUE(set_t->get_element_type() == str_type);
+	EXPECT_EQ(map_t->get_elements_count(m), 2);
+	EXPECT_EQ(set_t->get_elements_count(s), 0);
+	map_t->iterate_elements(m, [&](auto k, auto v) {
+		auto it = test_map.find(str_type->get_string(k));
+		EXPECT_TRUE(it != test_map.end());
+		EXPECT_EQ(it->second, int_type->get_int(v));
+		EXPECT_TRUE(map_t->get_element_ptr_by_key(k, m) == v);
+		set_t->add_element_by_key(k, nullptr, s);
+	});
+	EXPECT_EQ(set_t->get_elements_count(s), 2);
+}
+
 }  // namespace

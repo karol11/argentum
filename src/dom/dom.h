@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <functional>
 #include <algorithm>
 #include "ltm/ltm.h"
@@ -48,7 +49,7 @@ protected:
 };
 
 enum class Kind {
-	EMPTY, INT, UINT, FLOAT, BOOL, STRING, OWN, WEAK, VAR_ARRAY, ATOM, FIX_ARRAY, STRUCT, CLASS
+	EMPTY, INT, UINT, FLOAT, BOOL, STRING, OWN, WEAK, VAR_ARRAY, ATOM, FIX_ARRAY, STRUCT, CLASS, MAP, SET
 };
 
 class TypeInfo : public Object {
@@ -75,6 +76,14 @@ public:
 	// class
 	virtual pin<Name> get_name() { report_error("unsupported get_name"); return nullptr; }
 	virtual pin<DomItem> create_instance() { report_error("unsupported create_instance"); return nullptr; }
+
+	// maps / sets ignore keys
+	// +get_element_type
+	virtual pin<TypeInfo> get_key_type() { report_error("unsupported get_key_type"); return empty; } // only maps
+	virtual char* get_element_ptr_by_key(char* key, char*) { report_error("unsupported get_element_ptr_by_key"); return nullptr; }  // key is a key-val
+	virtual void delete_element_by_key(char* key, char*) { report_error("unsupported delete_element_by_key"); }
+	virtual void add_element_by_key(char* key, char* value, char*) { report_error("unsupported add_element_by_key"); }  // key is ignored
+	virtual void iterate_elements(char*, std::function<void(char* key, char* value)>) { report_error("unsupported iterate_elements"); } // key is nullptr
 
 	// primitives
 	virtual int64_t get_int(char*){ report_error("unsupported get_int"); return 0; }
@@ -206,6 +215,72 @@ public:
 		return reinterpret_cast<vector<T>*>(data)->resize(count);
 	}
 protected:
+	own<TypeInfo> element_type;
+};
+
+template<typename T>
+class UnorderedSetType : public CppStructType<std::unordered_set<T>> {
+public:
+	UnorderedSetType(pin<TypeInfo> element_type)
+		: CppStructType<std::unordered_set<T>>(nullptr, {}), element_type(element_type) {}
+
+	Kind get_kind() override { return Kind::SET; }
+
+	pin<TypeInfo> get_element_type() override { return element_type; }
+	size_t get_elements_count(char* data) override { return reinterpret_cast<std::unordered_set<T>*>(data)->size(); }
+	char* get_element_ptr_by_key(char* key, char* data) override {
+		auto& d = *reinterpret_cast<std::unordered_set<T>*>(data);
+		auto it = d.find(*reinterpret_cast<T*>(key));
+		return it != d.end()
+			? (char*) &*it
+			: nullptr;
+	}
+	void delete_element_by_key(char* key, char* data) override {
+		reinterpret_cast<std::unordered_set<T>*>(data)->erase(*reinterpret_cast<T*>(key));
+	}
+	void add_element_by_key(char* key, char* value, char* data) override {
+		reinterpret_cast<std::unordered_set<T>*>(data)->insert(std::move(*reinterpret_cast<T*>(key)));
+	}
+	void iterate_elements(char* data, std::function<void(char* key, char* value)> on_item) override {
+		for (auto& i : *reinterpret_cast<std::unordered_set<T>*>(data))
+			on_item(nullptr, (char*) &i);
+	}
+protected:
+	own<TypeInfo> element_type;
+};
+
+template<typename K, typename V>
+class UnorderedMapType : public CppStructType<std::unordered_map<K, V>> {
+public:
+	UnorderedMapType(pin<TypeInfo> key_type, pin<TypeInfo> element_type)
+		: CppStructType<std::unordered_map<K, V>>(nullptr, {}), key_type(key_type), element_type(element_type) {}
+
+	Kind get_kind() override { return Kind::MAP; }
+
+	pin<TypeInfo> get_key_type() override { return key_type; }
+	pin<TypeInfo> get_element_type() override { return element_type; }
+	size_t get_elements_count(char* data) override { return reinterpret_cast<std::unordered_map<K, V>*>(data)->size(); }
+	char* get_element_ptr_by_key(char* key, char* data) override {
+		auto& d = *reinterpret_cast<std::unordered_map<K, V>*>(data);
+		auto it = d.find(*reinterpret_cast<K*>(key));
+		return it != d.end()
+			? (char*) &it->second
+			: nullptr;
+	}
+	void delete_element_by_key(char* key, char* data) override {
+		reinterpret_cast<std::unordered_map<K, V>*>(data)->erase(*reinterpret_cast<K*>(key));
+	}
+	void add_element_by_key(char* key, char* value, char* data) override {
+		reinterpret_cast<std::unordered_map<K, V>*>(data)->insert({
+			std::move(*reinterpret_cast<K*>(key)),
+			std::move(*reinterpret_cast<V*>(value)) });
+	}
+	void iterate_elements(char* data, std::function<void(char* key, char* value)> on_item) override {
+		for (auto& i : *reinterpret_cast<std::unordered_map<K, V>*>(data))
+			on_item((char*) &i.first, (char*) &i.second);
+	}
+protected:
+	own<TypeInfo> key_type;
 	own<TypeInfo> element_type;
 };
 

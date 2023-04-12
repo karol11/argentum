@@ -3,8 +3,7 @@
 
 #include <sstream>
 #include <unordered_set>
-#include <map>
-
+#include <sstream>
 #include "dom/dom.h"
 #include "dom/dom-to-string.h"
 
@@ -14,7 +13,6 @@ using std::move;
 using std::string;
 using std::unordered_map;
 using std::unordered_set;
-using std::map;
 using std::vector;
 using ltm::weak;
 using ltm::own;
