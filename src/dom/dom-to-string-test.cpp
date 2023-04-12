@@ -61,4 +61,32 @@ TEST(DomToString, Xrefs) {
         "prev *=_2\n");
 }
 
+struct MapSetTest : dom::DomItem {
+	std::unordered_map<std::string, int> test_map;
+	std::unordered_set<std::string> test_set;
+	DECLARE_DOM_CLASS(MapSetTest);
+};
+own<dom::TypeWithFills> MapSetTest::dom_type_;
+
+TEST(DomToString, MapSet) {
+	auto dom = pin<Dom>::make();
+	auto int_type = dom->mk_type(Kind::INT, sizeof(int));
+	auto str_type = dom->mk_type(Kind::STRING);
+	auto map_t = new dom::UnorderedMapType<std::string, int>(str_type, int_type);
+	auto set_t = new dom::UnorderedSetType<std::string>(str_type);
+	MapSetTest::dom_type_ = (new dom::CppClassType<MapSetTest>(dom, { "MapSetTest" }))
+		->field("map", pin<dom::CppField<MapSetTest, std::unordered_map<std::string, int>, &MapSetTest::test_map>>::make(map_t))
+		->field("set", pin<dom::CppField<MapSetTest, std::unordered_set<std::string>, &MapSetTest::test_set>>::make(set_t));
+	auto item = own<MapSetTest>::make();
+	item->test_map = { {"asdf", 1} };
+	item->test_set = { "qwer" };
+	EXPECT_EQ(std::to_string(item, dom),
+		"MapSetTest\n"
+		"map :\n"
+		"\tkey \"asdf\"\n"
+		"\tval 1\n"
+		"set :\n"
+		"\t\"qwer\"\n");
+}
+
 }  // namespace

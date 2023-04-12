@@ -87,6 +87,30 @@ struct Formatter {
 					result << '\n';
 			}
 			break;
+		case Kind::SET:
+			result << ":\n";
+			if (role == Role::ARRAY_ITEM)
+				indent++;
+			type->iterate_elements(data, [&](auto key, auto val) {
+				print_indent(indent);
+				if (dump(val, type->get_element_type(), indent, Role::ARRAY_ITEM))
+					result << '\n';
+			});
+			break;
+		case Kind::MAP:
+			result << ":\n";
+			if (role == Role::ARRAY_ITEM)
+				indent++;
+			type->iterate_elements(data, [&](auto key, auto val) {
+				print_indent(indent);
+				result << "key ";
+				dump(key, type->get_key_type(), indent, Role::OBJECT_FIELD);
+				print_indent(indent);
+				result << "val ";
+				if (dump(val, type->get_element_type(), indent, Role::OBJECT_FIELD))
+					result << '\n';
+			});
+			break;
 		case Kind::WEAK:
 			result << '*';
 			return dump_ptr(type->get_ptr(data), indent, role);
