@@ -75,8 +75,8 @@ TEST(DomToString, MapSet) {
 	auto map_t = new dom::UnorderedMapType<std::string, int>(str_type, int_type);
 	auto set_t = new dom::UnorderedSetType<std::string>(str_type);
 	MapSetTest::dom_type_ = (new dom::CppClassType<MapSetTest>(dom, { "MapSetTest" }))
-		->field("map", pin<dom::CppField<MapSetTest, std::unordered_map<std::string, int>, &MapSetTest::test_map>>::make(map_t))
-		->field("set", pin<dom::CppField<MapSetTest, std::unordered_set<std::string>, &MapSetTest::test_set>>::make(set_t));
+		->field("map", pin<dom::CField<&MapSetTest::test_map>>::make(map_t))
+		->field("set", pin<dom::CField<&MapSetTest::test_set>>::make(set_t));
 	auto item = own<MapSetTest>::make();
 	item->test_map = { {"asdf", 1} };
 	item->test_set = { "qwer" };

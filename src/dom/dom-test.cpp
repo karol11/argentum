@@ -16,6 +16,7 @@ using dom::DomField;
 using std::vector;
 using dom::Kind;
 using dom::CppField;
+using dom::CField;
 
 template<typename T>
 void test_int() {
@@ -219,14 +220,12 @@ TEST(Dom, Cpp) {
     auto int_type = dom->mk_type(Kind::INT, sizeof(int));
 	pin<dom::TypeWithFills> point_type = new dom::CppStructType<Point>(dom, {"ak", "Point" });
 	point_type
-		->field("x", pin<CppField<Point, int, &Point::x>>::make(int_type))
-		->field("y", pin<CppField<Point, int, &Point::y>>::make(int_type));
+		->field("x", pin<CField<&Point::x>>::make(int_type))
+		->field("y", pin<CField<&Point::y>>::make(int_type));
 	Polygon::dom_type_ = new dom::CppClassType<Polygon>(dom, {"ak", "Polygon"});
 	Polygon::dom_type_
-		->field("points", pin<CppField<Polygon, Point[3], &Polygon::points>>::make(
-            dom->mk_type(Kind::FIX_ARRAY, 3, point_type)))
-		->field("vp", pin<CppField<Polygon, vector<Point>, &Polygon::vp>>::make(
-            new dom::VectorType<Point>(point_type)));
+		->field("points", pin<CField<&Polygon::points>>::make(dom->mk_type(Kind::FIX_ARRAY, 3, point_type)))
+		->field("vp", pin<CField<&Polygon::vp>>::make(new dom::VectorType<Point>(point_type)));
 	auto root = pin<Polygon>::make();
 	int num = 0;
 	for (auto& p : root->points)
