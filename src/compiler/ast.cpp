@@ -10,7 +10,7 @@ namespace ast {
 using dom::TypeInfo;
 using dom::CppClassType;
 using dom::TypeWithFills;
-using dom::CppField;
+using dom::CField;
 using dom::Kind;
 
 own<dom::Dom> cpp_dom;
@@ -86,7 +86,7 @@ namespace {
 	template<typename CLS>
 	void make_bin_op(const char* name, const pin<TypeInfo>& op_array_2) {
 		CLS::dom_type_ = (new CppClassType<CLS>(cpp_dom, { "m0", name }))
-			->field("p", pin<CppField<BinaryOp, own<Action>[2], &BinaryOp::p>>::make(op_array_2));
+			->field("p", pin<CField<&BinaryOp::p>>::make(op_array_2));
 	}
 }
 
@@ -101,94 +101,94 @@ void initialize() {
 	pin<dom::TypeInfo> own_vector_type = new dom::VectorType<own<dom::DomItem>>(own_type);
 	auto op_array_2 = cpp_dom->mk_type(Kind::FIX_ARRAY, 2, own_type);
 	Ast::dom_type_ = (new CppClassType<Ast>(cpp_dom, { "m0", "Ast" }))
-		->field("entry", pin<CppField<Ast, own<Function>, &Ast::entry_point>>::make(own_type))
-		->field("functions", pin<CppField<Ast, vector<own<Function>>, &Ast::functions>>::make(own_vector_type))
-		->field("classes", pin<CppField<Ast, vector<own<TpClass>>, &Ast::classes>>::make(own_vector_type));
+		->field("entry", pin<CField<&Ast::entry_point>>::make(own_type))
+		->field("functions", pin<CField<&Ast::functions>>::make(own_vector_type))
+		->field("classes", pin<CField<&Ast::classes>>::make(own_vector_type));
 	Var::dom_type_ = (new CppClassType<Var>(cpp_dom, { "m0", "Var" }))
-		->field("name", pin<CppField<Var, own<dom::Name>, &Var::name>>::make(atom_type))
-		->field("initializer", pin<CppField<Var, own<Action>, &Var::initializer>>::make(own_type));
+		->field("name", pin<CField<&Var::name>>::make(atom_type))
+		->field("initializer", pin<CField<&Var::initializer>>::make(own_type));
 	ConstInt64::dom_type_ = (new CppClassType<ConstInt64>(cpp_dom, {"m0", "Int"}))
-		->field("value", pin<CppField<ConstInt64, int64_t, &ConstInt64::value>>::make(
+		->field("value", pin<CField<&ConstInt64::value>>::make(
 			cpp_dom->mk_type(Kind::INT, sizeof(int64_t))));
 	ConstString::dom_type_ = (new CppClassType<ConstString>(cpp_dom, { "m0", "Str" }))
-		->field("value", pin<CppField<ConstString, string, &ConstString::value>>::make(
+		->field("value", pin<CField<&ConstString::value>>::make(
 			cpp_dom->mk_type(Kind::STRING)));
 	ConstDouble::dom_type_ = (new CppClassType<ConstDouble>(cpp_dom, { "m0", "Double" }))
-		->field("value", pin<CppField<ConstDouble, double, &ConstDouble::value>>::make(
+		->field("value", pin<CField<&ConstDouble::value>>::make(
 			cpp_dom->mk_type(Kind::FLOAT, sizeof(double))));
 	ConstVoid::dom_type_ = (new CppClassType<ConstVoid>(cpp_dom, { "m0", "VoidVal" }));
 	ConstBool::dom_type_ = (new CppClassType<ConstBool>(cpp_dom, { "m0", "BoolVal" }))
-		->field("val", pin<CppField<ConstBool, bool, &ConstBool::value>>::make(cpp_dom->mk_type(Kind::BOOL)));
+		->field("val", pin<CField<&ConstBool::value>>::make(cpp_dom->mk_type(Kind::BOOL)));
 	Get::dom_type_ = (new CppClassType<Get>(cpp_dom, { "m0", "Get" }))
-		->field("var", pin<CppField<DataRef, weak<Var>, &Get::var>>::make(weak_type));
+		->field("var", pin<CField<&Get::var>>::make(weak_type));
 	Set::dom_type_ = (new CppClassType<Set>(cpp_dom, { "m0", "Set" }))
-		->field("var", pin<CppField<DataRef, weak<Var>, &Get::var>>::make(weak_type))
-		->field("val", pin<CppField<Set, own<Action>, &Set::val>>::make(own_type));
+		->field("var", pin<CField<&Get::var>>::make(weak_type))
+		->field("val", pin<CField<&Set::val>>::make(own_type));
 	MkInstance::dom_type_ = (new CppClassType<MkInstance>(cpp_dom, { "m0", "MkInstance" }))
-		->field("class", pin<CppField<MkInstance, own<TpClass>, &MkInstance::cls>>::make(weak_type));
+		->field("class", pin<CField<&MkInstance::cls>>::make(weak_type));
 	GetField::dom_type_ = (new CppClassType<GetField>(cpp_dom, { "m0", "GetField" }))
-		->field("field", pin<CppField<FieldRef, weak<Field>, &FieldRef::field>>::make(weak_type))
-		->field("base", pin<CppField<FieldRef, own<Action>, &FieldRef::base>>::make(own_type));
+		->field("field", pin<CField<&FieldRef::field>>::make(weak_type))
+		->field("base", pin<CField<&FieldRef::base>>::make(own_type));
 	SetField::dom_type_ = (new CppClassType<SetField>(cpp_dom, { "m0", "SetField" }))
-		->field("field", pin<CppField<FieldRef, weak<Field>, &FieldRef::field>>::make(weak_type))
-		->field("base", pin<CppField<FieldRef, own<Action>, &FieldRef::base>>::make(own_type))
-		->field("val", pin<CppField<SetField, own<Action>, &SetField::val>>::make(own_type));
+		->field("field", pin<CField<&FieldRef::field>>::make(weak_type))
+		->field("base", pin<CField<&FieldRef::base>>::make(own_type))
+		->field("val", pin<CField<&SetField::val>>::make(own_type));
 	SpliceField::dom_type_ = (new CppClassType<SpliceField>(cpp_dom, { "m0", "SliceField" }))
-		->field("field", pin<CppField<FieldRef, weak<Field>, &FieldRef::field>>::make(weak_type))
-		->field("base", pin<CppField<FieldRef, own<Action>, &FieldRef::base>>::make(own_type))
-		->field("val", pin<CppField<SetField, own<Action>, &SetField::val>>::make(own_type));
+		->field("field", pin<CField<&FieldRef::field>>::make(weak_type))
+		->field("base", pin<CField<&FieldRef::base>>::make(own_type))
+		->field("val", pin<CField<&SetField::val>>::make(own_type));
 	ToIntOp::dom_type_ = (new CppClassType<ToIntOp>(cpp_dom, { "m0", "ToInt" }))
-		->field("p", pin<CppField<UnaryOp, own<Action>, &UnaryOp::p>>::make(own_type));
+		->field("p", pin<CField<&UnaryOp::p>>::make(own_type));
 	ToFloatOp::dom_type_ = (new CppClassType<ToFloatOp>(cpp_dom, { "m0", "ToFloat" }))
-		->field("p", pin<CppField<UnaryOp, own<Action>, &UnaryOp::p>>::make(own_type));
+		->field("p", pin<CField<&UnaryOp::p>>::make(own_type));
 	NotOp::dom_type_ = (new CppClassType<NotOp>(cpp_dom, { "m0", "Not" }))
-		->field("p", pin<CppField<UnaryOp, own<Action>, &UnaryOp::p>>::make(own_type));
+		->field("p", pin<CField<&UnaryOp::p>>::make(own_type));
 	NegOp::dom_type_ = (new CppClassType<NegOp>(cpp_dom, { "m0", "Neg" }))
-		->field("p", pin<CppField<UnaryOp, own<Action>, &UnaryOp::p>>::make(own_type));
+		->field("p", pin<CField<&UnaryOp::p>>::make(own_type));
 	RefOp::dom_type_ = (new CppClassType<RefOp>(cpp_dom, { "m0", "Ref" }))
-		->field("p", pin<CppField<UnaryOp, own<Action>, &UnaryOp::p>>::make(own_type));
+		->field("p", pin<CField<&UnaryOp::p>>::make(own_type));
 	FreezeOp::dom_type_ = (new CppClassType<FreezeOp>(cpp_dom, { "m0", "Freeze" }))
-		->field("p", pin<CppField<UnaryOp, own<Action>, &UnaryOp::p>>::make(own_type));
+		->field("p", pin<CField<&UnaryOp::p>>::make(own_type));
 	Loop::dom_type_ = (new CppClassType<Loop>(cpp_dom, { "m0", "Loop" }))
-		->field("p", pin<CppField<UnaryOp, own<Action>, &UnaryOp::p>>::make(own_type));
+		->field("p", pin<CField<&UnaryOp::p>>::make(own_type));
 	CopyOp::dom_type_ = (new CppClassType<CopyOp>(cpp_dom, { "m0", "Copy" }))
-		->field("p", pin<CppField<UnaryOp, own<Action>, &UnaryOp::p>>::make(own_type));
+		->field("p", pin<CField<&UnaryOp::p>>::make(own_type));
 	MkWeakOp::dom_type_ = (new CppClassType<MkWeakOp>(cpp_dom, { "m0", "MkWeak" }))
-		->field("p", pin<CppField<UnaryOp, own<Action>, &UnaryOp::p>>::make(own_type));
+		->field("p", pin<CField<&UnaryOp::p>>::make(own_type));
 	DerefWeakOp::dom_type_ = (new CppClassType<DerefWeakOp>(cpp_dom, { "m0", "DerefWeak" }))
-		->field("p", pin<CppField<UnaryOp, own<Action>, &UnaryOp::p>>::make(own_type));
+		->field("p", pin<CField<&UnaryOp::p>>::make(own_type));
 	Block::dom_type_ = (new CppClassType<Block>(cpp_dom, { "m0", "Block" }))
-		->field("body", pin<CppField<Block, vector<own<Action>>, &Block::body>>::make(own_vector_type))
-		->field("locals", pin<CppField<Block, vector<own<Var>>, &Block::names>>::make(own_vector_type));
+		->field("body", pin<CField<&Block::body>>::make(own_vector_type))
+		->field("locals", pin<CField<&Block::names>>::make(own_vector_type));
 	MkLambda::dom_type_ = (new CppClassType<MkLambda>(cpp_dom, { "m0", "MkLambda" }))
-		->field("body", pin<CppField<Block, vector<own<Action>>, &Block::body>>::make(own_vector_type))
-		->field("params", pin<CppField<Block, vector<own<Var>>, &Block::names>>::make(own_vector_type));
+		->field("body", pin<CField<&Block::body>>::make(own_vector_type))
+		->field("params", pin<CField<&Block::names>>::make(own_vector_type));
 	Function::dom_type_ = (new CppClassType<Function>(cpp_dom, { "m0", "Function" }))
-		->field("name", pin<CppField<Function, own<dom::Name>, &Function::name>>::make(atom_type))
-		->field("is_external", pin<CppField<Function, bool, &Function::is_platform>>::make(cpp_dom->mk_type(Kind::BOOL)))
-		->field("is_test", pin<CppField<Function, bool, &Function::is_platform>>::make(cpp_dom->mk_type(Kind::BOOL)))
-		->field("body", pin<CppField<Block, vector<own<Action>>, &Block::body>>::make(own_vector_type))
-		->field("params", pin<CppField<Block, vector<own<Var>>, &Block::names>>::make(own_vector_type));
+		->field("name", pin<CField<&Function::name>>::make(atom_type))
+		->field("is_external", pin<CField<&Function::is_platform>>::make(cpp_dom->mk_type(Kind::BOOL)))
+		->field("is_test", pin<CField<&Function::is_platform>>::make(cpp_dom->mk_type(Kind::BOOL)))
+		->field("body", pin<CField<&Block::body>>::make(own_vector_type))
+		->field("params", pin<CField<&Block::names>>::make(own_vector_type));
 	ImmediateDelegate::dom_type_ = (new CppClassType<ImmediateDelegate>(cpp_dom, { "m0", "ImmediateDelegate" }))
-		->field("name", pin<CppField<Function, own<dom::Name>, &Function::name>>::make(atom_type))
-		->field("body", pin<CppField<Block, vector<own<Action>>, &Block::body>>::make(own_vector_type))
-		->field("params", pin<CppField<Block, vector<own<Var>>, &Block::names>>::make(own_vector_type))
-		->field("base", pin<CppField<ImmediateDelegate, own<Action>, &ImmediateDelegate::base>>::make(own_type));
+		->field("name", pin<CField<&Function::name>>::make(atom_type))
+		->field("body", pin<CField<&Block::body>>::make(own_vector_type))
+		->field("params", pin<CField<&Block::names>>::make(own_vector_type))
+		->field("base", pin<CField<&ImmediateDelegate::base>>::make(own_type));
 	Call::dom_type_ = (new CppClassType<Call>(cpp_dom, { "m0", "Call" }))
-		->field("callee", pin<CppField<Call, own<Action>, &Call::callee>>::make(own_type))
-		->field("params", pin<CppField<Call, vector<own<Action>>, &Call::params>>::make(own_vector_type));
+		->field("callee", pin<CField<&Call::callee>>::make(own_type))
+		->field("params", pin<CField<&Call::params>>::make(own_vector_type));
 	GetAtIndex::dom_type_ = (new CppClassType<GetAtIndex>(cpp_dom, { "m0", "GetAtIndex" }))
-		->field("indexed", pin<CppField<GetAtIndex, own<Action>, &GetAtIndex::indexed>>::make(own_type))
-		->field("indexes", pin<CppField<GetAtIndex, vector<own<Action>>, &GetAtIndex::indexes>>::make(own_vector_type));
+		->field("indexed", pin<CField<&GetAtIndex::indexed>>::make(own_type))
+		->field("indexes", pin<CField<&GetAtIndex::indexes>>::make(own_vector_type));
 	SetAtIndex::dom_type_ = (new CppClassType<SetAtIndex>(cpp_dom, { "m0", "SetAtIndex" }))
-		->field("indexed", pin<CppField<GetAtIndex, own<Action>, &GetAtIndex::indexed>>::make(own_type))
-		->field("indexes", pin<CppField<GetAtIndex, vector<own<Action>>, &GetAtIndex::indexes>>::make(own_vector_type))
-		->field("value", pin<CppField<SetAtIndex, own<Action>, &SetAtIndex::value>>::make(own_type));
+		->field("indexed", pin<CField<&GetAtIndex::indexed>>::make(own_type))
+		->field("indexes", pin<CField<&GetAtIndex::indexes>>::make(own_vector_type))
+		->field("value", pin<CField<&SetAtIndex::value>>::make(own_type));
 	MakeDelegate::dom_type_ = (new CppClassType<MakeDelegate>(cpp_dom, { "m0", "MkDelegate" }))
-		->field("method", pin<CppField<MakeDelegate, weak<Method>, &MakeDelegate::method>>::make(weak_type))
-		->field("base", pin<CppField<MakeDelegate, own<Action>, &MakeDelegate::base>>::make(own_type));
+		->field("method", pin<CField<&MakeDelegate::method>>::make(weak_type))
+		->field("base", pin<CField<&MakeDelegate::base>>::make(own_type));
 	MakeFnPtr::dom_type_ = (new CppClassType<MakeFnPtr>(cpp_dom, { "m0", "MkFnPtr" }))
-		->field("fn", pin<CppField<MakeFnPtr, weak<Function>, &MakeFnPtr::fn>>::make(weak_type));
+		->field("fn", pin<CField<&MakeFnPtr::fn>>::make(weak_type));
 	make_bin_op<CastOp>("Cast", op_array_2);
 	make_bin_op<AddOp>("Add", op_array_2);
 	make_bin_op<SubOp>("Sub", op_array_2);
@@ -209,39 +209,39 @@ void initialize() {
 	TpInt64::dom_type_ = new CppClassType<TpInt64>(cpp_dom, {"m0", "Type", "Int64"});
 	TpDouble::dom_type_ = new CppClassType<TpDouble>(cpp_dom, { "m0", "Type", "Double" });
 	TpFunction::dom_type_ = (new CppClassType<TpFunction>(cpp_dom, { "m0", "Type", "Function" }))
-		->field("params", pin<CppField<TpFunction, vector<own<Type>>, &TpFunction::params>>::make(own_vector_type));
+		->field("params", pin<CField<&TpFunction::params>>::make(own_vector_type));
 	TpLambda::dom_type_ = (new CppClassType<TpLambda>(cpp_dom, { "m0", "Type", "Lambda" }))
-		->field("params", pin<CppField<TpFunction, vector<own<Type>>, &TpFunction::params>>::make(own_vector_type));
+		->field("params", pin<CField<&TpFunction::params>>::make(own_vector_type));
 	TpDelegate::dom_type_ = (new CppClassType<TpDelegate>(cpp_dom, { "m0", "Type", "Delegate" }))
-		->field("params", pin<CppField<TpFunction, vector<own<Type>>, &TpFunction::params>>::make(own_vector_type));
+		->field("params", pin<CField<&TpFunction::params>>::make(own_vector_type));
 	TpColdLambda::dom_type_ = (new CppClassType<TpColdLambda>(cpp_dom, { "m0", "Type", "ColdLambda" }))
-		->field("resolved", pin<CppField<TpColdLambda, own<Type>, &TpColdLambda::resolved>>::make(own_type));
+		->field("resolved", pin<CField<&TpColdLambda::resolved>>::make(own_type));
 	TpVoid::dom_type_ = (new CppClassType<TpVoid>(cpp_dom, { "m0", "Type", "Void" }));
 	TpOptional::dom_type_ = (new CppClassType<TpOptional>(cpp_dom, { "m0", "Type", "Optional" }))
-		->field("wrapped", pin<CppField<TpOptional, own<Type>, &TpOptional::wrapped>>::make(own_type));
+		->field("wrapped", pin<CField<&TpOptional::wrapped>>::make(own_type));
 	Field::dom_type_ = (new CppClassType<Field>(cpp_dom, { "m0", "Field" }))
-		->field("name", pin<CppField<Field, own<dom::Name>, &Field::name>>::make(atom_type))
-		->field("type", pin<CppField<Field, own<Action>, &Field::initializer>>::make(own_type));
+		->field("name", pin<CField<&Field::name>>::make(atom_type))
+		->field("type", pin<CField<&Field::initializer>>::make(own_type));
 	Method::dom_type_ = (new CppClassType<Method>(cpp_dom, { "m0", "Method" }))
-		->field("name", pin<CppField<Function, own<dom::Name>, &Function::name>>::make(atom_type))
-		->field("body", pin<CppField<Block, vector<own<Action>>, &Block::body>>::make(own_vector_type))
-		->field("result_type", pin<CppField<Function, own<Action>, &Function::type_expression>>::make(own_type))
-		->field("is_factory", pin<CppField<Method, bool, &Method::is_factory>>::make(cpp_dom->mk_type(Kind::BOOL)))
-		->field("mut", pin<CppField<Method, int, &Method::mut>>::make(cpp_dom->mk_type(Kind::INT)))
-		->field("params", pin<CppField<Block, vector<own<Var>>, &Block::names>>::make(own_vector_type));
+		->field("name", pin<CField<&Function::name>>::make(atom_type))
+		->field("body", pin<CField<&Block::body>>::make(own_vector_type))
+		->field("result_type", pin<CField<&Function::type_expression>>::make(own_type))
+		->field("is_factory", pin<CField<&Method::is_factory>>::make(cpp_dom->mk_type(Kind::BOOL)))
+		->field("mut", pin<CField<&Method::mut>>::make(cpp_dom->mk_type(Kind::INT)))
+		->field("params", pin<CField<&Block::names>>::make(own_vector_type));
 	TpClass::dom_type_ = (new CppClassType<TpClass>(cpp_dom, { "m0", "Type", "Class" }))
-		->field("name", pin<CppField<TpClass, own<dom::Name>, &TpClass::name>>::make(atom_type))
-		->field("is_interface", pin<CppField<TpClass, bool, &TpClass::is_interface>>::make(cpp_dom->mk_type(Kind::BOOL)))
-		->field("is_test", pin<CppField<TpClass, bool, &TpClass::is_test>>::make(cpp_dom->mk_type(Kind::BOOL)))
-		->field("base", pin<CppField<TpClass, weak<TpClass>, &TpClass::base_class>>::make(weak_type))
-		->field("fields", pin<CppField<TpClass, vector<own<Field>>, &TpClass::fields>>::make(own_vector_type))
-		->field("methods", pin<CppField<TpClass, vector<own<Method>>, &TpClass::new_methods>>::make(own_vector_type));
+		->field("name", pin<CField<&TpClass::name>>::make(atom_type))
+		->field("is_interface", pin<CField<&TpClass::is_interface>>::make(cpp_dom->mk_type(Kind::BOOL)))
+		->field("is_test", pin<CField<&TpClass::is_test>>::make(cpp_dom->mk_type(Kind::BOOL)))
+		->field("base", pin<CField<&TpClass::base_class>>::make(weak_type))
+		->field("fields", pin<CField<&TpClass::fields>>::make(own_vector_type))
+		->field("methods", pin<CField<&TpClass::new_methods>>::make(own_vector_type));
 	TpRef::dom_type_ = (new CppClassType<TpRef>(cpp_dom, { "m0", "Type", "Ref" }))
-		->field("target", pin<CppField<TpRef, own<TpClass>, &TpRef::target>>::make(own_type));
+		->field("target", pin<CField<&TpRef::target>>::make(own_type));
 	TpShared::dom_type_ = (new CppClassType<TpShared>(cpp_dom, { "m0", "Type", "Shared" }))
-		->field("target", pin<CppField<TpRef, own<TpClass>, &TpRef::target>>::make(own_type));
+		->field("target", pin<CField<&TpRef::target>>::make(own_type));
 	TpWeak::dom_type_ = (new CppClassType<TpWeak>(cpp_dom, { "m0", "Type", "Weak" }))
-		->field("target", pin<CppField<TpRef, own<TpClass>, &TpRef::target>>::make(own_type));
+		->field("target", pin<CField<&TpRef::target>>::make(own_type));
 }
 
 own<Type>& Type::promote(own<Type>& to_patch) {

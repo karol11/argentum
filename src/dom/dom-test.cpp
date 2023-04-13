@@ -15,7 +15,6 @@ using dom::FieldInfo;
 using dom::DomField;
 using std::vector;
 using dom::Kind;
-using dom::CppField;
 using dom::CField;
 
 template<typename T>

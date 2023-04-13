@@ -138,9 +138,9 @@ protected:
 	void set_offset(ptrdiff_t offset) override { TypeInfo::report_error("set offset not supported"); }
 };
 
-template<typename Dummy> struct FieldHelper {};
-template<typename Base, typename MemberT>
-struct FieldHelper<MemberT Base::*> {
+template<auto field> struct FieldHelper {};
+template<typename Base, typename MemberT, MemberT(Base::* field)>
+struct FieldHelper<field> {
 	using base = Base;
 	using member_t = MemberT;
 };
@@ -151,15 +151,6 @@ class CField : public CppFieldBase {
 public:
 	CField(pin<TypeInfo> type) : CppFieldBase(type) {}
 	virtual char* get_data(char* struct_ptr) { return reinterpret_cast<char*>(&(reinterpret_cast<typename FieldHelper<field>::base *>(struct_ptr)->*field)); }
-};
-
-template<typename STRUCT, typename MEMBER_T, MEMBER_T STRUCT::*field>
-class CppField : public CppFieldBase
-{
-	friend class TypeWithFills;
-public:
-	CppField(pin<TypeInfo> type) : CppFieldBase(type) {}
-	virtual char* get_data(char* struct_ptr){ return reinterpret_cast<char*>(&(reinterpret_cast<STRUCT*>(struct_ptr)->*field)); }
 };
 
 class TypeWithFields : public TypeInfo {
