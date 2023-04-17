@@ -112,7 +112,7 @@ TEST(Parser, IntNotEqual) {
 
 TEST(Parser, Loop) {
     execute(R"(
-      using sys { aseert; }
+      using sys { assert; }
       a = 0;
       r = 1;
       assert(39916800, loop {

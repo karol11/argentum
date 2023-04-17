@@ -67,7 +67,7 @@ struct Parser {
 				auto param = make<ast::Var>();
 				fn->names.push_back(param);
 				param->initializer = parse_type();
-				param->name = ast->dom->names()->get(expect_id("parameter name"));
+				param->name = expect_id("parameter name");
 				if (match(")"))
 					break;
 				expect(",");
@@ -109,7 +109,7 @@ struct Parser {
 	void add_this_param(ast::Function& fn, pin<ast::TpClass> cls) {
 		auto this_param = make<ast::Var>();
 		fn.names.push_back(this_param);
-		this_param->name = ast->dom->names()->get("this");
+		this_param->name = "this";
 		auto this_init = make<ast::MkInstance>();
 		this_init->cls = cls;
 		this_param->initializer = this_init;
@@ -366,7 +366,7 @@ struct Parser {
 		if (is_and || match("?")) {
 			auto rhs = make<ast::Block>();
 			rhs->names.push_back(make<ast::Var>());
-			rhs->names.back()->name = ast->dom->names()->get(match("=") ? expect_id("local") : "_");
+			rhs->names.back()->name = match("=") ? expect_id("local") : "_";
 			rhs->body.push_back(parse_ifs());
 			if (is_and)
 				return fill(make<ast::LAnd>(), r, rhs);
@@ -573,7 +573,7 @@ struct Parser {
 				while (!match(")")) {
 					expect(",");
 					lambda->names.push_back(make<ast::Var>());
-					lambda->names.back()->name = ast->dom->names()->get(expect_id("parameter"));
+					lambda->names.back()->name = expect_id("parameter");
 				}
 			}
 			if (match("{")) {
@@ -644,7 +644,7 @@ struct Parser {
 			return fill(make<ast::Loop>(), parse_unar());
 		if (auto name = match("_")) {
 			auto r = make<ast::Get>();
-			r->var_name = ast->dom->names()->get("_");
+			r->var_name = "_";
 			return r;
 		}
 		if (match_ns("'")) {

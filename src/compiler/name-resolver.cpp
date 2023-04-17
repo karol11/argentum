@@ -250,6 +250,17 @@ struct NameResolver : ast::ActionScanner {
 			on_function(fi->second);
 			return;
 		}
+		if (!node.var_module) {
+			if (auto al = node.module->aliases.find(node.var_name); al != node.module->aliases.end()) {
+				if (auto as_cls = dom::strict_cast<ast::TpClass>(al->second))
+					on_class(as_cls);
+				else if (auto as_fn = dom::strict_cast<ast::Function>(al->second))
+					on_function(as_fn);
+				else
+					node.error("internal: alias name is nor class nor function");
+				return;
+			}
+		}
 		node.error(is_ambigous ? "ambigous name " : "unresolved name ", node.var_name);
 	}
 
