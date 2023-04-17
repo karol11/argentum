@@ -31,7 +31,7 @@ using ast::Ast;
 using ast::Node;
 using ast::Action;
 using ast::make_at_location;
-using module_text_provider_t = const std::function<string (pin<Name> name)>&;
+using module_text_provider_t = const std::function<string (string name)>&;
 
 template<typename FN>
 struct Guard{
@@ -46,14 +46,15 @@ struct Parser {
 	pin<dom::Dom> dom;
 	pin<Ast> ast;
 	string text;
-	pin<Name> module_name;
+	string module_name;
+	pin<ast::Module> module;
 	int32_t pos = 1;
 	int32_t line = 1;
 	const char* cur = nullptr;
-	unordered_set<pin<dom::Name>>& modules_in_dep_path;
-	unordered_map<pin<dom::Name>, pin<ast::ImmediateDelegate>> delegates;
+	unordered_set<string>& modules_in_dep_path;
+	unordered_map<string, pin<ast::ImmediateDelegate>> delegates;
 
-	Parser(pin<Ast> ast, pin<Name> module_name, unordered_set<pin<dom::Name>>& modules_in_dep_path)
+	Parser(pin<Ast> ast, string module_name, unordered_set<string>& modules_in_dep_path)
 		: dom(ast->dom)
 		, ast(ast)
 		, module_name(module_name)
@@ -113,9 +114,10 @@ struct Parser {
 		this_init->cls = cls;
 		this_param->initializer = this_init;
 	}
-	pin<ast::Method> make_method(pin<dom::Name> name, pin<ast::TpClass> cls, bool is_interface) {
+	pin<ast::Method> make_method(const ast::LongName& name, pin<ast::TpClass> cls, bool is_interface) {
 		auto method = make<ast::Method>();
-		method->name = name;
+		method->name = name.name;
+		method->base_module = name.module;
 		add_this_param(*method, cls);
 		parse_fn_def(method);
 		if (is_interface != method->body.empty()) {
@@ -123,49 +125,83 @@ struct Parser {
 		}
 		return method;
 	}
-
-	void parse(module_text_provider_t module_text_provider)
+	ast::LongName expect_long_name(char* message, pin<ast::Module> def_module) {
+		auto id = expect_id(message);
+		if (!match("_"))
+			return { id, def_module };
+		if (auto it = module->direct_imports.find(id); it != module->direct_imports.end())
+			return { expect_id(message), it->second };
+		error("module", id, " is not visible from module ", module->name);
+	}
+	pin<ast::Module> parse(module_text_provider_t module_text_provider)
 	{
 		if (modules_in_dep_path.count(module_name) != 0) {
 			string msg = "curcular dependency in modules:";
 			for (auto& m : modules_in_dep_path)
-				msg += std::to_string(m) + " ";
+				msg += m + " ";
 			error(msg);
 		}
-		if (ast->module_names.count(module_name) != 0)
-				return;
-		ast->module_names.insert(module_name);
+		if (auto it = ast->modules.find(module_name); it != ast->modules.end())
+				return it->second;
+		module = new ast::Module;
+		module->name = module_name;
+		ast->modules.insert({ module_name, module });
 		modules_in_dep_path.insert(module_name);
 		text = module_text_provider(module_name);
 		cur = text.c_str();
 		match_ws();
 		while (match("using")) {
-			Parser(ast, expect_domain_name("imported module"), modules_in_dep_path).parse(module_text_provider);
-			expect(";");
+			auto using_name = expect_id("imported module");
+			auto used_module = Parser(ast, using_name, modules_in_dep_path).parse(module_text_provider);
+			module->direct_imports.insert({ using_name, used_module });
+			if (match("{")) {
+				do {
+					auto my_id = expect_id("alias name");
+					auto their_id = my_id;
+					if (match("=")) {
+						their_id = expect_id("name in package");
+					}
+					if (auto it = used_module->functions.find(their_id); it != used_module->functions.end())
+						module->aliases.insert({ my_id, it->second });
+					else if (auto it = used_module->classes.find(their_id); it != used_module->classes.end())
+						module->aliases.insert({ my_id, it->second });
+					else
+						error("unknown name ", their_id, " in module ", using_name);
+					expect(";");
+				} while (!match("}"));
+			} else {
+				expect(";");
+			}
 		}
 		for (;;) {
 			bool is_test = match("test");
 			bool is_interface = match("interface");
 			if (is_interface || match("class")) {
-				auto cls = ast->get_class(expect_domain_name("class or interface name"));
+				auto[ c_name, m ] = expect_long_name("class or interface", module);
+				auto cls = m->get_class(c_name);
+				cls->line = line;
+				cls->pos = pos;
+				// TODO match attributes if existed
 				cls->is_interface = is_interface;
 				cls->is_test = is_test;
 				expect("{");
 				while (!match("}")) {
 					if (match("+")) {
-						auto& base_content = cls->overloads[ast->get_class(expect_domain_name("base class or interface"))];
+						auto [base_name, base_m] = expect_long_name("base class or interface", module);
+						auto base_class = base_m->get_class(base_name);
+						auto& base_content = cls->overloads[base_class];
 						if (match("{")) {
 							if (is_interface)
 								error("interface can't have overrides");
 							while (!match("}"))
-								base_content.push_back(make_method(expect_domain_name("override method name"), cls, is_interface));
+								base_content.push_back(make_method(expect_long_name("override method name", nullptr), cls, is_interface));
 						} else {
 							expect(";");
 						}
 					} else {
 						int is_mut = match("*") ? -1 :
 							match("-") ? 0 : 1;
-						auto member_name = expect_domain_name("method or field name");
+						auto member_name = expect_id("method or field name");
 						if (match("=")) {
 							if (is_mut != 1)
 								error("field can't have '-' or '*' markers");
@@ -174,40 +210,40 @@ struct Parser {
 							cls->fields.back()->initializer = parse_expression();
 							expect(";");
 						} else {
-							cls->new_methods.push_back(make_method(member_name, cls, is_interface));
+							cls->new_methods.push_back(make_method({ member_name, module }, cls, is_interface));
 							cls->new_methods.back()->mut = is_mut;
 						}
 					}
 				}
 			} else if (match("fn")) {
 				auto fn = make<ast::Function>();
-				fn->name = expect_domain_name("function name");
+				fn->name = expect_id("function name");
 				fn->is_test = is_test;
-				auto& fn_ref = ast->functions_by_names[fn->name];
+				auto& fn_ref = module->functions[fn->name];
 				if (fn_ref)
-					error("duplicated function name, ", fn->name.pinned(), " see ", *fn_ref.pinned());
+					error("duplicated function name, ", fn->name, " see ", *fn_ref.pinned());
 				fn_ref = fn;
-				ast->functions.push_back(fn);
 				parse_fn_def(fn);
 			} else if (is_test) {
 				auto fn = make<ast::Function>();
-				fn->name = expect_domain_name("function name");
+				fn->name = expect_id("test name");
 				fn->is_test = true;
-				auto& fn_ref = ast->tests_by_names[fn->name];
+				auto& fn_ref = module->tests[fn->name];
 				if (fn_ref)
-					error("duplicated test name, ", fn->name.pinned(), " see ", *fn_ref.pinned());
+					error("duplicated test name, ", fn->name, " see ", *fn_ref.pinned());
 				fn_ref = fn;
 				parse_fn_def(fn);
 			} else {
 				break;
 			}
 		}
-		ast->entry_point = make<ast::Function>();
+		module->entry_point = make<ast::Function>();
 		if (*cur)
-			parse_statement_sequence(ast->entry_point->body);
+			parse_statement_sequence(module->entry_point->body);
 		if (*cur)
 			error("unexpected statements");
 		modules_in_dep_path.erase(module_name);
+		return module;
 	}
 
 	void parse_statement_sequence(vector<own<Action>>& body) {
@@ -219,6 +255,13 @@ struct Parser {
 			body.push_back(parse_statement());
 		} while (match(";"));
 	}
+	pin<ast::Get> mk_get(char* kind) {
+		auto get = make<ast::Get>();
+		auto n = expect_long_name(kind, nullptr);
+		get->var_name = n.name;
+		get->var_module = n.module;
+		return get;
+	};
 
 	pin<Action> parse_type() {
 		if (match("~"))
@@ -257,19 +300,13 @@ struct Parser {
 				fn->type_expression = parse_type();
 				return fn;
 			}
-			auto get = make<ast::Get>();
-			get->var_name = expect_domain_name("class or interface name");
-			return fill(make<ast::MkWeakOp>(), get);
+			return fill(make<ast::MkWeakOp>(), mk_get("class or interface name"));
 		}
 		if (match("*")) {
-			auto get = make<ast::Get>();
-			get->var_name = expect_domain_name("class or interface name");
-			return fill(make<ast::FreezeOp>(), get);
+			return fill(make<ast::FreezeOp>(), mk_get("class or interface name"));
 		}
 		if (match("@")) {
-			auto get = make<ast::Get>();
-			get->var_name = expect_domain_name("class or interface name");
-			return get;
+			return mk_get("class or interface name");
 		}
 		if (match("fn")) {
 			expect("(");
@@ -283,12 +320,8 @@ struct Parser {
 			fn->body.push_back(parse_type());
 			return fn;
 		}
-		if (auto name = match_domain_name("class or interface name")) {
-			auto r = make<ast::RefOp>();
-			auto get = make<ast::Get>();
-			get->var_name = *name;
-			r->p = get;
-			return r;
+		if (is_id_head(*cur)) {
+			return fill(make<ast::RefOp>(), mk_get("class or interface name"));
 		}
 		error("Expected type name");
 	}
@@ -297,7 +330,7 @@ struct Parser {
 		auto r = parse_expression();
 		if (auto as_get = dom::strict_cast<ast::Get>(r)) {
 			if (!as_get->var && match("=")) {
-				if (as_get->var_name->domain != ast->dom->names())
+				if (as_get->var_module)
 					error("local var names should not contain '_'");
 				auto block = make<ast::Block>();
 				auto var = make_at_location<ast::Var>(*r);
@@ -468,17 +501,19 @@ struct Parser {
 				if (match("&")) {
 					auto d = make<ast::ImmediateDelegate>();
 					d->base = r;
-					d->name = expect_domain_name("delegate name");
+					d->name = expect_id("delegate name");
 					auto& d_ref = delegates[d->name];
 					if (d_ref)
-						error("duplicated delegate name, ", d->name.pinned(), " see ", *d_ref);
+						error("duplicated delegate name, ", d->name, " see ", *d_ref);
 					d_ref = d;
 					add_this_param(*d, nullptr);  // this type to be patched at the type resolver pass
 					parse_fn_def(d);
 					r = d;
 				} else {
 					pin<ast::FieldRef> gf = make<ast::GetField>();
-					gf->field_name = expect_domain_name("field name");
+					auto field_n = expect_long_name("field name", nullptr);
+					gf->field_name = field_n.name;
+					gf->field_module = field_n.module;
 					if (auto op = match_set_op()) {
 						auto block = make_at_location<ast::Block>(*gf);
 						block->names.push_back(make_at_location<ast::Var>(*r));
@@ -659,11 +694,8 @@ struct Parser {
 			match_ws();
 			return r;
 		}
-		if (auto name = match_domain_name("domain name")) {
-			auto r = make<ast::Get>();
-			r->var_name = *name;
-			return r;
-		}
+		if (is_id_head(*cur))
+			return mk_get("name");
 		error("syntax error");
 	}
 
@@ -679,7 +711,7 @@ struct Parser {
 		auto r = pin<T>::make();
 		r->line = line;
 		r->pos = pos;
-		r->module_name = module_name;
+		r->module = module;
 		return r;
 	}
 
@@ -872,31 +904,6 @@ struct Parser {
 		return d;
 	}
 
-	pin<Name> expect_domain_name(const char* message) {
-		auto id = expect_id(message);
-		auto name = match_domain_name_tail(id, message);
-		return name ? name : ast->dom->names()->get(id);
-	}
-
-	optional<pin<Name>> match_domain_name(const char* message) {
-		auto id = match_id();
-		if (!id)
-			return nullopt;
-		auto name = match_domain_name_tail(*id, message);
-		return name ? name : ast->dom->names()->get(*id);
-	}
-
-	pin<Name> match_domain_name_tail(string id, const char* message) {
-		if (!match("_"))
-			return nullptr;
-		pin<Name> r = dom->names()->get(id)->get(expect_id(message));
-		while (match("_")) {
-			string name_val = expect_id(message);
-			r = r->get(name_val);
-		}
-		return r;
-	}
-
 	template<typename... T>
 	[[noreturn]] void error(const T&... t) {
 		std::cerr << "error " << ast::format_str(t...) << " " << module_name << ":" << line << ":" << pos << std::endl;
@@ -910,11 +917,11 @@ struct Parser {
 
 }  // namespace
 
-void parse(
+pin<ast::Module> parse(
 	pin<Ast> ast,
-	pin<Name> module_name,
-	std::unordered_set<ltm::pin<dom::Name>>& modules_in_dep_path,
+	string module_name,
+	std::unordered_set<string>& modules_in_dep_path,
 	module_text_provider_t module_text_provider)
 {
-	Parser(ast, module_name, modules_in_dep_path).parse(module_text_provider);
+	return Parser(ast, module_name, modules_in_dep_path).parse(module_text_provider);
 }

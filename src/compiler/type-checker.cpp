@@ -131,11 +131,27 @@ struct Typer : ast::ActionMatcher {
 				node.type_ = as_mk_delegate->base->type();  // preserve both own/ref and actual this type.
 		}
 	}
-	void handle_index_op(ast::GetAtIndex& node, own<ast::Action> opt_value, const string name) {
+	void handle_index_op(ast::GetAtIndex& node, own<ast::Action> opt_value, const string m_name, const string f_suffix) {
 		auto indexed = ast->extract_class(find_type(node.indexed)->type());
 		if (!indexed)
 			node.error("Only objects can be indexed, not ", node.indexed->type());
-		if (auto fn = ast->functions_by_names[indexed->name->get(name)].pinned()) {
+		if (auto m = dom::peek(indexed->this_names, ast::LongName{ m_name, nullptr })) {
+			if (auto method = dom::strict_cast<ast::Method>(m)) {
+				auto r = ast::make_at_location<ast::Call>(node).owned();
+				auto callee = ast::make_at_location<ast::MakeDelegate>(node);
+				r->callee = callee;
+				callee->base = node.indexed;
+				callee->method = method;
+				r->params = move(node.indexes);
+				if (opt_value)
+					r->params.push_back(move(opt_value));
+				fix(r);
+				*fix_result = move(r);
+				return;
+			}
+			node.error(m_name, " is not a method in ", node.indexed);
+		}
+		if (auto fn = indexed->module->functions[indexed->name + f_suffix].pinned()) {
 			auto fnref = ast::make_at_location<ast::MakeFnPtr>(node);
 			fnref->fn = fn;
 			auto r = ast::make_at_location<ast::Call>(node).owned();
@@ -148,27 +164,10 @@ struct Typer : ast::ActionMatcher {
 			*fix_result = move(r);
 			return;
 		}
-		if (auto global_name = ast->dom->names()->peek(name)) {
-			if (auto m = dom::peek(indexed->this_names, global_name)) {
-				if (auto method = dom::strict_cast<ast::Method>(m)) {
-					auto r = ast::make_at_location<ast::Call>(node).owned();
-					auto callee = ast::make_at_location<ast::MakeDelegate>(node);
-					r->callee = callee;
-					callee->base = node.indexed;
-					callee->method = method;
-					r->params = move(node.indexes);
-					if (opt_value)
-						r->params.push_back(move(opt_value));
-					fix(r);
-					*fix_result = move(r);
-					return;
-				}
-			}
-		}
-		node.error("function ", indexed->name->get(name), " not found");
+		node.error("function ", indexed->name, "_", f_suffix, " or method ", node.indexed->type(), ".", m_name, " not found");
 	}
-	void on_get_at_index(ast::GetAtIndex& node) override { handle_index_op(node, nullptr, "getAt"); }
-	void on_set_at_index(ast::SetAtIndex& node) override { handle_index_op(node, move(node.value), "setAt"); }
+	void on_get_at_index(ast::GetAtIndex& node) override { handle_index_op(node, nullptr, "getAt", "GetAt"); }
+	void on_set_at_index(ast::SetAtIndex& node) override { handle_index_op(node, move(node.value), "setAt", "SetAt"); }
 	pin<ast::Function> type_fn(pin<ast::Function> fn) {
 		if (!fn->type_ || fn->type_ == type_in_progress) {
 			bool is_method = dom::isa<ast::Method>(*fn) || dom::isa<ast::ImmediateDelegate>(*fn);
@@ -192,7 +191,7 @@ struct Typer : ast::ActionMatcher {
 		node.type_ = type_fn(node.method)->type_;
 		if (dom::isa<ast::TpShared>(*node.base->type())) {
 			if (node.method->mut == 1)
-				node.error("cannot call a mutaing method on a shared object");
+				node.error("cannot call a mutating method on a shared object");
 		} else {
 			if (node.method->mut == -1)
 				node.error("cannot call a *method on a non-shared object");
@@ -267,7 +266,7 @@ struct Typer : ast::ActionMatcher {
 			*fix_result,
 			value_type,
 			variable_type,
-			[&] { return ast::format_str("assign to vaiable", node.var_name.pinned(), node.var.pinned()); });
+			[&] { return ast::format_str("assign to vaiable", node.var_name, node.var.pinned()); });
 	}
 	void on_mk_instance(ast::MkInstance& node) override {
 		node.type_ = node.cls;
@@ -294,7 +293,7 @@ struct Typer : ast::ActionMatcher {
 	void on_get_field(ast::GetField& node) override {
 		if (!node.field) {
 			auto cls = class_from_action(node.base);
-			if (!cls->handle_member(node, node.field_name,
+			if (!cls->handle_member(node, ast::LongName{ node.field_name, node.field_module },
 				[&](auto field) { node.field = field; },
 				[&](auto method) {
 					auto r = ast::make_at_location<ast::MakeDelegate>(node).owned();
@@ -304,7 +303,7 @@ struct Typer : ast::ActionMatcher {
 					*fix_result = move(r);
 				},
 				[&] { node.error("field/method name is ambigiuous, use cast"); }))
-				node.error("class ", cls->name.pinned(), " doesn't have field/method ", node.field_name.pinned());
+				node.error("class ", cls, " doesn't have field/method ", ast::LongName{ node.field_name, node.field_module });
 		}
 		if (&node == fix_result->pinned()) {
 			find_type(node.base);
@@ -319,14 +318,14 @@ struct Typer : ast::ActionMatcher {
 	void resolve_set_field(ast::SetField& node) {
 		auto cls = class_from_action(node.base);
 		if (!node.field) {
-			if (!cls->handle_member(node, node.field_name,
+			if (!cls->handle_member(node, ast::LongName{ node.field_name, node.field_module },
 				[&](auto field) { node.field = field; },
 				[&](auto method) { node.error("Cannot assign to method"); },
 				[&] { node.error("field name is ambiguous, use cast"); }))
-				node.error("class ", cls->name.pinned(), " doesn't have field/method ", node.field_name.pinned());
+				node.error("class ", cls->name, " doesn't have field/method ", ast::LongName{ node.field_name, node.field_module });
 		}
 		if (dom::isa<ast::TpShared>(*node.base->type()))
-			node.error("Cannot assign to a shared object field ", node.field->name.pinned());
+			node.error("Cannot assign to a shared object field ", ast::LongName{ node.field_name, node.field_module });
 		node.type_ = find_type(node.field->initializer)->type();
 		if (auto as_class = dom::strict_cast<ast::TpClass>(node.type())) {
 			node.type_ = ast->get_ref(as_class);
@@ -334,7 +333,9 @@ struct Typer : ast::ActionMatcher {
 	}
 	void on_set_field(ast::SetField& node) override {
 		resolve_set_field(node);
-		expect_type(find_type(node.val), node.field->initializer->type(), [&] { return ast::format_str("assign to field ", node.field_name.pinned(), *node.field.pinned()); });
+		expect_type(find_type(node.val), node.field->initializer->type(), [&] {
+			return ast::format_str("assign to field ", ast::LongName{ node.field_name, node.field_module }, *node.field.pinned());
+		});
 	}
 	void on_splice_field(ast::SpliceField& node) override {
 		resolve_set_field(node);
@@ -343,7 +344,9 @@ struct Typer : ast::ActionMatcher {
 			ft = as_opt->wrapped;
 		if (!dom::isa<ast::TpClass>(*ft))
 			node.error("Field must be @-pointer, not ", node.field->initializer->type().pinned());
-		expect_type(find_type(node.val), node.type_, [&] { return ast::format_str("splice field ", node.field_name.pinned(), *node.field.pinned()); });
+		expect_type(find_type(node.val), node.type_, [&] {
+			return ast::format_str("splice field ", ast::LongName{ node.field_name, node.field_module }, *node.field.pinned());
+		});
 		node.type_ = tp_bool;
 	}
 	void on_cast(ast::CastOp& node) override {
@@ -548,7 +551,7 @@ struct Typer : ast::ActionMatcher {
 	}
 
 	void process() {
-		for (auto& c : ast->classes) {
+		for (auto& c : ast->classes_in_order) {
 			this_class = c;
 			for (auto& m : c->new_methods)
 				type_fn(m);
@@ -556,10 +559,11 @@ struct Typer : ast::ActionMatcher {
 				for (auto& m : b.second)
 					type_fn(m);
 		}
-
-		for (auto& fn : ast->functions)
-			type_fn(fn);
-		for (auto& c : ast->classes) {
+		for (auto& m : ast->modules) {
+			for (auto& fn : m.second->functions)
+				type_fn(fn.second);
+		}
+		for (auto& c : ast->classes_in_order) {
 			this_class = c;
 			for (auto& f : c->fields) {
 				find_type(f->initializer);
@@ -573,19 +577,23 @@ struct Typer : ast::ActionMatcher {
 				for (auto& m : b.second)
 					process_method(m);
 		}
-		for (auto& fn : ast->functions) {
-			for (auto& a : fn->body)
-				find_type(a);
-			if (!fn->is_platform)
-				expect_type(fn->body.back(), fn->type_expression->type(), [] { return "checking actual result tupe against fn declaration"; });
+		for (auto& m : ast->modules) {
+			for (auto& fn : m.second->functions) {
+				for (auto& a : fn.second->body)
+					find_type(a);
+				if (!fn.second->is_platform)
+					expect_type(fn.second->body.back(), fn.second->type_expression->type(), [] { return "checking actual result tupe against fn declaration"; });
+			}
 		}
-		expect_type(find_type(ast->entry_point), ast->tp_lambda({ ast->tp_void() }), []{ return "main fn return value"; });
-		for (auto& t : ast->tests_by_names) {
-			type_fn(t.second);
-			if (!t.second->names.empty())
-				t.second->error("tests should not have parameters");
-			for (auto& a : t.second->body)
-				find_type(a);
+		expect_type(find_type(ast->starting_module->entry_point), ast->tp_lambda({ ast->tp_void() }), []{ return "main fn return value"; });
+		for (auto& m : ast->modules) {
+			for (auto& t : m.second->tests) {
+				type_fn(t.second);
+				if (!t.second->names.empty())
+					t.second->error("tests should not have parameters");
+				for (auto& a : t.second->body)
+					find_type(a);
+			}
 		}
 	}
 

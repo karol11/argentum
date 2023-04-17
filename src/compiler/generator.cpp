@@ -145,7 +145,7 @@ struct Generator : ast::ActionScanner {
 	unordered_map<pin<ast::Function>, llvm::Function*> functions;
 	
 	llvm::DICompileUnit* di_cu = nullptr;
-	unordered_map<weak<dom::Name>, llvm::DIFile*> di_files;
+	unordered_map<string, llvm::DIFile*> di_files;
 	llvm::DIScope* current_di_scope = nullptr;
 	llvm::DIType* current_capture_di_type = nullptr;
 	std::unique_ptr<llvm::DIBuilder> di_builder;
@@ -660,14 +660,16 @@ struct Generator : ast::ActionScanner {
 		return matcher.result;
 	}
 
-	void insert_di_var(string name, int line, int pos, llvm::DIType* type, llvm::Value* data_addr) {
+	void insert_di_var(ast::Module* module, string name, int line, int pos, llvm::DIType* type, llvm::Value* data_addr) {
 		if (!di_builder)
 			return;
 		di_builder->insertDeclare(
 			data_addr,
 			di_builder->createAutoVariable(
 				current_di_scope,
-				name,
+				module
+					? ast::format_str(module->name, "_", name)
+					: name,
 				current_di_scope->getFile(),
 				line,
 				type,
@@ -683,7 +685,7 @@ struct Generator : ast::ActionScanner {
 
 	void insert_di_var(pin<ast::Var> p, llvm::Value* data_addr) {
 		if (di_builder)
-			insert_di_var(std::to_string(p->name.pinned()), p->line, p->pos, to_di_type(*p->type), data_addr);
+			insert_di_var(nullptr, p->name, p->line, p->pos, to_di_type(*p->type), data_addr);
 	}
 
 	void compile_fn_body(ast::MkLambda& node, string di_name, llvm::Type* closure_struct = nullptr) {
@@ -696,8 +698,8 @@ struct Generator : ast::ActionScanner {
 		llvm::IRBuilder fn_bulder(llvm::BasicBlock::Create(*context, "", current_function));
 		this->builder = &fn_bulder;
 		llvm::DIScope* prev_di_scope = current_di_scope;
-		if (node.module_name) {
-			if (auto di_file = di_files[node.module_name]) {
+		if (node.module) {
+			if (auto di_file = di_files[node.module->name]) {
 				auto sub = di_builder->createFunction(
 					di_cu,
 					di_name,
@@ -733,7 +735,7 @@ struct Generator : ast::ActionScanner {
 				for (auto& p : node.captured_locals) {
 					di_captures.push_back(di_builder->createMemberType(
 						nullptr,
-						std::to_string(p->name.pinned()),
+						p->name,
 						nullptr,
 						0, 64, 0, offset,
 						llvm::DINode::DIFlags::FlagZero,
@@ -765,7 +767,7 @@ struct Generator : ast::ActionScanner {
 				builder->CreateStore(&*current_function->arg_begin(), builder->CreateStructGEP(captures.back().second, capture, 0));
 			}
 			if (di_builder) {
-				insert_di_var("current_closure", node.line, node.pos, current_capture_di_type, capture);
+				insert_di_var(nullptr, "current_closure", node.line, node.pos, current_capture_di_type, capture);
 			}
 		}
 		for (auto& local : node.mutables) {
@@ -780,7 +782,7 @@ struct Generator : ast::ActionScanner {
 			if (isa<ast::MkLambda>(node)) {
 				if (closure_struct != nullptr) {
 					auto dbg_param_val = builder->CreateAlloca(ptr_type);
-					insert_di_var("parent_closure", node.line, node.pos, di_builder->createPointerType(prev_capture_di_type, 64), dbg_param_val);
+					insert_di_var(nullptr, "parent_closure", node.line, node.pos, di_builder->createPointerType(prev_capture_di_type, 64), dbg_param_val);
 					builder->CreateStore(&*param_iter, dbg_param_val);
 				}
 				++param_iter;
@@ -878,7 +880,7 @@ struct Generator : ast::ActionScanner {
 	void on_mk_lambda(ast::MkLambda& node) override {
 		llvm::Function* function = compile_function(
 			node,
-			ast::format_str("L_", node.module_name.pinned(), '_', node.line, '_', node.pos),
+			ast::format_str("L_", node.module->name, '_', node.line, '_', node.pos),
 			captures.empty()
 				? nullptr
 				: captures.back().second->getPointerTo());
@@ -986,11 +988,11 @@ struct Generator : ast::ActionScanner {
 		auto dl_fn = llvm::Function::Create(
 			lambda_to_llvm_fn(node, node.type()),
 			llvm::Function::InternalLinkage,
-			ast::format_str("ag_dl_", node.name.pinned()),
+			ast::format_str("ag_dl_", node.module->name, "_", node.name),
 			module.get());
 		auto prev_fn = current_function;
 		current_function = dl_fn;
-		compile_fn_body(node, ast::format_str("dl_", node.name.pinned()));
+		compile_fn_body(node, ast::format_str("dl_", node.module->name, "_", node.name));
 		current_function = prev_fn;
 		auto base = compile(node.base);
 		result->data = builder->CreateInsertValue(
@@ -2023,16 +2025,17 @@ struct Generator : ast::ActionScanner {
 			});
 		auto initializer_fn_type = llvm::FunctionType::get(void_type, { ptr_type }, false);
 		if (di_builder) {
-			for (auto& m : ast->module_names) {
+			for (auto& m : ast->modules) {
 				di_files.insert({
-					m.weaked(),
+					m.first,
 					di_builder->createFile(
-							m->name + ".ag",
+							m.first + ".ag",
 							ast->absolute_path)});
 			}
 		}
 		// Make LLVM types for classes
-		for (auto& cls : ast->classes) {
+		for (auto& cls : ast->classes_in_order) {
+			auto c_name = ast::format_str("ag_cls_", cls->module->name, "_", cls->name);
 			auto& info = classes[cls];
 			if (cls->is_interface) {
 				uint64_t id = 0;
@@ -2043,21 +2046,22 @@ struct Generator : ast::ActionScanner {
 				info.interface_ordinal = id;
 				continue;
 			}
-			info.fields = llvm::StructType::create(*context, std::to_string(cls->name.pinned()));
+			info.fields = llvm::StructType::create(*context, c_name);
 			info.constructor = llvm::Function::Create(
 				llvm::FunctionType::get(info.fields->getPointerTo(), {}, false),
 				llvm::Function::InternalLinkage,
-				std::to_string(cls->name.pinned()) + "!ctor", module.get());
+				c_name + "_ctor",
+				module.get());
 			info.initializer = llvm::Function::Create(
 				initializer_fn_type,
 				llvm::Function::InternalLinkage,
-				std::to_string(cls->name.pinned()) + "!init",
+				c_name + "_init",
 				module.get());
 		}
 		// Make llvm types for methods and fields.
 		// Fill llvm structs for classes with fields.
 		// Define llvm types for vmts.
-		for (auto& cls : ast->classes) {
+		for (auto& cls : ast->classes_in_order) {
 			auto& info = classes[cls];
 			if (!cls->is_interface) {  // handle fields
 				vector<llvm::Type*> fields;
@@ -2109,16 +2113,18 @@ struct Generator : ast::ActionScanner {
 		}
 		// From this point it is possible to build code that access fleds and methods.
 		// Make llvm functions for standalone ast functions.
-		for (auto& fn : ast->functions) {
-			functions.insert({fn, llvm::Function::Create(
-				function_to_llvm_fn(*fn, fn->type()),
-				fn->is_platform
-					? llvm::Function::ExternalLinkage
-					: llvm::Function::InternalLinkage,
-				ast::format_str("ag_fn_", fn->name.pinned()), module.get())});
+		for (auto& m : ast->modules) {
+			for (auto& fn : m.second->functions) {
+				functions.insert({ fn.second, llvm::Function::Create(
+					function_to_llvm_fn(*fn.second, fn.second->type()),
+					fn.second->is_platform
+						? llvm::Function::ExternalLinkage
+						: llvm::Function::InternalLinkage,
+					ast::format_str("ag_fn_", fn.first), module.get()) });
+			}
 		}
 		// Build class contents - initializer, dispatcher, disposer, copier, methods.
-		for (auto& cls : ast->classes) {
+		for (auto& cls : ast->classes_in_order) {
 			if (cls->is_interface)
 				continue;
 			auto& info = classes[cls];
@@ -2128,9 +2134,9 @@ struct Generator : ast::ActionScanner {
 				special_copy_and_dispose.count(cls) == 0
 					? llvm::Function::InternalLinkage
 					: llvm::Function::ExternalLinkage,
-				ast::format_str("ag_dtor_", cls->name.pinned()), module.get());
+				ast::format_str("ag_dtor_", cls->module->name, "_", cls->name), module.get());
 			info.dispatcher = llvm::Function::Create(dispatcher_fn_type, llvm::Function::InternalLinkage,
-				std::to_string(cls->name.pinned()) + "!disp", module.get());
+				ast::format_str("ag_disp_", cls->module->name, "_", cls->name), module.get());
 			// Initializer
 			llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "", info.initializer));
 			current_function = info.initializer;
@@ -2158,12 +2164,10 @@ struct Generator : ast::ActionScanner {
 			if (special_copy_and_dispose.count(cls) == 0) {
 				builder.SetInsertPoint(llvm::BasicBlock::Create(*context, "", info.dispose));
 				current_function = info.dispose;
-				if (auto manual_disposer_name = cls->name->peek("dispose")) {
-					if (auto manual_disposer_fn = ast->functions_by_names.find(manual_disposer_name); manual_disposer_fn != ast->functions_by_names.end()) {
-						builder.CreateCall(
-							functions[manual_disposer_fn->second.pinned()],
-							{ cast_to(info.dispose->getArg(0), info.fields->getPointerTo()) });
-					}
+				if (auto manual_disposer_fn = cls->module->functions.find(cls->name + "Dispose"); manual_disposer_fn != cls->module->functions.end()) {
+					builder.CreateCall(
+						functions[manual_disposer_fn->second.pinned()],
+						{ cast_to(info.dispose->getArg(0), info.fields->getPointerTo()) });
 				}
 				if (base_info)
 					builder.CreateCall(base_info->dispose, { info.dispose->getArg(0) });
@@ -2184,19 +2188,17 @@ struct Generator : ast::ActionScanner {
 				special_copy_and_dispose.count(cls) == 0
 					? llvm::Function::InternalLinkage
 					: llvm::Function::ExternalLinkage,
-				ast::format_str("ag_copy_", cls->name.pinned()), module.get());
+				ast::format_str("ag_copy_", cls->get_name()), module.get());
 			if (special_copy_and_dispose.count(cls) == 0) {
 				builder.SetInsertPoint(llvm::BasicBlock::Create(*context, "", info.copier));
 				current_function = info.copier;
-				if (auto manual_fixer_name = cls->name->peek("afterCopy")) {
-					if (auto manual_fixer_fn = ast->functions_by_names.find(manual_fixer_name); manual_fixer_fn != ast->functions_by_names.end()) {
-						builder.CreateCall(
-							fn_reg_copy_fixer,
-							{
-								cast_to(info.copier->getArg(0), ptr_type),
-								cast_to(functions[manual_fixer_fn->second.pinned()], ptr_type)
-							});
-					}
+				if (auto manual_fixer_fn = cls->module->functions.find(cls->name + "AfterCopy"); manual_fixer_fn != cls->module->functions.end()) {
+					builder.CreateCall(
+						fn_reg_copy_fixer,
+						{
+							cast_to(info.copier->getArg(0), ptr_type),
+							cast_to(functions[manual_fixer_fn->second.pinned()], ptr_type)
+						});
 				}
 				if (base_info)
 					builder.CreateCall(
@@ -2243,7 +2245,7 @@ struct Generator : ast::ActionScanner {
 			for (auto& m : cls->new_methods) {
 				auto& m_info = methods[m];
 				info.vmt_fields.push_back(compile_function(*m,
-					ast::format_str("M_", cls->name.pinned(), '_', m->name.pinned()),
+					ast::format_str("M_", cls->get_name(), '_', ast::LongName{ m->name, m->base_module }),
 					info.fields->getPointerTo()));
 			}
 			size_t base_index = info.vmt_fields.size();
@@ -2254,7 +2256,7 @@ struct Generator : ast::ActionScanner {
 				for (auto& m : cls->overloads[cls->base_class]) { // for overrides
 					auto& m_info = methods[m];
 					info.vmt_fields[base_index + m_info.ordinal] = compile_function(*m,
-						ast::format_str("M_", cls->name.pinned(), '_', m->name.pinned()),
+						ast::format_str("M_", cls->get_name(), '_', ast::LongName{ m->name, m->base_module }),
 						info.fields->getPointerTo());
 				}
 			}
@@ -2275,18 +2277,18 @@ struct Generator : ast::ActionScanner {
 					methods.push_back(llvm::ConstantExpr::getBitCast(
 						compile_function(
 							*m.pinned(),
-							ast::format_str("IM_", cls->name.pinned(), '_', i.first->name.pinned(), '_', m->name.pinned()),
+							ast::format_str("IM_", cls->get_name(), '_', i.first->get_name(), '_', m->name),
 							info.fields->getPointerTo()),
 						ptr_type));
 				}
 				vmts.insert({
 					classes[i.first].interface_ordinal,
 					make_const_array(
-						ast::format_str("mt_", cls->name.pinned(), "_", i.first->name.pinned()),
+						ast::format_str("mt_", cls->get_name(), "_", i.first->get_name()),
 						move(methods))});
 			}
 			builder.SetInsertPoint(llvm::BasicBlock::Create(*context, "", info.dispatcher));
-			auto mtable_ptr = build_i_table(ast::format_str("it_", cls->name.pinned()), builder, vmts, &*info.dispatcher->arg_begin());
+			auto mtable_ptr = build_i_table(ast::format_str("it_", cls->get_name()), builder, vmts, &*info.dispatcher->arg_begin());
 			builder.CreateRet(
 				builder.CreateLoad(
 					ptr_type,
@@ -2300,30 +2302,34 @@ struct Generator : ast::ActionScanner {
 						})));
 		}
 		// Compile standalone functions.
-		for (auto& fn : ast->functions) {
-			if (!fn->is_platform) {
-				current_function = functions[fn];
-				compile_fn_body(*fn, ast::format_str("fn_", fn->name.pinned()));
+		for (auto& m : ast->modules) {
+			for (auto& fn : m.second->functions) {
+				if (!fn.second->is_platform) {
+					current_function = functions[fn.second];
+					compile_fn_body(*fn.second, ast::format_str("fn_", m.first, "_", fn.first));
+				}
 			}
 		}
 		current_function = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, {}, false),
 			llvm::Function::ExternalLinkage,
 			"main", module.get());
-		compile_fn_body(*ast->entry_point, "main");
+		compile_fn_body(*ast->starting_module->entry_point, "main");
 		// Compile tests
-		for (auto& test : ast->tests_by_names) {
-			auto fn = llvm::Function::Create(
-				llvm::FunctionType::get(void_type, {}, false),
-				llvm::Function::ExternalLinkage,
-				ast::format_str("ag_test_", test.second->name.pinned()),
-				module.get());
-			current_function = fn;
-			compile_fn_body(*test.second, ast::format_str("test_", test.second->name.pinned()));
+		for (auto& m : ast->modules) {
+			for (auto& test : m.second->tests) {
+				auto fn = llvm::Function::Create(
+					llvm::FunctionType::get(void_type, {}, false),
+					llvm::Function::ExternalLinkage,
+					ast::format_str("ag_test_", m.first, "_", test.first),
+					module.get());
+				current_function = fn;
+				compile_fn_body(*test.second, ast::format_str("test_", m.first, "_", test.first));
+			}
 		}
 		if (di_builder) {
 			vector<llvm::Metadata*> cls_di_parts;
-			for (auto& c : ast->classes) {
+			for (auto& c : ast->classes_in_order) {
 				if (c->is_interface)
 					continue;
 				vector<llvm::Metadata*> cls_di_fields;
@@ -2336,7 +2342,7 @@ struct Generator : ast::ActionScanner {
 							->getScalarSizeInBits();
 						cls_di_fields.push_back(di_builder->createMemberType(
 							di_cu,
-							std::to_string(f->name.pinned()),
+							f->name,
 							di_cu->getFile(),
 							0,  // line
 							width,
@@ -2348,10 +2354,10 @@ struct Generator : ast::ActionScanner {
 					}
 					return offset;
 				};
-				size_t size = field_builder(*c);
+				size_t size = field_builder(*c.pinned());
 				cls_di_parts.push_back(di_builder->createVariantMemberType(
 					di_obj_variants,
-					ast::format_str("tag_", c->name.pinned()),
+					ast::format_str("tag_", c->get_name()),
 					di_cu->getFile(),
 					0,  // line
 					size,
@@ -2361,7 +2367,7 @@ struct Generator : ast::ActionScanner {
 					llvm::DINode::DIFlags::FlagZero,
 					di_builder->createStructType(
 						nullptr,
-						std::to_string(c->name.pinned()),
+						c->get_name(),
 						nullptr,
 						0,  // line
 						size,
@@ -2415,13 +2421,15 @@ int64_t execute(llvm::orc::ThreadSafeModule& module, ast::Ast& ast, bool dump_ir
 	check(jit->addIRModule(std::move(module)));
 	auto f_main = check(jit->lookup("main"));
 	auto main_addr = f_main.toPtr<void()>();
-	for (auto& test : ast.tests_by_names) {
-		std::cout << "Test:" << std::to_string(test.first.pinned());
-	 	auto test_fn = check(jit->lookup(ast::format_str("ag_test_", test.second->name.pinned())));
-		auto addr = test_fn.toPtr<void()>();
-		addr();
-		assert(ag_leak_detector_ok());
-		std::cout << " passed" << std::endl;
+	for (auto& m : ast.modules) {
+		for (auto& test : m.second->tests) {
+			std::cout << "Test:" << m.first << "_" << test.second << "\n";
+			auto test_fn = check(jit->lookup(ast::format_str("ag_test_", m.first, "_", test.first)));
+			auto addr = test_fn.toPtr<void()>();
+			addr();
+			assert(ag_leak_detector_ok());
+			std::cout << " passed" << std::endl;
+		}
 	}
 	main_addr();
 	assert(ag_leak_detector_ok());

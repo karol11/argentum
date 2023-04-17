@@ -31,11 +31,11 @@ void execute(const char* source_text, bool dump_all = false) {
     ast::initialize();
     auto ast = own<Ast>::make();
     ast->platform_exports.insert({ "ag_fn_sys_foreignTestFunction", (void(*)())(foreign_test_function) });
-    ast->mk_fn(ast->dom->names()->get("assert"), (void(*)())(ag_assert), new ast::ConstVoid, { ast->tp_int64(), ast->tp_int64() });
-    auto start_module_name = ast->dom->names()->get("ak")->get("test");
-    unordered_map<own<Name>, string> texts{ {start_module_name, source_text} };
-    std::unordered_set<ltm::pin<dom::Name>> modules_in_dep_path;
-    parse(ast, start_module_name, modules_in_dep_path, [&](pin<Name> name) {
+    ast->mk_fn("assert", (void(*)())(ag_assert), new ast::ConstVoid, { ast->tp_int64(), ast->tp_int64() });
+    auto start_module_name = "akTest";
+    unordered_map<string, string> texts{ {start_module_name, source_text} };
+    std::unordered_set<string> modules_in_dep_path;
+    parse(ast, start_module_name, modules_in_dep_path, [&](string name) {
         return move(texts[name]);
     });
     resolve_names(ast);

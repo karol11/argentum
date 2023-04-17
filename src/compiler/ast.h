@@ -9,26 +9,71 @@
 
 namespace ast {
 
-using std::move;
-using std::string;
-using std::unordered_map;
-using std::unordered_set;
-using std::vector;
-using ltm::weak;
-using ltm::own;
-using ltm::pin;
-using dom::Name;
+	using std::move;
+	using std::string;
+	using std::string_view;
+	using std::unordered_map;
+	using std::unordered_set;
+	using std::vector;
+	using ltm::weak;
+	using ltm::own;
+	using ltm::pin;
 
-struct Node;  // having file position
-struct Action;  // having result, able to build code
+	struct Node;  // having file position
+	struct Action;  // having result, able to build code
+	struct Function;
+	struct TpClass;
+	struct Ast;
+	struct Module;
+
+	struct LongName {
+		string name;
+		weak<Module> module;
+
+		bool operator==(const LongName& other) const {
+			return module == other.module && name == other.name;
+		}
+	};
+
+} // namespace
+
+namespace std {
+	template<>
+	struct hash<ast::LongName> {
+		typedef ast::LongName argument_type;
+		typedef std::size_t result_type;
+		std::size_t operator()(const ast::LongName& n) const {
+			return std::hash<std::string>{}(n.name)* std::hash<ltm::weak<ast::Module>>{}(n.module);
+		}
+	};
+	ostream& operator<< (ostream& dst, const ast::LongName& name);
+	string to_string(const ast::LongName& name);
+}
+
+namespace ast {
 
 template<typename... T>
 string format_str(const T&... t) { return (std::stringstream() << ... << t).str(); }
 
+struct Module : dom::DomItem {
+	weak<Ast> ast;
+	string name;
+	unordered_map<string, weak<Module>> direct_imports;
+	unordered_map<string, weak<Node>> aliases;
+	unordered_map<string, own<Function>> tests;
+	unordered_map<string, own<TpClass>> classes;
+	unordered_map<string, own<Function>> functions;
+	own<Function> entry_point;
+
+	pin<TpClass> get_class(const string& name); // gets or creates class
+	pin<TpClass> peek_class(const string& name); // gets class or null
+	DECLARE_DOM_CLASS(Module);
+};
+
 struct Node: dom::DomItem {
 	int32_t line = 0;
 	int32_t pos = 0;
-	weak<dom::Name> module_name;
+	weak<ast::Module> module;
 	[[noreturn]] void err_out(const std::string& message);
 	template<typename... T>
 	[[noreturn]] void error(const T&... t) {
@@ -44,9 +89,9 @@ struct Node: dom::DomItem {
 struct TypeMatcher;
 struct ActionMatcher;
 
-struct Type : dom::DomItem {
+struct Type : Node {
 	Type() { make_shared(); }
-	static own<Type>& promote(own<Type>& to_patch);  // replace cold lambda with a resolved lambda type
+	static own<Type>& promote(own<Type>& to_patch);  // replaces cold lambda with a resolved lambda type
 	virtual void match(TypeMatcher& matcher) = 0;
 };
 struct TpInt64 : Type {
@@ -87,18 +132,18 @@ struct TpOptional : Type {
 	DECLARE_DOM_CLASS(TpOptional);
 };
 struct Field : Node {  // TODO: combine with Var
-	own<dom::Name> name;
+	string name;
 	own<Action> initializer;
 	int offset = 0;
 	DECLARE_DOM_CLASS(Field);
 };
 struct TpClass : Type {
-	own<dom::Name> name;
+	string name;
 	vector<own<Field>> fields;
 	vector<own<struct Method>> new_methods;  // new methods ordered by source order
 	unordered_map<weak<TpClass>, vector<own<struct Method>>> overloads;  // overloads for interfaces and the base class, ordered by source order
 	weak<TpClass> base_class;
-	unordered_map<own<dom::Name>, weak<Node>> this_names;  // this names - defined and inhrited. ambiguous excluded.
+	unordered_map<LongName, weak<Node>> this_names;  // this names - defined and inhrited. ambiguous excluded.
 	unordered_map<           
 		weak<TpClass>,                       // base interface
 		vector<weak<struct Method>>> interface_vmts;   // inherited and overloaded methods in the order of new_methods in that interface
@@ -108,7 +153,7 @@ struct TpClass : Type {
 	void match(TypeMatcher& matcher) override;
 
 	template<typename F, typename M, typename A>
-	bool handle_member(ast::Node& node, const pin<dom::Name> name, F on_field, M on_method, A on_anbiguous) {
+	bool handle_member(ast::Node& node, const LongName& name, F on_field, M on_method, A on_anbiguous) {
 		if (auto m = dom::peek(this_names, name)) {
 			if (!m)
 				on_anbiguous();
@@ -121,6 +166,11 @@ struct TpClass : Type {
 			return true;
 		}
 		return false;
+	}
+	string get_name() {
+		return module
+			? format_str(module->name, "_", name)
+			: name;
 	}
 	DECLARE_DOM_CLASS(TpClass);
 };
@@ -164,7 +214,7 @@ struct Action: Node {
 
 struct Var : Node {
 	own<Type> type;
-	own<dom::Name> name;
+	string name;
 	own<Action> initializer;  // Can be null for lambda parameter. If not null, defines the local initial value or param default value and type.
 	size_t lexical_depth = 0;
 	bool captured = false;
@@ -189,30 +239,27 @@ struct Ast: dom::DomItem {
 	unordered_map<const vector<own<Type>>*, own<TpFunction>, typelist_hasher, typelist_comparer> function_types_;
 	unordered_map<const vector<own<Type>>*, own<TpDelegate>, typelist_hasher, typelist_comparer> delegate_types_;
 	unordered_map<own<Type>, vector<own<TpOptional>>> optional_types_;  // maps base types to all levels of their optionals
-	unordered_map<own<dom::Name>, own<TpClass>> classes_by_names;
-	unordered_map<own<dom::Name>, weak<struct Function>> functions_by_names;
 	unordered_map<own<TpClass>, own<TpRef>> refs;
 	unordered_map<own<TpClass>, own<TpShared>> shareds;
 	unordered_map<own<TpClass>, own<TpWeak>> weaks;
-	unordered_set<pin<dom::Name>> module_names;
-	unordered_map<own<dom::Name>, own<struct Function>> tests_by_names;
-	Ast();
-
-	own<Function> entry_point;
+	unordered_map<string, void(*)()> platform_exports;  // used only in JIT
 	weak<TpClass> object;
 	weak<TpClass> blob;
-	weak<TpClass> utf8;
 	weak<TpClass> own_array;
 	weak<TpClass> weak_array;
 	weak<TpClass> string_cls;
-	vector<own<TpClass>> classes;
-	vector<own<struct Function>> functions;
-	unordered_map<string, void(*)()> platform_exports;
+	weak<Module> sys;
+	vector<weak<TpClass>> classes_in_order; // all classes from all modules in the base-first order
 
-	// Used by platform modules
-	pin<Field> mk_field(pin<dom::Name> name, pin<Action> initializer);
-	pin<TpClass> mk_class(pin<dom::Name> name, std::initializer_list<pin<Field>> fields = {});
-	pin<ast::Function> mk_fn(pin<dom::Name> name, void(*entry_point)(), pin<Action> result_type, std::initializer_list<pin<Type>> params);
+	unordered_map<string, own<Module>> modules;
+	weak<Module> starting_module;
+
+	Ast();
+
+	// Used by platform modules, always populate sys module
+	pin<Field> mk_field(string name, pin<Action> initializer);
+	pin<TpClass> mk_class(string name, std::initializer_list<pin<Field>> fields = {});
+	pin<ast::Function> mk_fn(string name, void(*entry_point)(), pin<Action> result_type, std::initializer_list<pin<Type>> params);
 
 	pin<TpInt64> tp_int64();
 	pin<TpDouble> tp_double();
@@ -225,8 +272,6 @@ struct Ast: dom::DomItem {
 	pin<TpRef> get_ref(pin<TpClass> target);
 	pin<TpShared> get_shared(pin<TpClass> target);
 	pin<TpWeak> get_weak(pin<TpClass> target);
-	pin<TpClass> get_class(pin<dom::Name> name); // gets or creates class
-	pin<TpClass> peek_class(pin<dom::Name> name); // gets class or null
 	pin<TpClass> extract_class(pin<Type> pointer); // extracts class from own, weak or pin pointer
 	DECLARE_DOM_CLASS(Ast);
 };
@@ -277,7 +322,7 @@ struct MkLambda : Block {  // MkLambda locals are params
 };
 
 struct Function : MkLambda {  // Cannot be in the tree of ops. Resides in Ast::functions.
-	own<dom::Name> name;
+	string name;
 	own<Action> type_expression;
 	bool is_platform = false;
 	bool is_test = false;
@@ -294,6 +339,7 @@ struct Method : Function {  // Cannot be in the tree of ops. Resides in TpClass:
 	weak<Method> ovr;  // direct method that was overridden by this one
 	weak<Method> base; // first original class/interface method that was implemented by this one
 	weak<TpClass> cls;  // class in which this method is declared.
+	weak<Module> base_module; // along with `name` defines the name of the method as it is declared, null if name is short
 	int ordinal = 0; // index int cls->new_methods.
 	bool is_factory = false; // @-method
 	int mut = 1;  // 1=mutable, -1=frozen(*), 0=any(-)
@@ -333,7 +379,8 @@ struct MakeFnPtr : Action {
 
 struct DataRef : Action {
 	weak<Var> var;
-	own<dom::Name> var_name;
+	string var_name;
+	weak<Module> var_module;  // for classes, fields
 	string get_annotation() override;
 };
 
@@ -351,7 +398,8 @@ struct Set : DataRef {
 struct FieldRef : Action {
 	own<Action> base;
 	weak<Field> field;
-	own<dom::Name> field_name;
+	string field_name;
+	weak<Module> field_module;
 	string get_annotation() override;
 };
 
@@ -573,7 +621,7 @@ pin<T> make_at_location(Node& src) {
 	auto r = pin<T>::make();
 	r->line = src.line;
 	r->pos = src.pos;
-	r->module_name = src.module_name;
+	r->module = src.module;
 	return r;
 }
 

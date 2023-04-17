@@ -15,8 +15,8 @@ using dom::Kind;
 
 own<dom::Dom> cpp_dom;
 own<TypeWithFills> Ast::dom_type_;
-
 own<TypeWithFills> Var::dom_type_;
+own<TypeWithFills> Module::dom_type_;
 
 own<TypeWithFills> ConstInt64::dom_type_;
 own<TypeWithFills> ConstString::dom_type_;
@@ -97,22 +97,32 @@ void initialize() {
 	auto weak_type = cpp_dom->mk_type(Kind::WEAK);
 	auto own_type = cpp_dom->mk_type(Kind::OWN);
 	auto size_t_type = cpp_dom->mk_type(Kind::UINT, sizeof(size_t));
-	auto atom_type = cpp_dom->mk_type(Kind::ATOM);
 	pin<dom::TypeInfo> own_vector_type = new dom::VectorType<own<dom::DomItem>>(own_type);
+	pin<dom::TypeInfo> string_type = cpp_dom->mk_type(Kind::STRING);
+	pin<dom::TypeInfo> str_own_map_type = new dom::UnorderedMapType<string, own<dom::DomItem>>(string_type, own_type);
+	pin<dom::TypeInfo> str_weak_map_type = new dom::UnorderedMapType<string, weak<dom::DomItem>>(string_type, weak_type);
+	pin<dom::TypeInfo> weak_set_type = new dom::UnorderedSetType<weak<dom::DomItem>>(weak_type);
 	auto op_array_2 = cpp_dom->mk_type(Kind::FIX_ARRAY, 2, own_type);
 	Ast::dom_type_ = (new CppClassType<Ast>(cpp_dom, { "m0", "Ast" }))
-		->field("entry", pin<CField<&Ast::entry_point>>::make(own_type))
-		->field("functions", pin<CField<&Ast::functions>>::make(own_vector_type))
-		->field("classes", pin<CField<&Ast::classes>>::make(own_vector_type));
+		->field("src_path", pin<CField<&Ast::absolute_path>>::make(string_type))
+		->field("modules", pin<CField<&Ast::modules>>::make(str_own_map_type))
+		->field("starting", pin<CField<&Ast::starting_module>>::make(weak_type));
+	Module::dom_type_ = (new CppClassType<Module>(cpp_dom, { "m0", "Module" }))
+		->field("imports", pin<CField<&Module::direct_imports>>::make(str_weak_map_type))
+		->field("aliases", pin<CField<&Module::aliases>>::make(str_weak_map_type))
+		->field("tests", pin<CField<&Module::tests>>::make(str_own_map_type))
+		->field("classes", pin<CField<&Module::classes>>::make(str_own_map_type))
+		->field("functions", pin<CField<&Module::functions>>::make(str_own_map_type))
+		->field("entry", pin<CField<&Module::entry_point>>::make(own_type));
 	Var::dom_type_ = (new CppClassType<Var>(cpp_dom, { "m0", "Var" }))
-		->field("name", pin<CField<&Var::name>>::make(atom_type))
+		->field("name", pin<CField<&Var::name>>::make(string_type))
 		->field("initializer", pin<CField<&Var::initializer>>::make(own_type));
 	ConstInt64::dom_type_ = (new CppClassType<ConstInt64>(cpp_dom, {"m0", "Int"}))
 		->field("value", pin<CField<&ConstInt64::value>>::make(
 			cpp_dom->mk_type(Kind::INT, sizeof(int64_t))));
 	ConstString::dom_type_ = (new CppClassType<ConstString>(cpp_dom, { "m0", "Str" }))
 		->field("value", pin<CField<&ConstString::value>>::make(
-			cpp_dom->mk_type(Kind::STRING)));
+			string_type));
 	ConstDouble::dom_type_ = (new CppClassType<ConstDouble>(cpp_dom, { "m0", "Double" }))
 		->field("value", pin<CField<&ConstDouble::value>>::make(
 			cpp_dom->mk_type(Kind::FLOAT, sizeof(double))));
@@ -164,13 +174,13 @@ void initialize() {
 		->field("body", pin<CField<&Block::body>>::make(own_vector_type))
 		->field("params", pin<CField<&Block::names>>::make(own_vector_type));
 	Function::dom_type_ = (new CppClassType<Function>(cpp_dom, { "m0", "Function" }))
-		->field("name", pin<CField<&Function::name>>::make(atom_type))
+		->field("name", pin<CField<&Function::name>>::make(string_type))
 		->field("is_external", pin<CField<&Function::is_platform>>::make(cpp_dom->mk_type(Kind::BOOL)))
 		->field("is_test", pin<CField<&Function::is_platform>>::make(cpp_dom->mk_type(Kind::BOOL)))
 		->field("body", pin<CField<&Block::body>>::make(own_vector_type))
 		->field("params", pin<CField<&Block::names>>::make(own_vector_type));
 	ImmediateDelegate::dom_type_ = (new CppClassType<ImmediateDelegate>(cpp_dom, { "m0", "ImmediateDelegate" }))
-		->field("name", pin<CField<&Function::name>>::make(atom_type))
+		->field("name", pin<CField<&Function::name>>::make(string_type))
 		->field("body", pin<CField<&Block::body>>::make(own_vector_type))
 		->field("params", pin<CField<&Block::names>>::make(own_vector_type))
 		->field("base", pin<CField<&ImmediateDelegate::base>>::make(own_type));
@@ -220,17 +230,17 @@ void initialize() {
 	TpOptional::dom_type_ = (new CppClassType<TpOptional>(cpp_dom, { "m0", "Type", "Optional" }))
 		->field("wrapped", pin<CField<&TpOptional::wrapped>>::make(own_type));
 	Field::dom_type_ = (new CppClassType<Field>(cpp_dom, { "m0", "Field" }))
-		->field("name", pin<CField<&Field::name>>::make(atom_type))
+		->field("name", pin<CField<&Field::name>>::make(string_type))
 		->field("type", pin<CField<&Field::initializer>>::make(own_type));
 	Method::dom_type_ = (new CppClassType<Method>(cpp_dom, { "m0", "Method" }))
-		->field("name", pin<CField<&Function::name>>::make(atom_type))
+		->field("name", pin<CField<&Function::name>>::make(string_type))
 		->field("body", pin<CField<&Block::body>>::make(own_vector_type))
 		->field("result_type", pin<CField<&Function::type_expression>>::make(own_type))
 		->field("is_factory", pin<CField<&Method::is_factory>>::make(cpp_dom->mk_type(Kind::BOOL)))
 		->field("mut", pin<CField<&Method::mut>>::make(cpp_dom->mk_type(Kind::INT)))
 		->field("params", pin<CField<&Block::names>>::make(own_vector_type));
 	TpClass::dom_type_ = (new CppClassType<TpClass>(cpp_dom, { "m0", "Type", "Class" }))
-		->field("name", pin<CField<&TpClass::name>>::make(atom_type))
+		->field("name", pin<CField<&TpClass::name>>::make(string_type))
 		->field("is_interface", pin<CField<&TpClass::is_interface>>::make(cpp_dom->mk_type(Kind::BOOL)))
 		->field("is_test", pin<CField<&TpClass::is_test>>::make(cpp_dom->mk_type(Kind::BOOL)))
 		->field("base", pin<CField<&TpClass::base_class>>::make(weak_type))
@@ -425,29 +435,28 @@ bool typelist_comparer::operator() (const vector<own<Type>>* a, const vector<own
 	return *a == *b;
 }
 
-pin<Field> Ast::mk_field (pin<dom::Name> name, pin<Action> initializer) {
+pin<Field> Ast::mk_field (string name, pin<Action> initializer) {
 	auto f = pin<Field>::make();
-	f->name = name;
+	f->name = move(name);
+	f->module = sys;
 	f->initializer = initializer;
 	return f;
 };
 
-pin<TpClass> Ast::mk_class(pin<dom::Name> name, std::initializer_list<pin<Field>> fields) {
+pin<TpClass> Ast::mk_class(string name, std::initializer_list<pin<Field>> fields) {
 	auto r = new TpClass;
-	classes.push_back(r);
-	r->name = name;
-	classes_by_names[r->name] = r;
+	sys->classes.insert({ name, r });
+	r->name = move(name);
 	for (auto& f : fields)
 		r->fields.push_back(f);
 	return r;
 };
 
-pin<ast::Function> Ast::mk_fn(pin<dom::Name> name, void(*entry_point)(), pin<Action> result_type, std::initializer_list<pin<Type>> params) {
+pin<ast::Function> Ast::mk_fn(string name, void(*entry_point)(), pin<Action> result_type, std::initializer_list<pin<Type>> params) {
 	auto fn = pin<ast::Function>::make();
-	functions.push_back(fn);
+	sys->functions.insert({ name, fn });
 	fn->name = name;
 	fn->is_platform = true;
-	functions_by_names[fn->name] = fn;
 	fn->type_expression = result_type;
 	for (auto& p : params) {
 		fn->names.push_back(new Var);
@@ -460,6 +469,10 @@ pin<ast::Function> Ast::mk_fn(pin<dom::Name> name, void(*entry_point)(), pin<Act
 
 Ast::Ast()
 	: dom(new dom::Dom(cpp_dom)) {
+	auto s = pin<Module>::make();
+	s->name = "sys";
+	modules.insert({"sys", s});
+	sys = s;
 	register_runtime_content(*this);
 }
 
@@ -551,19 +564,19 @@ pin<TpWeak> Ast::get_weak(pin<TpClass> target) {
 	return w;
 }
 
-pin<TpClass> Ast::get_class(pin<dom::Name> name) {
+pin<TpClass> Module::get_class(const string& name) {
 	if (auto r = peek_class(name))
 		return r;
 	auto r = pin<TpClass>::make();
 	r->name = name;
-	classes.push_back(r);
-	classes_by_names.insert({ name, r });
+	r->module = this;
+	classes.insert({ string(name), r });
 	return r;
 }
 
-pin<TpClass> Ast::peek_class(pin<dom::Name> name) {
-	auto it = classes_by_names.find(name);
-	return it == classes_by_names.end() ? nullptr : it->second;
+pin<TpClass> Module::peek_class(const string& name) {
+	auto it = classes.find(name);
+	return it == classes.end() ? nullptr : it->second;
 }
 
 pin<TpClass> Ast::extract_class(pin<Type> pointer) {
@@ -605,23 +618,39 @@ string Var::get_annotation() {
 }
 
 string DataRef::get_annotation() {
-	return var
-		? Node::get_annotation()
-		: format_str(Node::get_annotation(), " var_name=", var_name.pinned());
+	return
+		var ? Node::get_annotation() :
+		var_module ? format_str(Node::get_annotation(), " var_name=", var_module->name, "_", var_name) :
+		format_str(Node::get_annotation(), " var_name=", var_name);
 }
 
 string FieldRef::get_annotation() {
-	return field
-		? Node::get_annotation()
-		: format_str(Node::get_annotation(), " field_name=", field_name.pinned());
+	return
+		field ? Node::get_annotation() :
+		field_module ? format_str(Node::get_annotation(), " field_name=", field_module->name, "_", field_name) :
+		format_str(Node::get_annotation(), " field_name=", field_name);
 }
 
 } // namespace ast
 
 namespace std {
 
+ostream& operator<< (ostream& dst, const ast::LongName& name) {
+	if (name.module) {
+		dst << name.module->name << '_';
+	}
+	return dst << name.name;
+}
+
+string to_string(const ast::LongName& name) {
+	return (std::stringstream() << name).str();
+}
+
 std::ostream& operator<< (std::ostream& dst, const ast::Node& n) {
-	return dst << '(' << n.module_name << ':' << n.line << ':' << n.pos << ')';
+	dst << '(';
+	if (n.module)
+		dst << n.module->name << "_";
+	return dst << n.module->name << ':' << n.line << ':' << n.pos << ')';
 }
 
 std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t) {
@@ -658,7 +687,7 @@ std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t) {
 			if (type.resolved)
 				dst << type.resolved.pinned();
 			else
-				dst << "(~)";
+				dst << "[~]";
 		}
 		void on_delegate(ast::TpDelegate& type) override {
 			dst << "&";
@@ -676,16 +705,16 @@ std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t) {
 			}
 		}
 		void on_class(ast::TpClass& type) override {
-			dst << "@" << type.name.pinned();
+			dst << "@" <<  type.get_name();
 		}
 		void on_ref(ast::TpRef& type) override {
-			dst << type.target->name.pinned();
+			dst << type.target->get_name();
 		}
 		void on_shared(ast::TpShared& type) override {
-			dst << "*" << type.target->name.pinned();
+			dst << "*" << type.target->get_name();
 		}
 		void on_weak(ast::TpWeak& type) override {
-			dst << "&" << type.target->name.pinned();
+			dst << "&" << type.target->get_name();
 		}
 	};
 	TypePrinter printer(dst);

@@ -21,13 +21,12 @@ namespace {
 struct NameResolver : ast::ActionScanner {
 	pin<ast::Var> this_var;
 	pin<ast::TpClass> this_class;
-	unordered_map<own<dom::Name>, pin<ast::Var>> locals;
+	unordered_map<string, pin<ast::Var>> locals;
 	pin<dom::Dom> dom;
 	pin<ast::Ast> ast;
 	vector<pin<ast::MkLambda>> lambda_levels;
 	unordered_set<pin<ast::TpClass>> ordered_classes;
 	unordered_set<pin<ast::TpClass>> active_base_list;
-	vector<own<ast::TpClass>> classes_in_order;
 
 	NameResolver(pin<ast::Ast> ast, pin<dom::Dom> dom)
 		: dom(dom)
@@ -36,20 +35,16 @@ struct NameResolver : ast::ActionScanner {
 	void order_class(pin<ast::TpClass> c) {
 		if (ordered_classes.count(c))
 			return;
-		if (active_base_list.count(c)) {
-			std::cerr << "loop in base classes around" << c->name << std::endl;
-			throw 1;
-		}
+		if (active_base_list.count(c))
+			c->error("loop in base classes around", c->name);
 		active_base_list.insert(c);
 		unordered_set<weak<ast::TpClass>> indirect_bases_to_add;
 		for (auto& base : c->overloads) {
 			if (base.first->is_interface) {
 			} else if (c->base_class) {
-				std::cerr << "there might be only one base class in " << c->name.pinned() << std::endl;  // TODO: use base->error, after base will be MkInstance
-				throw 1;
+				c->error("there might be only one base class in ", c->name);
 			} else if (c->is_interface) {
-				std::cerr << "interface " << c->name.pinned() <<  " cannot extend class " << base.first->name.pinned() << std::endl;  // TODO: use base->error, after base will be MkInstance
-				throw 1;
+				c->error("interface ", c->name, " cannot extend class ", base.first->name);
 			} else
 				c->base_class = base.first;
 			order_class(base.first);
@@ -65,18 +60,21 @@ struct NameResolver : ast::ActionScanner {
 		for (auto& i : indirect_bases_to_add)
 			c->overloads[i]; // insert one if it's not there yet.
 		ordered_classes.insert(c);
-		classes_in_order.push_back(move(c));
+		ast->classes_in_order.push_back(c);
 	}
 
 	void fix_globals() {
-		for (auto& c : ast->classes) {
-			if (c)
-				order_class(c);
+		size_t cls_cnt = 0;
+		for (auto& m : ast->modules) {
+			cls_cnt += m.second->classes.size();
+			for (auto& c : m.second->classes) {
+				order_class(c.second);
+			}
 		}
 		// Now classes are ordered in base first order, and cls.overloads contains all base classes and interfeces - direct and indirect.
-		assert(ast->classes.size() == classes_in_order.size());
-		std::swap(ast->classes, classes_in_order);
-		for (auto& c : ast->classes) {
+		assert(cls_cnt == ast->classes_in_order.size());
+		for (auto& cw : ast->classes_in_order) {
+			auto c = cw.pinned();
 			// fill own methods
 			uint32_t ordinal = 0;
 			for (auto& m : c->new_methods) {
@@ -106,9 +104,11 @@ struct NameResolver : ast::ActionScanner {
 					}
 					for (auto& ovr_method : overload.second) {
 						ovr_method->cls = c;
-						if (!overload.first->handle_member(*ovr_method, ovr_method->name,
+						if (!overload.first->handle_member(*ovr_method, { ovr_method->name, ovr_method->base_module },
 							[&](auto& field) { ovr_method->error("method overriding field:", field); },
 							[&](auto& base_method) {
+								if (ovr_method == base_method) // each class member regustered in this_names twice with short and long name.
+									return;
 								ovr_method->ordinal = base_method->ordinal;
 								if (base_method->cls == c)
 									ovr_method->error("method is already implemented here", base_method);
@@ -117,31 +117,36 @@ struct NameResolver : ast::ActionScanner {
 								ovr_method->mut = base_method->mut;
 								assert(ovr_method->ordinal < vmt.size());
 								vmt[ovr_method->ordinal] = ovr_method;
-								auto& named = c->this_names[ovr_method->name];
-								if (named)
+								if (auto& named = c->this_names[ast::LongName{ ovr_method->name, ovr_method->module }])
+									named = ovr_method;
+								if (auto& named = c->this_names[ast::LongName{ ovr_method->name, nullptr }])
 									named = ovr_method;
 							},
-							[&]() { ovr_method->error("override is disambiguous"); }))
+							[&]() { ovr_method->error("override is ambiguous"); }))
 							ovr_method->error("no method to override");
 					}
 					for (auto& m : vmt) {
 						if (m->body.empty())
-							m->error("method is not implemented in class ", c->name.pinned());
+							m->error("method is not implemented in class ", c);
 					}
 				}
 			}
-			unordered_set<own<dom::Name>> this_class_names;
+			unordered_set<ast::LongName> not_inherited_names;
 			for (auto& f : c->fields) {
-				if (this_class_names.count(f->name))
+				ast::LongName n{ f->name, f->module };
+				if (not_inherited_names.count(n))
 					f->error("Field name redefinition");
-				this_class_names.insert(f->name);
-				c->this_names[f->name] = f;
+				not_inherited_names.insert(n);
+				c->this_names[n] = f;
+				c->this_names[{f->name, nullptr}] = f;
 			}
 			for (auto& m : c->new_methods) {
-				if (this_class_names.count(m->name))
+				ast::LongName n{ m->name, m->module };
+				if (not_inherited_names.count(n))
 					m->error("Method name redefinition");
-				this_class_names.insert(m->name);
-				c->this_names[m->name] = m;
+				not_inherited_names.insert(n);
+				c->this_names[n] = m;
+				c->this_names[{m->name, nullptr}] = m;
 			}
 			if (c->base_class) {
 				for (auto& n : c->base_class->this_names) {
@@ -160,11 +165,13 @@ struct NameResolver : ast::ActionScanner {
 					fix_fn(m);
 		}
 		this_class = nullptr;
-		for (auto& f : ast->functions)
-			fix_fn(f);
-		for (auto& t : ast->tests_by_names)
-			fix_fn(t.second);
-		fix(ast->entry_point);
+		for (auto& m : ast->modules) {
+			for (auto& f : m.second->functions)
+				fix_fn(f.second);
+			for (auto& t : m.second->tests)
+				fix_fn(t.second);
+			fix(m.second->entry_point);
+		}
 	}
 	void fix_fn(pin<ast::Function> fn) {
 		fn->lexical_depth = lambda_levels.size();
@@ -189,7 +196,7 @@ struct NameResolver : ast::ActionScanner {
 		lambda_levels.pop_back();
 	}
 	void fix_with_params(const vector<own<ast::Var>>& params, vector<own<ast::Action>>& body) {
-		vector<pair<own<dom::Name>, pin<ast::Var>>> prev;
+		vector<pair<string, pin<ast::Var>>> prev;
 		prev.reserve(params.size());
 		for (auto& p : params) {
 			if (p->initializer)
@@ -224,22 +231,25 @@ struct NameResolver : ast::ActionScanner {
 	void handle_data_ref(ast::DataRef& node, F on_field, M on_method, C on_class, FN on_function) {
 		if (node.var)
 			return;
-		if (auto it = locals.find(node.var_name); it != locals.end()) {
-			fix_var_depth(node.var = it->second);
-			return;
+		if (!node.var_module) {
+			if (auto it = locals.find(node.var_name); it != locals.end()) {
+				fix_var_depth(node.var = it->second);
+				return;
+			}
 		}
 		bool is_ambigous = false;
-		if (this_class && this_class->handle_member(node, node.var_name, move(on_field), move(on_method), [&] { is_ambigous = true; }) && !is_ambigous)
+		if (this_class && this_class->handle_member(node, { node.var_name, node.var_module }, move(on_field), move(on_method), [&] { is_ambigous = true; }) && !is_ambigous)
 			return;
-		if (auto c = ast->peek_class(node.var_name)) {
+		auto target_module = node.var_module ? node.var_module : node.module;
+		if (auto c = target_module->peek_class(node.var_name)) {
 			on_class(c);
 			return;
 		}
-		if (auto fi = ast->functions_by_names.find(node.var_name); fi != ast->functions_by_names.end()) {
+		if (auto fi = target_module->functions.find(node.var_name); fi != target_module->functions.end()) {
 			on_function(fi->second);
 			return;
 		}
-		node.error(is_ambigous ? "ambigous name " : "unresolved name ", node.var_name.pinned());
+		node.error(is_ambigous ? "ambigous name " : "unresolved name ", node.var_name);
 	}
 
 	void on_get(ast::Get& node) override {
@@ -248,6 +258,7 @@ struct NameResolver : ast::ActionScanner {
 				auto get_field = ast::make_at_location<ast::GetField>(node);
 				get_field->field = field;
 				get_field->field_name = node.var_name;
+				get_field->field_module = node.var_module;
 				auto this_ref = ast::make_at_location<ast::Get>(node);
 				this_ref->var = this_var;
 				fix_var_depth(this_var);
@@ -282,6 +293,7 @@ struct NameResolver : ast::ActionScanner {
 				auto set_field = ast::make_at_location<ast::SetField>(node);
 				set_field->field = field;
 				set_field->field_name = node.var_name;
+				set_field->field_module = node.var_module;
 				set_field->val = move(node.val);
 				auto this_ref = ast::make_at_location<ast::Get>(node);
 				this_ref->var = this_var;

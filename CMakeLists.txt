@@ -87,4 +87,3 @@ add_library (ag_runtime STATIC
     src/runtime/sdl-bindings.h
     src/runtime/sdl-bindings.c
 )
-

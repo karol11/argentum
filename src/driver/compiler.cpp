@@ -110,9 +110,9 @@ int main(int argc, char* argv[]) {
         auto ast = own<Ast>::make();
         ast->absolute_path = src_dir_name;
         register_runtime_content(*ast);
-        std::unordered_set<ltm::pin<dom::Name>> modules_in_dep_path;
-        parse(ast, ast->dom->names()->get(start_module_name), modules_in_dep_path, [&](auto name) {
-            return read_file(std::string(src_dir_name) + "/" + std::to_string(name) + ".ag");
+        std::unordered_set<string> modules_in_dep_path;
+        parse(ast, start_module_name, modules_in_dep_path, [&](auto name) {
+            return read_file(ast::format_str(src_dir_name, "/", name, ".ag"));
         });
         resolve_names(ast);
         check_types(ast);
