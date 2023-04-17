@@ -131,7 +131,7 @@ struct Parser {
 			return { id, def_module };
 		if (auto it = module->direct_imports.find(id); it != module->direct_imports.end())
 			return { expect_id(message), it->second };
-		error("module", id, " is not visible from module ", module->name);
+		error("module ", id, " is not visible from module ", module->name);
 	}
 	pin<ast::Module> parse(module_text_provider_t module_text_provider)
 	{
@@ -145,6 +145,8 @@ struct Parser {
 				return it->second;
 		module = new ast::Module;
 		module->name = module_name;
+		if (module_name != "sys")
+			module->direct_imports.insert({ "sys", ast->sys });
 		ast->modules.insert({ module_name, module });
 		modules_in_dep_path.insert(module_name);
 		text = module_text_provider(module_name);

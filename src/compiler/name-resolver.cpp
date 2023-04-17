@@ -170,7 +170,8 @@ struct NameResolver : ast::ActionScanner {
 				fix_fn(f.second);
 			for (auto& t : m.second->tests)
 				fix_fn(t.second);
-			fix(m.second->entry_point);
+			if (m.second->entry_point)
+				fix(m.second->entry_point);
 		}
 	}
 	void fix_fn(pin<ast::Function> fn) {

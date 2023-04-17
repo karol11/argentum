@@ -46,15 +46,15 @@ void execute(const char* source_text, bool dump_all = false) {
 }
 
 TEST(Parser, Ints) {
-    execute("assert(7, (2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1)))");
+    execute("sys_assert(7, (2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1)))");
 }
 
 TEST(Parser, Doubles) {
-    execute("assert(3, int(3.14 - 0.2e-4 * 5.0))");
+    execute("sys_assert(3, int(3.14 - 0.2e-4 * 5.0))");
 }
 
 TEST(Parser, Block) {
-    execute("assert(3, {1+1}+1)");
+    execute("sys_assert(3, {1+1}+1)");
 }
 
 TEST(Parser, Functions) {
@@ -62,16 +62,16 @@ TEST(Parser, Functions) {
       fn plus1(int a) int {
             a + 1
       }
-      assert(9, plus1(4) + plus1(3))
+      sys_assert(9, plus1(4) + plus1(3))
     )-");
 }
 
 TEST(Parser, LambdaWithParams) {
-    execute("assert(40, (a){1+a}(3)*10)");
+    execute("sys_assert(40, (a){1+a}(3)*10)");
 }
 
 TEST(Parser, PassingLambdaToLambda) {
-    execute(R"-( assert(99,
+    execute(R"-( sys_assert(99,
       (a, b, xfn) {
             xfn((t) {
                 a + b + t
@@ -83,19 +83,19 @@ TEST(Parser, PassingLambdaToLambda) {
 }
 
 TEST(Parser, Sequecnce) {
-    execute("assert(44, {1; 3.14; 44})");
+    execute("sys_assert(44, {1; 3.14; 44})");
 }
 
 TEST(Parser, LocalAssignment) {
-    execute("assert(10, {a = 2; a := a + 3; a * 2})");
+    execute("sys_assert(10, {a = 2; a := a + 3; a * 2})");
 }
 
 TEST(Parser, MakeAndConsumeOptionals) {
-    execute("assert(2, (opt){ opt : 2 } (false ? 44))");
+    execute("sys_assert(2, (opt){ opt : 2 } (false ? 44))");
 }
 
 TEST(Parser, MaybeChain) {
-    execute(R"(assert(3, {
+    execute(R"(sys_assert(3, {
         a = +3.3;  // a: local of type optional(double), having value just(3.3)
         a ? int(_) : 0  // convert optional(double) to optional(int) and extract replacing `none` with 0
     })
@@ -103,15 +103,16 @@ TEST(Parser, MaybeChain) {
 }
 
 TEST(Parser, IntLessThan) {
-    execute("assert(3, { a = 2; a < 10 ? 3 : 44 })");
+    execute("sys_assert(3, { a = 2; a < 10 ? 3 : 44 })");
 }
 
 TEST(Parser, IntNotEqual) {
-    execute("assert(3, { a = 2; a != 10 ? 3 : 44 })");
+    execute("sys_assert(3, { a = 2; a != 10 ? 3 : 44 })");
 }
 
 TEST(Parser, Loop) {
     execute(R"(
+      using sys { aseert; }
       a = 0;
       r = 1;
       assert(39916800, loop {
@@ -130,7 +131,7 @@ TEST(Parser, Classes) {
         }
         p=Point;
         p.x := 1;
-        assert(3, p.y + p.x)
+        sys_assert(3, p.y + p.x)
     )");
 }
 
@@ -144,7 +145,7 @@ TEST(Parser, ClassInstanceCopy) {
         p.x := 1;
         pb = @p;
         pb.x := 3;
-        assert(4, p.x + pb.x)
+        sys_assert(4, p.x + pb.x)
     )");
 }
 
@@ -164,7 +165,7 @@ TEST(Parser, ClassMethods) {
         p=P3;
         p.x := 10;
         p.z := 20;
-        assert(32, p.m())
+        sys_assert(32, p.m())
     )");
 }
 
@@ -194,7 +195,7 @@ TEST(Parser, Interfaces) {
         p.x := 10;    // 10, 2, 3
         p.z := 20;    // 10, 2, 20
         p.move(2, 3); // 12, 5, 20
-        assert(37, p.m())
+        sys_assert(37, p.m())
     )");
 }
 
@@ -229,7 +230,7 @@ TEST(Parser, TwoInterfaces) {
         p = Widget;
         p.moveTo(1,2);
         p.resize(100,200);
-        assert(201, p.x + p.size.y)
+        sys_assert(201, p.x + p.size.y)
     )");
 }
 
@@ -274,7 +275,7 @@ TEST(Parser, ClassCast) {
           color = 24;
         }
         p = Widget~Point;  // `p` is a `Point` holder initialized with a `Widget` instance
-        assert(24, p~Widget?_.color : 0)     // cast `p` to `Widget` and return its `color` field on success
+        sys_assert(24, p~Widget?_.color : 0)     // cast `p` to `Widget` and return its `color` field on success
     )");
 }
 
@@ -296,7 +297,7 @@ TEST(Parser, InterfaceCast) { // TODO interface dispatch with collisions
         w = Widget~Point;
         a = p~Opaque?_.bgColor() : 40;  // expected to fallback to 40
         b = w~Opaque?_.bgColor() : 50;  // expected to return 7
-        assert(47, a + b)
+        sys_assert(47, a + b)
     )");
 }
 
@@ -311,7 +312,7 @@ TEST(Parser, Weak) {
         r = w?_.x : 100;
         p := Point;
         w ? r := r + _.x;
-        assert(22, r)
+        sys_assert(22, r)
     )");
 }
 
@@ -341,7 +342,7 @@ TEST(Parser, TopoCopy) {
         root.left := @root;
         root.left?_.parent := &root;
 
-        assert(35, oldSize * 10 + root.scan(&Node))
+        sys_assert(35, oldSize * 10 + root.scan(&Node))
     )");
 }
 
@@ -349,21 +350,21 @@ TEST(Parser, ForeignFunctionCall) {
     execute(R"(
         fn sys_foreignTestFunction(int x) int;
         sys_foreignTestFunction(4*10);
-        assert(42, sys_foreignTestFunction(2))
+        sys_assert(42, sys_foreignTestFunction(2))
     )");
 }
 
 TEST(Parser, LogicalOr) {
     execute(R"(
         a = 3;
-        assert(42, a > 2 || a < 4 ? 42 : 0)
+        sys_assert(42, a > 2 || a < 4 ? 42 : 0)
     )");
 }
 
 TEST(Parser, LogicalAnd) {
     execute(R"(
         a = 3;
-        assert(42, a > 2 && a < 4 ? 42 : 0)
+        sys_assert(42, a > 2 && a < 4 ? 42 : 0)
     )");
 }
 
@@ -391,7 +392,7 @@ TEST(Parser, Raii) {
             fa.setId(42);   // sys_foreignTestFunction_state= 2+42
             fb = @fa;       // sys_foreignTestFunction_state= 2+42+42
         };                  // sys_foreignTestFunction_state= 2+42+42-42-42 = 2
-        assert(2, sys_foreignTestFunction(0))
+        sys_assert(2, sys_foreignTestFunction(0))
     )");
 }
 
@@ -401,7 +402,7 @@ TEST(Parser, BlobsAndIndexes) {
         sys_Container_insert(b, 0, 3);
         b[1] := 42;
         c = @b;
-        assert(42, c[1])
+        sys_assert(42, c[1])
     )");
 }
 
@@ -421,7 +422,7 @@ TEST(Parser, Arrays) {
         };
         c = @a;
         sys_Array_delete(c, 0, 1);
-        assert(42, c[0] && _~Node ? _.x : -1)
+        sys_assert(42, c[0] && _~Node ? _.x : -1)
     )");
 }
 
@@ -438,7 +439,7 @@ TEST(Parser, WeakArrays) {
         a[1] := &n;
         c = @a;
         sys_WeakArray_delete(c, 0, 1);
-        assert(1, c[0]&&_==n ? 1:0)
+        sys_assert(1, c[0]&&_==n ? 1:0)
     )");
 }
 
@@ -461,7 +462,7 @@ TEST(Parser, OpenClasses) {
         a[1] := Node;
         c = @a;
         c.delete(0, 1);
-        assert(42, c[0]&&_~Node?_.x : -1)
+        sys_assert(42, c[0]&&_~Node?_.x : -1)
     )");
 }
 
@@ -480,7 +481,7 @@ TEST(Parser, RetOwnPtr) {
         a = sys_Array;
         sys_Container_insert(a, 0, 1);
         a[0] := nodeAt(42, 33);  // no copy here!
-        assert(42, a[0]&&_~Node?_.x : -1)
+        sys_assert(42, a[0]&&_~Node?_.x : -1)
     )");
 }
 
@@ -514,7 +515,7 @@ TEST(Parser, InitializerMethods) {
         }
         b = Bar;
         b.n.removeFlags(2);      // 4 1 1    // they can be used as normal methods too
-        assert(5, b.n.x + b.n.flags)         // 5
+        sys_assert(5, b.n.x + b.n.flags)         // 5
     )");
 }
 
@@ -546,7 +547,7 @@ TEST(Parser, TypedArrays) {
         a = NodeArray;
         a.add((){ Node.xy(2, 3) });
         a.add((){ Node.xy(20, 30) });
-        assert(34, a[0].x + a[1].y + a.size())
+        sys_assert(34, a[0].x + a[1].y + a.size())
     )");
 }
 
@@ -588,7 +589,7 @@ TEST(Parser, StringOperations) {
             }
         }
         a = OString.put('<').append("Hello there").put('>').str();
-        assert(13, a.length())
+        sys_assert(13, a.length())
     )");
 }
 
@@ -598,12 +599,13 @@ TEST(Parser, LiteralStrings) {
         sys_String_getCh(a); // a="i"
         b = @a;
         sys_String_getCh(a); // a=""   b"i"
-        assert(1, sys_String_getCh(b) == 'i' && sys_String_getCh(a) == 0 ? 1:0)
+        sys_assert(1, sys_String_getCh(b) == 'i' && sys_String_getCh(a) == 0 ? 1:0)
     )");
 }
 
 TEST(Parser, StringEscapes) {
     execute(R"-(
+        using sys { assert; }
         s = "\n\t\r\"\\\1090e\\65\!";
         assert(0x0a, sys_String_getCh(s));
         assert(9, sys_String_getCh(s));
@@ -634,7 +636,7 @@ TEST(Parser, SetOps) {
         c.x |= 3;  //     x=0xf(15)
         c[4] /= 3; //     x = 5
         c.inc();   //     x=6
-        assert(20, c.x + a)    // 20
+        sys_assert(20, c.x + a)    // 20
     )");
 }
 
@@ -648,13 +650,14 @@ TEST(Parser, Delegates) {
             handler(42) : 0
         }
         c = Cl;
-        assert(53, f(c.m));
-        assert(31, f(c.&diff(int i) int { i - x }))
+        sys_assert(53, f(c.m));
+        sys_assert(31, f(c.&diff(int i) int { i - x }))
     )");
 }
 
 TEST(Parser, GetParent) {
     execute(R"(
+        using sys{assert;}
         class Cl{
             x = 0;
             inner = ?Cl;
@@ -676,6 +679,7 @@ TEST(Parser, GetParent) {
 
 TEST(Parser, GetParentArray) {
     execute(R"(
+        using sys{assert;}
         a = sys_Array;
         sys_Container_insert(a, 0, 10);
         a[0] := sys_Object;
@@ -694,6 +698,7 @@ TEST(Parser, GetParentArray) {
 
 TEST(Parser, Splice) {
     execute(R"(
+        using sys{assert;}
         class C{ inner = ?C; }
         a = C;
         a.inner := C;
@@ -707,6 +712,7 @@ TEST(Parser, Splice) {
 
 TEST(Parser, Shared) {
     execute(R"-(
+      using sys{assert;}
       class Point {
          x = 0;
          y = 0;

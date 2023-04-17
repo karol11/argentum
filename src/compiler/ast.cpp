@@ -446,6 +446,7 @@ pin<Field> Ast::mk_field (string name, pin<Action> initializer) {
 pin<TpClass> Ast::mk_class(string name, std::initializer_list<pin<Field>> fields) {
 	auto r = new TpClass;
 	sys->classes.insert({ name, r });
+	r->module = sys;
 	r->name = move(name);
 	for (auto& f : fields)
 		r->fields.push_back(f);
@@ -455,12 +456,15 @@ pin<TpClass> Ast::mk_class(string name, std::initializer_list<pin<Field>> fields
 pin<ast::Function> Ast::mk_fn(string name, void(*entry_point)(), pin<Action> result_type, std::initializer_list<pin<Type>> params) {
 	auto fn = pin<ast::Function>::make();
 	sys->functions.insert({ name, fn });
+	fn->module = sys;
 	fn->name = name;
 	fn->is_platform = true;
 	fn->type_expression = result_type;
+	int numerator = 0;
 	for (auto& p : params) {
 		fn->names.push_back(new Var);
 		fn->names.back()->type = p;
+		fn->names.back()->name = ast::format_str("p", numerator++);
 	}
 	if (entry_point)
 		platform_exports.insert({ ast::format_str("ag_fn_", name), entry_point});
