@@ -152,7 +152,9 @@ struct Parser {
 		match_ws();
 		while (match("using")) {
 			auto using_name = expect_id("imported module");
-			auto used_module = Parser(ast, using_name, modules_in_dep_path).parse(module_text_provider);
+			auto used_module = using_name == "sys"
+				? ast->sys.pinned()
+				: Parser(ast, using_name, modules_in_dep_path).parse(module_text_provider);
 			module->direct_imports.insert({ using_name, used_module });
 			if (match("{")) {
 				do {
@@ -917,11 +919,15 @@ struct Parser {
 
 }  // namespace
 
-pin<ast::Module> parse(
+void parse(
 	pin<Ast> ast,
-	string module_name,
-	std::unordered_set<string>& modules_in_dep_path,
+	string start_module_name,
 	module_text_provider_t module_text_provider)
 {
-	return Parser(ast, module_name, modules_in_dep_path).parse(module_text_provider);
+	std::unordered_set<string> modules_in_dep_path;
+	ast->starting_module = Parser(ast, start_module_name, modules_in_dep_path).parse(module_text_provider);
+	if (!ast->starting_module->entry_point) {
+		std::cerr << "error starting module has no entry point" << std::endl;
+		throw 1;
+	}
 }
