@@ -34,8 +34,7 @@ void execute(const char* source_text, bool dump_all = false) {
     ast->mk_fn("assert", (void(*)())(ag_assert), new ast::ConstVoid, { ast->tp_int64(), ast->tp_int64() });
     auto start_module_name = "akTest";
     unordered_map<string, string> texts{ {start_module_name, source_text} };
-    std::unordered_set<string> modules_in_dep_path;
-    parse(ast, start_module_name, modules_in_dep_path, [&](string name) {
+    parse(ast, start_module_name, [&](string name) {
         return move(texts[name]);
     });
     resolve_names(ast);

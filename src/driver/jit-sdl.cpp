@@ -68,8 +68,7 @@ int main(int argc, char* argv[]) {
             FN(ag_fn_sys_img_load),
             FN(ag_fn_sys_img_quit) });
         std::cout << "Parsing " << argv[1] << std::endl;
-        std::unordered_set<std::string> modules_in_dep_path;
-        parse(ast, argv[2], modules_in_dep_path, [&](auto name) {
+        parse(ast, argv[2], [&](auto name) {
             return read_file(ast::format_str(argv[1], "/", name, ".ag"));
         });
         std::cout << "Checking name consistency" << std::endl;

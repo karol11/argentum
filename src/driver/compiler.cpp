@@ -110,8 +110,7 @@ int main(int argc, char* argv[]) {
         auto ast = own<Ast>::make();
         ast->absolute_path = src_dir_name;
         register_runtime_content(*ast);
-        std::unordered_set<string> modules_in_dep_path;
-        parse(ast, start_module_name, modules_in_dep_path, [&](auto name) {
+        parse(ast, start_module_name, [&](auto name) {
             return read_file(ast::format_str(src_dir_name, "/", name, ".ag"));
         });
         resolve_names(ast);
