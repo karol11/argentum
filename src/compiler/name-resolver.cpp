@@ -261,7 +261,7 @@ struct NameResolver : ast::ActionScanner {
 				return;
 			}
 		}
-		node.error(is_ambigous ? "ambigous name " : "unresolved name ", node.var_name);
+		node.error(is_ambigous ? "ambigous name " : "unresolved name ", ast::LongName{ node.var_name, node.var_module });
 	}
 
 	void on_get(ast::Get& node) override {
