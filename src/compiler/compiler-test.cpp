@@ -30,7 +30,7 @@ void ag_assert(int64_t expected, int64_t actual) {
 void execute(const char* source_text, bool dump_all = false) {
     ast::initialize();
     auto ast = own<Ast>::make();
-    ast->platform_exports.insert({ "ag_fn_sys_foreignTestFunction", (void(*)())(foreign_test_function) });
+    ast->platform_exports.insert({ "ag_fn_foreignTestFunction", (void(*)())(foreign_test_function) });
     ast->mk_fn("assert", (void(*)())(ag_assert), new ast::ConstVoid, { ast->tp_int64(), ast->tp_int64() });
     auto start_module_name = "akTest";
     unordered_map<string, string> texts{ {start_module_name, source_text} };
@@ -348,9 +348,9 @@ TEST(Parser, TopoCopy) {
 
 TEST(Parser, ForeignFunctionCall) {
     execute(R"(
-        fn sys_foreignTestFunction(int x) int;
-        sys_foreignTestFunction(4*10);
-        sys_assert(42, sys_foreignTestFunction(2))
+        fn foreignTestFunction(int x) int;
+        foreignTestFunction(4*10);
+        sys_assert(42, foreignTestFunction(2))
     )");
 }
 
@@ -373,36 +373,45 @@ TEST(Parser, Raii) {
         class Font {
             ttfHandle = 0;
             setId(int id) {
-                ttfHandle != 0 ? sys_foreignTestFunction(-ttfHandle);
+                ttfHandle != 0 ? foreignTestFunction(-ttfHandle);
                 ttfHandle := id;
-                id != 0 ? sys_foreignTestFunction(id);
+                id != 0 ? foreignTestFunction(id);
             }
         }
-        fn Font_dispose(Font f) {
-            f.ttfHandle != 0 ? sys_foreignTestFunction(-f.ttfHandle);
+        fn disposeFont(Font f) {
+            f.ttfHandle != 0 ? foreignTestFunction(-f.ttfHandle);
         }
-        fn Font_afterCopy(Font f) {
-            f.ttfHandle != 0 ? sys_foreignTestFunction(f.ttfHandle);
+        fn afterCopyFont(Font f) {
+            f.ttfHandle != 0 ? foreignTestFunction(f.ttfHandle);
         }
-        fn sys_foreignTestFunction(int x) int;
+        fn foreignTestFunction(int x) int;
 
         {
-            sys_foreignTestFunction(2);
+            foreignTestFunction(2);
             fa = Font;
-            fa.setId(42);   // sys_foreignTestFunction_state= 2+42
-            fb = @fa;       // sys_foreignTestFunction_state= 2+42+42
-        };                  // sys_foreignTestFunction_state= 2+42+42-42-42 = 2
-        sys_assert(2, sys_foreignTestFunction(0))
+            fa.setId(42);   // foreignTestFunction_state= 2+42
+            fb = @fa;       // foreignTestFunction_state= 2+42+42
+        };                  // foreignTestFunction_state= 2+42+42-42-42 = 2
+        sys_assert(2, foreignTestFunction(0))
     )");
 }
 
 TEST(Parser, BlobsAndIndexes) {
     execute(R"(
-        b = sys_Blob;
-        sys_Container_insert(b, 0, 3);
+        using sys {
+            Blob;
+            insertItems;
+            assert;
+        }
+        class sys_Blob {
+            getAt(int i) int { sys_get64At(this, i) }
+            setAt(int i, int v) { sys_set64At(this, i, v) }
+        }
+        b = Blob;
+        insertItems(b, 0, 3);
         b[1] := 42;
         c = @b;
-        sys_assert(42, c[1])
+        assert(42, c[1])
     )");
 }
 
@@ -413,7 +422,7 @@ TEST(Parser, Arrays) {
             y = 0;
         }
         a = sys_Array;
-        sys_Container_insert(a, 0, 10);
+        sys_insertItems(a, 0, 10);
         a[0] := Node;
         a[1] := Node;
         a[1] && _~Node ? {
@@ -421,7 +430,7 @@ TEST(Parser, Arrays) {
             _.y := 33;
         };
         c = @a;
-        sys_Array_delete(c, 0, 1);
+        sys_deleteItems(c, 0, 1);
         sys_assert(42, c[0] && _~Node ? _.x : -1)
     )");
 }
@@ -434,35 +443,12 @@ TEST(Parser, WeakArrays) {
         }
         n = Node;
         a = sys_WeakArray;
-        sys_Container_insert(a, 0, 10);
+        sys_insertItems(a, 0, 10);
         a[0] := &n;
         a[1] := &n;
         c = @a;
-        sys_WeakArray_delete(c, 0, 1);
-        sys_assert(1, c[0]&&_==n ? 1:0)
-    )");
-}
-
-TEST(Parser, OpenClasses) {
-    execute(R"(
-        class sys_Array {                              // Any methods can be added to existing classes.
-            insert(int at, int count) {
-                sys_Container_insert(this, at, count);
-            }
-            delete(int at, int count) {
-                sys_Array_delete(this, at, count);
-            }
-        }
-        class Node {
-            x = 42;
-            y = 0;
-        }
-        a = sys_Array;
-        a.insert(0, 10);
-        a[1] := Node;
-        c = @a;
-        c.delete(0, 1);
-        sys_assert(42, c[0]&&_~Node?_.x : -1)
+        sys_deleteWeaks(c, 0, 1);
+        sys_assert(1, c[0] && _==n ? 1:0)
     )");
 }
 
@@ -479,9 +465,9 @@ TEST(Parser, RetOwnPtr) {
             r
         }
         a = sys_Array;
-        sys_Container_insert(a, 0, 1);
+        sys_insertItems(a, 0, 1);
         a[0] := nodeAt(42, 33);  // no copy here!
-        sys_assert(42, a[0]&&_~Node?_.x : -1)
+        sys_assert(42, a[0] && _~Node ? _.x : -1)
     )");
 }
 
@@ -523,11 +509,11 @@ TEST(Parser, TypedArrays) {
     execute(R"(
         class sys_Array {
             add(()@sys_Object n) {               // `add` accepts lambda and calss it to get @object placed exactly where, when and how much objects needed.
-                at = sys_Container_size(this);
-                sys_Container_insert(this, at, 1);
-                sys_Array_setAt(this, at, n());
+                at = sys_getSize(this);
+                sys_insertItems(this, at, 1);
+                sys_setAtArray(this, at, n());
             }
-            size() int { sys_Container_size(this) }
+            size() int { sys_getSize(this) }
         }
         class Node {
             x = 1;
@@ -541,7 +527,7 @@ TEST(Parser, TypedArrays) {
             +sys_Array;
             def = Node.xy(0, 0);   // `def` - default object to be returned on errors
             getAt(int i) Node {
-                sys_Array_getAt(this, i) && _~Node ? _ : def  // get element, check it for out of bounds or unitialized, cast it to Node and check, on success return it otherwise return default.
+                sys_getAtArray(this, i) && _~Node ? _ : def  // get element, check it for out of bounds or unitialized, cast it to Node and check, on success return it otherwise return default.
             }
         }
         a = NodeArray;
@@ -554,11 +540,11 @@ TEST(Parser, TypedArrays) {
 TEST(Parser, StringOperations) {
     execute(R"(
         class sys_String{
-            get() int { sys_String_getCh(this) }
+            get() int { sys_getCh(this) }
             length() int {
                 r = 0;
                 loop {
-                    c = sys_String_getCh(this);
+                    c = sys_getCh(this);
                     c != 0 ? r := r + 1;
                     c == 0 ? r
                 }
@@ -568,22 +554,22 @@ TEST(Parser, StringOperations) {
             +sys_Blob;
             pos = 0;
             put(int codePoint) this {
-                size = sys_Container_size(this);
+                size = sys_getSize(this);
                 growStep = 100;
                 pos + 5 >= size ?
-                    sys_Container_insert(this, size, growStep);
-                pos := sys_Blob_putCh(this, pos, codePoint)
+                    sys_insertItems(this, size, growStep);
+                pos := sys_putCh(this, pos, codePoint)
             }
             append(sys_String s) this {
                 loop{
-                    c = sys_String_getCh(s);
+                    c = sys_getCh(s);
                     c != 0 ? put(c);
                     c == 0
                 }
             }
             str() @sys_String {
                 r = sys_String;
-                sys_String_fromBlob(r, this, 0, pos);
+                sys_stringFromBlob(r, this, 0, pos);
                 pos := 0;
                 r
             }
@@ -596,26 +582,29 @@ TEST(Parser, StringOperations) {
 TEST(Parser, LiteralStrings) {
     execute(R"(
         a = "Hi";
-        sys_String_getCh(a); // a="i"
+        sys_getCh(a); // a="i"
         b = @a;
-        sys_String_getCh(a); // a=""   b"i"
-        sys_assert(1, sys_String_getCh(b) == 'i' && sys_String_getCh(a) == 0 ? 1:0)
+        sys_getCh(a); // a=""   b"i"
+        sys_assert(1, sys_getCh(b) == 'i' && sys_getCh(a) == 0 ? 1:0)
     )");
 }
 
 TEST(Parser, StringEscapes) {
     execute(R"-(
-        using sys { assert; }
+        using sys {
+            assert;
+            getCh;
+        }
         s = "\n\t\r\"\\\1090e\\65\!";
-        assert(0x0a, sys_String_getCh(s));
-        assert(9, sys_String_getCh(s));
-        assert(0x0d, sys_String_getCh(s));
-        assert('"', sys_String_getCh(s));
-        assert('\', sys_String_getCh(s));
-        assert(0x1090e, sys_String_getCh(s));
-        assert(0x65, sys_String_getCh(s));
-        assert('!', sys_String_getCh(s));
-        assert(0, sys_String_getCh(s));
+        assert(0x0a, getCh(s));
+        assert(9, getCh(s));
+        assert(0x0d, getCh(s));
+        assert('"', getCh(s));
+        assert('\', getCh(s));
+        assert(0x1090e, getCh(s));
+        assert(0x65, getCh(s));
+        assert('!', getCh(s));
+        assert(0, getCh(s));
     )-");
 }
 
@@ -657,7 +646,7 @@ TEST(Parser, Delegates) {
 
 TEST(Parser, GetParent) {
     execute(R"(
-        using sys{assert;}
+        using sys{ assert; }
         class Cl{
             x = 0;
             inner = ?Cl;
@@ -679,20 +668,28 @@ TEST(Parser, GetParent) {
 
 TEST(Parser, GetParentArray) {
     execute(R"(
-        using sys{assert;}
-        a = sys_Array;
-        sys_Container_insert(a, 0, 10);
-        a[0] := sys_Object;
-        assert(a[0] && sys_getParent(_) && _==a ? 1:0, 1);
+        using sys{
+            Array;
+            Object;
+            assert;
+            ins = insertItems;
+            del = deleteItems;
+            par = getParent;
+            getParent;
+        }
+        a = Array;
+        ins(a, 0, 10);
+        a[0] := Object;
+        assert(a[0] && par(_) && _==a ? 1:0, 1);
         v = a[0];
-        sys_Array_delete(a, 0, 1);
-        assert(v && !sys_getParent(_) ? 1 : 0, 1);
-        a[0] := sys_Object;
-        assert(a[0] && sys_getParent(_) && _==a ? 1:0, 1);
+        del(a, 0, 1);
+        assert(v && !par(_) ? 1 : 0, 1);
+        a[0] := Object;
+        assert(a[0] && par(_) && _==a ? 1:0, 1);
         v := a[0];
-        a[0] := ?sys_Object;
-        assert(v && !sys_getParent(_) ? 1 : 0, 1);
-        assert(!sys_getParent(a) ? 1 : 0, 1)
+        a[0] := ?Object;
+        assert(v && !getParent(_) ? 1 : 0, 1);
+        assert(!getParent(a) ? 1 : 0, 1)
     )");
 }
 

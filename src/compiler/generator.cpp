@@ -2164,7 +2164,8 @@ struct Generator : ast::ActionScanner {
 			if (special_copy_and_dispose.count(cls) == 0) {
 				builder.SetInsertPoint(llvm::BasicBlock::Create(*context, "", info.dispose));
 				current_function = info.dispose;
-				if (auto manual_disposer_fn = cls->module->functions.find(cls->name + "Dispose"); manual_disposer_fn != cls->module->functions.end()) {
+				if (auto manual_disposer_fn = cls->module->functions.find("dispose" + cls->name); manual_disposer_fn != cls->module->functions.end()) {
+					// TODO: check prototype
 					builder.CreateCall(
 						functions[manual_disposer_fn->second.pinned()],
 						{ cast_to(info.dispose->getArg(0), info.fields->getPointerTo()) });
@@ -2192,7 +2193,8 @@ struct Generator : ast::ActionScanner {
 			if (special_copy_and_dispose.count(cls) == 0) {
 				builder.SetInsertPoint(llvm::BasicBlock::Create(*context, "", info.copier));
 				current_function = info.copier;
-				if (auto manual_fixer_fn = cls->module->functions.find(cls->name + "AfterCopy"); manual_fixer_fn != cls->module->functions.end()) {
+				if (auto manual_fixer_fn = cls->module->functions.find("afterCopy" + cls->name); manual_fixer_fn != cls->module->functions.end()) {
+					// TODO: check prototype
 					builder.CreateCall(
 						fn_reg_copy_fixer,
 						{
