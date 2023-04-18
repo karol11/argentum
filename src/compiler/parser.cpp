@@ -62,16 +62,15 @@ struct Parser {
 	{}
 
 	void parse_fn_def(pin<ast::Function> fn) {
-		if (match("(")) {
-			while (!match(")")) {
-				auto param = make<ast::Var>();
-				fn->names.push_back(param);
-				param->initializer = parse_type();
-				param->name = expect_id("parameter name");
-				if (match(")"))
-					break;
-				expect(",");
-			}
+		expect("(");
+		while (!match(")")) {
+			auto param = make<ast::Var>();
+			fn->names.push_back(param);
+			param->initializer = parse_type();
+			param->name = expect_id("parameter name");
+			if (match(")"))
+				break;
+			expect(",");
 		}
 		auto as_method = dom::strict_cast<ast::Method>(fn);
 		if (match("this")) {
