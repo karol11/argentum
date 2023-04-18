@@ -130,7 +130,21 @@ struct Parser {
 			return { id, def_module };
 		if (auto it = module->direct_imports.find(id); it != module->direct_imports.end())
 			return { expect_id(message), it->second };
-		error("module ", id, " is not visible from module ", module->name);
+		if (id == module->name)
+			error("names of the current module should not be prefixed with a module name");
+		else
+			error("module ", id, " is not visible from module ", module->name);
+	}
+	pin<ast::TpClass> get_class_by_name(char* message) {
+		auto [c_name, m] = expect_long_name(message, nullptr);
+		if (!m) {
+			if (auto it = module->aliases.find(c_name); it != module->aliases.end()) {
+				if (auto as_cls = dom::strict_cast<ast::TpClass>(it->second))
+					return as_cls;
+			}
+			m = module;
+		}
+		return m->get_class(c_name);
 	}
 	pin<ast::Module> parse(module_text_provider_t module_text_provider)
 	{
@@ -180,8 +194,7 @@ struct Parser {
 			bool is_test = match("test");
 			bool is_interface = match("interface");
 			if (is_interface || match("class")) {
-				auto[ c_name, m ] = expect_long_name("class or interface", module);
-				auto cls = m->get_class(c_name);
+				auto cls = get_class_by_name("class or interface");
 				cls->line = line;
 				cls->pos = pos;
 				// TODO match attributes if existed
@@ -190,8 +203,7 @@ struct Parser {
 				expect("{");
 				while (!match("}")) {
 					if (match("+")) {
-						auto [base_name, base_m] = expect_long_name("base class or interface", module);
-						auto base_class = base_m->get_class(base_name);
+						auto base_class = get_class_by_name("base class or interface");
 						auto& base_content = cls->overloads[base_class];
 						if (match("{")) {
 							if (is_interface)
