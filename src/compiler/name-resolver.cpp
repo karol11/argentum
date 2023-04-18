@@ -36,15 +36,17 @@ struct NameResolver : ast::ActionScanner {
 		if (ordered_classes.count(c))
 			return;
 		if (active_base_list.count(c))
-			c->error("loop in base classes around", c->name);
+			c->error("loop in base classes around ", c->get_name());
+		if (!c->line)
+			c->error("class hasn't been defined ", c->get_name());
 		active_base_list.insert(c);
 		unordered_set<weak<ast::TpClass>> indirect_bases_to_add;
 		for (auto& base : c->overloads) {
 			if (base.first->is_interface) {
 			} else if (c->base_class) {
-				c->error("there might be only one base class in ", c->name);
+				c->error("there might be only one base class in ", c->get_name());
 			} else if (c->is_interface) {
-				c->error("interface ", c->name, " cannot extend class ", base.first->name);
+				c->error("interface ", c->get_name(), " cannot extend class ", base.first->get_name());
 			} else
 				c->base_class = base.first;
 			order_class(base.first);

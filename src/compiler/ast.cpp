@@ -447,6 +447,7 @@ pin<TpClass> Ast::mk_class(string name, std::initializer_list<pin<Field>> fields
 	auto r = new TpClass;
 	sys->classes.insert({ name, r });
 	r->module = sys;
+	r->line = 1;
 	r->name = move(name);
 	for (auto& f : fields)
 		r->fields.push_back(f);
