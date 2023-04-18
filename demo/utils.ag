@@ -20,3 +20,10 @@ fn forRange(int from, int to, (int)void body) {
         from += 1
     })
 }
+
+fn existsInRange(int from, int to, (int)bool predicate) bool {
+    loop !(
+        from < to && !predicate(from) ? from += 1
+    );
+    from != to
+}

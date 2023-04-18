@@ -1,7 +1,7 @@
 using sys { WeakArray; Array; String; log; }
 using string;
 using array;
-using tutorialExt {existsInRange;}
+using utils { existsInRange; }
 
 class Node {
     connections = WeakArray;
