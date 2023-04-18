@@ -1,0 +1,47 @@
+using sys { WeakArray; Array; String; log; }
+using string;
+using array;
+using tutorialExt {existsInRange;}
+
+class Node {
+    connections = WeakArray;
+    isVisited = false;
+    isActive = false;
+
+    hasLoop() bool {
+        isActive || (!isVisited && {
+            isVisited := isActive := true;
+            r = existsInRange(0, connections.size(), (i){
+                connections[i] && _~Node && _.hasLoop()
+            });
+            isActive := false;
+            r
+        })
+    }
+}
+
+class Graph {
+    nodes = Array;
+    fromStr(String in) this {
+        byNames = WeakArray.resize('z' + 1);
+        getOrCreateNode = () {
+            name = in.get();
+            byNames[name] || byNames.setAt(name, nodes.append((){ Node }))
+        };
+        loop {
+            from = getOrCreateNode();
+            in.get();
+            from ? _~Node ? _.connections.append(getOrCreateNode());
+            in.get() == 0
+        }
+    }    
+    hasLoop() bool {    
+        existsInRange(0, nodes.size(), (i){
+            nodes[i] && _~Node && _.hasLoop()
+        })
+    }
+}
+
+log(Graph.fromStr("a>b b>c c>d e>f b>e e>a c>c").hasLoop()
+    ? "has loop"
+    : "has no loop");

@@ -1,119 +1,90 @@
-//
-// Low level unsafe API
-//
-fn sys_sdl_init(int flags) int;
-fn sys_sdl_quit();
-
-fn sys_sdl_createWindow(sys_String title, int x,int y, int w, int h, int flags) int;
-fn sys_sdl_destroyWindow(int windowId);
-
-fn sys_sdl_createRenderer(int windowId, int index, int flags) int;
-fn sys_sdl_destroyRenderer(int rendererId);
-
-fn sys_sdl_waitEvent(sys_Blob event);
-fn sys_sdl_pollEvent(sys_Blob event);
-fn sys_sdl_delay(int millisec);
-
-fn sys_sdl_setRendererDrawColor(int rendererId, int r, int g, int b, int a);
-fn sys_sdl_rendererClear(int rendererId);
-fn sys_sdl_rendererFillRect(int rendererId, int x, int y, int w, int h);
-fn sys_sdl_blt(int rendererId, int textureId, int sx, int sy, int sw, int sh, int dx, int dy, int dw, int dh);
-fn sys_sdl_rendererPresent(int rendererId);
-
-fn sys_sdl_createTextureFromSurface(int rendererId, int surfaceId) int;
-fn sys_sdl_destroyTexture(int textureId);
-fn sys_sdl_setTextureAlphaMod(int texId, int multiplier);
-fn sys_sdl_setTextureColorMod(int id, int color);
-
-fn sys_img_init(int flags) int;
-fn sys_img_quit();
-fn sys_img_load(sys_String fileName) int; // returns surfaceId
-fn sys_sdl_freeSurface(int surfaceId);
+using sys { String; }
+using sdlFfi;
 
 //
 // High level safe API
 //
 class Sdl {
     initVideo() bool {
-        sys_sdl_init(0x7231) == 0 && // SDL_INIT_EVERYTHING
-        sys_img_init(3) != 0         // JPG, PNG
+        sdlFfi_sdlInit(0x7231) == 0 && // SDL_INIT_EVERYTHING
+        sdlFfi_imgInit(3) != 0         // JPG, PNG
     }
-    eventLoop((sdl_Event)void handler) {
-        e = sdl_Event;
+    eventLoop((Event)void handler) {
+        SdlQuit = 256;
+        e = Event;
         loop{
-            sys_sdl_pollEvent(e);
+            sdlFfi_pollEvent(e);
             handler(e);
-            sys_sdl_delay(1000 / 30);
-            e[0] == 256   // SDL_QUIT
+            sdlFfi_delay(1000/30);
+            e[0] == SdlQuit
         }
     }
 }
-fn Sdl_dispose(Sdl sdl) {
-    sys_img_quit();
-    sys_sdl_quit();
+fn disposeSdl(Sdl sdl) {
+    sdlFfi_imgQuit();
+    sdlFfi_sdlQuit();
 }
 
-class sdl_Window {
+class Window {
     handle = 0;
     renderer = 0;
-    createCentered(sys_String title, int w, int h) bool {
-        sdl_Window_destroy(this);
-        handle := sys_sdl_createWindow(title, 0x1FFF0000, 0x1FFF0000, w, h, 0);
-        renderer := handle == 0 ? 0 : sys_sdl_createRenderer(handle, -1, 2); //2=SDL_RENDERER_ACCELERATED
+    createCentered(String title, int w, int h) bool {
+        destroyWindow(this);
+        handle := sdlFfi_createWindow(title, 0x1FFF0000, 0x1FFF0000, w, h, 0);
+        renderer := handle == 0 ? 0 : sdlFfi_createRenderer(handle, -1, 2); //2=SDL_RENDERER_ACCELERATED
         renderer != 0
     }
     fill(int color) {
         renderer != 0 ? {
-            sys_sdl_setRendererDrawColor(renderer, color, color >> 8, color >> 16, color >> 24);
-            sys_sdl_rendererClear(renderer)
+            sdlFfi_setRendererDrawColor(renderer, color, color >> 8, color >> 16, color >> 24);
+            sdlFfi_rendererClear(renderer)
         }
     }
     fillRect(int x, int y, int w, int h, int color) {
         renderer != 0 ? {
-            sys_sdl_setRendererDrawColor(renderer, color, color >> 8, color >> 16, color >> 24);
-            sys_sdl_rendererFillRect(renderer, x, y, w, h);
+            sdlFfi_setRendererDrawColor(renderer, color, color >> 8, color >> 16, color >> 24);
+            sdlFfi_rendererFillRect(renderer, x, y, w, h);
         }
     }
-    blt(sdl_Texture tex, int sx, int sy, int sw, int sh, int dx, int dy, int dw, int dh){
+    blt(Texture tex, int sx, int sy, int sw, int sh, int dx, int dy, int dw, int dh){
         renderer != 0 && tex.id != 0 ?
-            sys_sdl_blt(renderer, tex.id, sx, sy, sw, sh, dx, dy, dw, dh);
+            sdlFfi_blt(renderer, tex.id, sx, sy, sw, sh, dx, dy, dw, dh);
     }
     flip() {
-        renderer != 0 ? sys_sdl_rendererPresent(renderer);
+        renderer != 0 ? sdlFfi_rendererPresent(renderer);
     }
 }
-fn sdl_Window_destroy(sdl_Window w) {
-    w.renderer != 0 ? sys_sdl_destroyRenderer(w.renderer);
-    w.handle != 0 ? sys_sdl_destroyWindow(w.handle);
+fn destroyWindow(Window w) {
+    w.renderer != 0 ? sdlFfi_destroyRenderer(w.renderer);
+    w.handle != 0 ? sdlFfi_destroyWindow(w.handle);
 }
-fn sdl_Window_afterCopy(sdl_Window w) { w.handle := w.renderer := 0 }
+fn afterCopyWindow(Window w) { w.handle := w.renderer := 0 }
 
-class sdl_Event {
+class Event {
     +sys_Blob;
+    getAt(int i) int { sys_get32At(this, i) }
 }
-fn sdl_Event_getAt(sdl_Event e, int i) int { sys_Blob_get32At(e, i) }
 
-class sdl_Texture{
+class Texture{
     id = 0;
-    init(sdl_Window wnd, sys_String fileName) bool {
-        // sys_makeShared(this);  // hack till frozen objects introduced
+    init(Window wnd, String fileName) bool {
         wnd.renderer != 0 && {
-            surface = sys_img_load(fileName);
+            surface = sdlFfi_imgLoad(fileName);
             surface != 0 && {
-                sdl_Texture_dispose(this);
-                id := sys_sdl_createTextureFromSurface(wnd.renderer, surface);
-                sys_sdl_freeSurface(surface);
+                disposeTexture(this);
+                id := sdlFfi_createTextureFromSurface(wnd.renderer, surface);
+                sdlFfi_freeSurface(surface);
                 id != 0
             }
         }
     }
     setAlphaMod(int multiplier) {
-        id != 0 ? sys_sdl_setTextureAlphaMod(id, multiplier);
+        id != 0 ? sdlFfi_setTextureAlphaMod(id, multiplier);
     }
     setColorMod(int color) {
-        id != 0 ? sys_sdl_setTextureColorMod(id, color);
+        id != 0 ? sdlFfi_setTextureColorMod(id, color);
     }
 }
-fn sdl_Texture_dispose(sdl_Texture t) {
-    t.id != 0 ? sys_sdl_destroyTexture(t.id)
+fn disposeTexture(Texture t) {
+    t.id != 0 ? sdlFfi_destroyTexture(t.id)
 }

@@ -2425,7 +2425,7 @@ int64_t execute(llvm::orc::ThreadSafeModule& module, ast::Ast& ast, bool dump_ir
 	auto main_addr = f_main.toPtr<void()>();
 	for (auto& m : ast.modules) {
 		for (auto& test : m.second->tests) {
-			std::cout << "Test:" << m.first << "_" << test.second << "\n";
+			std::cout << "Test:" << m.first << "_" << test.first << "\n";
 			auto test_fn = check(jit->lookup(ast::format_str("ag_test_", m.first, "_", test.first)));
 			auto addr = test_fn.toPtr<void()>();
 			addr();

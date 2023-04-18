@@ -1,4 +1,4 @@
-class utils_Random {
+class Random {
     seed = 123456789;
     get(int from, int to) int {
         seed := seed * 5 + 12345;

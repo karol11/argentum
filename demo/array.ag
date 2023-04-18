@@ -1,3 +1,4 @@
+using sys { Object; Array; }
 // Extends sys_Array with:
 // * Amortized insertions
 // * iterations
@@ -7,46 +8,46 @@ class sys_Array{
 
     size() int { itemsCount }
 
-    each((sys_Object)void handler) {
+    each((Object)void handler) {
         i = 0;
         loop!{
             i < itemsCount ? {
-                sys_Array_getAt(this, i) ? handler(_);
+                this[i] ? handler(_);
                 i += 1
             }
         }
     }
-    plow((sys_Object)bool filter) {
+    plow((Object)bool filter) {
         i = 0;
         loop!{
             i < itemsCount ? {
-                sys_Array_getAt(this, i) && filter(_)
+                this[i] && filter(_)
                     ? { i += 1; }
                     : deleteAt(i);
             }
         }
     }
     deleteAt(int i) {
-        sys_Array_setAt(this, i, ?sys_Object);
-        sys_Container_move(this, i, i + 1, itemsCount);
+        sys_setAtArray(this, i, ?sys_Object);
+        sys_moveItems(this, i, i + 1, itemsCount);
         itemsCount -= 1;
     }
-    push(int n, (int)?@sys_Object generator) {
-        itemsCount + n >= sys_Container_size(this)
-            ? sys_Container_insert(this, itemsCount, (itemsCount + n + 20) / 4);
+    push(int n, (int)?@Object generator) {
+        itemsCount + n >= sys_getSize(this)
+            ? sys_insertItems(this, itemsCount, (itemsCount + n + 20) / 4);
         loop{
-            sys_Array_setAt(this, itemsCount, generator(itemsCount));
+            sys_setAtArray(this, itemsCount, generator(itemsCount));
             itemsCount += 1;
             (n -= 1) == 0
         }
     }
-    setAt(int i, ()@sys_Object generator) bool {
-        i < itemsCount ? sys_Array_setAt(this, i, generator())
+    setAt(int i, ()@Object generator) bool {
+        i < itemsCount ? sys_setAtArray(this, i, generator())
     }
 }
 
 test insertIntoArray() {
-    a = sys_Array;
-    a.push(2, (i){ ?sys_Object });
+    a = Array;
+    a.push(2, (i){ ?Object });
     a.size() != 2 ? sys_terminate(-1)
 }
