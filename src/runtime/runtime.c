@@ -397,7 +397,7 @@ void ag_fn_sys_deleteItems(AgBlob* b, uint64_t index, uint64_t count) {
 	ag_fn_sys_deleteBytes(b, index * sizeof(int64_t), count * sizeof(int64_t));
 }
 
-void ag_fn_sys_deleteWeakAt(AgBlob* b, uint64_t index, uint64_t count) {
+void ag_fn_sys_deleteWeaks(AgBlob* b, uint64_t index, uint64_t count) {
 	if (!count || index > b->size || index + count > b->size)
 		return;
 	AgWeak** data = ((AgWeak**)(b->data)) + index;
@@ -467,19 +467,19 @@ bool ag_fn_sys_copyBytes(AgBlob* dst, uint64_t dst_index, AgBlob* src, uint64_t 
 	return true;
 }
 
-AgObject* ag_fn_sys_getAt(AgBlob* b, uint64_t index) {
+AgObject* ag_fn_sys_getAtArray(AgBlob* b, uint64_t index) {
 	return index < b->size
 		? ag_retain(((AgObject*)(b->data)[index]))
 		: 0;
 }
 
-AgWeak* ag_fn_sys_getWeakAt(AgBlob* b, uint64_t index) {
+AgWeak* ag_fn_sys_getAtWeakArray(AgBlob* b, uint64_t index) {
 	return index < b->size
 		? ag_retain_weak((AgWeak*)(b->data[index]))
 		: 0;
 }
 
-void ag_fn_sys_setAt(AgBlob* b, uint64_t index, AgObject* val) {
+void ag_fn_sys_setAtArray(AgBlob* b, uint64_t index, AgObject* val) {
 	if (index < b->size) {
 		AgObject** dst = ((AgObject**)(b->data)) + index;
 		ag_retain_own(val, &b->head);
@@ -500,7 +500,7 @@ bool ag_fn_sys_spliceAt(AgBlob* b, uint64_t index, AgObject* val) {
 	return false;
 }
 
-void ag_fn_sys_setWeakAt(AgBlob* b, uint64_t index, AgWeak* val) {
+void ag_fn_sys_setAtWeakArray(AgBlob* b, uint64_t index, AgWeak* val) {
 	if (index < b->size) {
 		AgWeak** dst = ((AgWeak**)(b->data)) + index;
 		ag_retain_weak(val);

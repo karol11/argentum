@@ -45,8 +45,8 @@ void register_runtime_content(struct ast::Ast& ast) {
 	opt_ref_to_object->p[1] = ref_to_object;
 	ast.own_array = ast.mk_class("Array");
 	ast.own_array->overloads[container];
-	ast.mk_fn("getAt", FN(ag_fn_sys_getAt), opt_ref_to_object, { ast.get_ref(ast.own_array), ast.tp_int64() });
-	ast.mk_fn("setAt", FN(ag_fn_sys_setAt), new ast::ConstVoid, { ast.get_ref(ast.own_array), ast.tp_int64(), ast.tp_optional(ast.object) });
+	ast.mk_fn("getAtArray", FN(ag_fn_sys_getAtArray), opt_ref_to_object, { ast.get_ref(ast.own_array), ast.tp_int64() });
+	ast.mk_fn("setAtArray", FN(ag_fn_sys_setAtArray), new ast::ConstVoid, { ast.get_ref(ast.own_array), ast.tp_int64(), ast.tp_optional(ast.object) });
 	ast.mk_fn("deleteItems", FN(ag_fn_sys_deleteItems), new ast::ConstVoid, { ast.get_ref(ast.own_array), ast.tp_int64(), ast.tp_int64() });
 	ast.mk_fn("spliceAt", FN(ag_fn_sys_spliceAt), new ast::ConstBool, { ast.get_ref(ast.own_array), ast.tp_int64(), ast.tp_optional(ast.get_ref(ast.object)) });
 
@@ -54,9 +54,9 @@ void register_runtime_content(struct ast::Ast& ast) {
 	ast.weak_array->overloads[container];
 	auto weak_to_object = new ast::MkWeakOp;
 	weak_to_object->p = inst;
-	ast.mk_fn("getWeakAt", FN(ag_fn_sys_getWeakAt), weak_to_object, { ast.get_ref(ast.weak_array), ast.tp_int64() });
-	ast.mk_fn("setWeakAt", FN(ag_fn_sys_setWeakAt), new ast::ConstVoid, { ast.get_ref(ast.weak_array), ast.tp_int64(), ast.get_weak(ast.object) });
-	ast.mk_fn("deleteWeakAt", FN(ag_fn_sys_deleteWeakAt), new ast::ConstVoid, { ast.get_ref(ast.weak_array), ast.tp_int64(), ast.tp_int64() });
+	ast.mk_fn("getAtWeakArray", FN(ag_fn_sys_getAtWeakArray), weak_to_object, { ast.get_ref(ast.weak_array), ast.tp_int64() });
+	ast.mk_fn("setAtWeakArray", FN(ag_fn_sys_setAtWeakArray), new ast::ConstVoid, { ast.get_ref(ast.weak_array), ast.tp_int64(), ast.get_weak(ast.object) });
+	ast.mk_fn("deleteWeaks", FN(ag_fn_sys_deleteWeaks), new ast::ConstVoid, { ast.get_ref(ast.weak_array), ast.tp_int64(), ast.tp_int64() });
 
 	ast.string_cls = ast.mk_class("String", {
 		ast.mk_field("_cursor", new ast::ConstInt64),
