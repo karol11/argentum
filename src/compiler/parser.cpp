@@ -939,7 +939,7 @@ void parse(
 {
 	std::unordered_set<string> modules_in_dep_path;
 	ast->starting_module = Parser(ast, start_module_name, modules_in_dep_path).parse(module_text_provider);
-	if (!ast->starting_module->entry_point) {
+	if (!ast->starting_module->entry_point || ast->starting_module->entry_point->body.empty()) {
 		std::cerr << "error starting module has no entry point" << std::endl;
 		throw 1;
 	}
