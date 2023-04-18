@@ -30,7 +30,7 @@ void ag_assert(int64_t expected, int64_t actual) {
 void execute(const char* source_text, bool dump_all = false) {
     ast::initialize();
     auto ast = own<Ast>::make();
-    ast->platform_exports.insert({ "ag_fn_foreignTestFunction", (void(*)())(foreign_test_function) });
+    ast->platform_exports.insert({ "ag_fn_akTest_foreignTestFunction", (void(*)())(foreign_test_function) });
     ast->mk_fn("assert", (void(*)())(ag_assert), new ast::ConstVoid, { ast->tp_int64(), ast->tp_int64() });
     auto start_module_name = "akTest";
     unordered_map<string, string> texts{ {start_module_name, source_text} };

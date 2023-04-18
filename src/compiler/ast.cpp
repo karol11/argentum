@@ -467,7 +467,7 @@ pin<ast::Function> Ast::mk_fn(string name, void(*entry_point)(), pin<Action> res
 		fn->names.back()->name = ast::format_str("p", numerator++);
 	}
 	if (entry_point)
-		platform_exports.insert({ ast::format_str("ag_fn_", name), entry_point});
+		platform_exports.insert({ ast::format_str("ag_fn_sys_", name), entry_point});
 	return fn;
 };
 
@@ -651,10 +651,7 @@ string to_string(const ast::LongName& name) {
 }
 
 std::ostream& operator<< (std::ostream& dst, const ast::Node& n) {
-	dst << '(';
-	if (n.module)
-		dst << n.module->name << "_";
-	return dst << n.module->name << ':' << n.line << ':' << n.pos << ')';
+	return dst << '(' << n.module->name << ':' << n.line << ':' << n.pos << ')';
 }
 
 std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t) {

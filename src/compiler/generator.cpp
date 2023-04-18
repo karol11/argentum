@@ -2120,7 +2120,7 @@ struct Generator : ast::ActionScanner {
 					fn.second->is_platform
 						? llvm::Function::ExternalLinkage
 						: llvm::Function::InternalLinkage,
-					ast::format_str("ag_fn_", fn.first), module.get()) });
+					ast::format_str("ag_fn_", m.first, "_", fn.first), module.get())});
 			}
 		}
 		// Build class contents - initializer, dispatcher, disposer, copier, methods.
