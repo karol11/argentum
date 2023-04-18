@@ -131,11 +131,11 @@ struct Typer : ast::ActionMatcher {
 				node.type_ = as_mk_delegate->base->type();  // preserve both own/ref and actual this type.
 		}
 	}
-	void handle_index_op(ast::GetAtIndex& node, own<ast::Action> opt_value, const string m_name, const string f_suffix) {
+	void handle_index_op(ast::GetAtIndex& node, own<ast::Action> opt_value, const string& name) {
 		auto indexed = ast->extract_class(find_type(node.indexed)->type());
 		if (!indexed)
 			node.error("Only objects can be indexed, not ", node.indexed->type());
-		if (auto m = dom::peek(indexed->this_names, ast::LongName{ m_name, nullptr })) {
+		if (auto m = dom::peek(indexed->this_names, ast::LongName{ name, nullptr })) {
 			if (auto method = dom::strict_cast<ast::Method>(m)) {
 				auto r = ast::make_at_location<ast::Call>(node).owned();
 				auto callee = ast::make_at_location<ast::MakeDelegate>(node);
@@ -149,9 +149,9 @@ struct Typer : ast::ActionMatcher {
 				*fix_result = move(r);
 				return;
 			}
-			node.error(m_name, " is not a method in ", node.indexed);
+			node.error(name, " is not a method in ", node.indexed);
 		}
-		if (auto fn = indexed->module->functions[indexed->name + f_suffix].pinned()) {
+		if (auto fn = indexed->module->functions[name + indexed->name].pinned()) {
 			auto fnref = ast::make_at_location<ast::MakeFnPtr>(node);
 			fnref->fn = fn;
 			auto r = ast::make_at_location<ast::Call>(node).owned();
@@ -164,10 +164,10 @@ struct Typer : ast::ActionMatcher {
 			*fix_result = move(r);
 			return;
 		}
-		node.error("function ", indexed->name, "_", f_suffix, " or method ", node.indexed->type(), ".", m_name, " not found");
+		node.error("function ", indexed->module->name, "_", name, indexed->name, " or method ", node.indexed->type().pinned(), ".", name, " not found");
 	}
-	void on_get_at_index(ast::GetAtIndex& node) override { handle_index_op(node, nullptr, "getAt", "GetAt"); }
-	void on_set_at_index(ast::SetAtIndex& node) override { handle_index_op(node, move(node.value), "setAt", "SetAt"); }
+	void on_get_at_index(ast::GetAtIndex& node) override { handle_index_op(node, nullptr, "getAt"); }
+	void on_set_at_index(ast::SetAtIndex& node) override { handle_index_op(node, move(node.value), "setAt"); }
 	pin<ast::Function> type_fn(pin<ast::Function> fn) {
 		if (!fn->type_ || fn->type_ == type_in_progress) {
 			bool is_method = dom::isa<ast::Method>(*fn) || dom::isa<ast::ImmediateDelegate>(*fn);
