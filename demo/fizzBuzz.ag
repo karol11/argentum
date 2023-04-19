@@ -1,0 +1,11 @@
+using sys { log; }
+using string { Builder; }
+using utils{ forRange; }
+
+b = Builder;
+forRange(1, 101, (i){
+   i % 3 == 0 ? b.putStr("fizz");
+   i % 5 == 0 ? b.putStr("buzz");
+   b.pos == 0 ? b.putInt(i);     // if builder is empty, add a number
+   log(b.newLine().toStr());
+})

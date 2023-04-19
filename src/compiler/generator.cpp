@@ -2451,6 +2451,5 @@ int64_t generate_and_execute(ltm::pin<ast::Ast> ast, bool add_debug_info, bool d
 		llvm::InitLLVM X(argc, argv);
 	llvm_inited = true;
 	auto module = generate_code(ast, add_debug_info);
-	std::cout << "LLVM Working" << std::endl;
 	return execute(module, *ast, dump_ir);
 }

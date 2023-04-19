@@ -1,7 +1,7 @@
 using sys { WeakArray; Array; String; log; }
+using utils { existsInRange; }
 using string;
 using array;
-using utils { existsInRange; }
 
 class Node {
     connections = WeakArray;
@@ -26,7 +26,7 @@ class Graph {
         byNames = WeakArray.resize('z' + 1);
         getOrCreateNode = () {
             name = in.get();
-            byNames[name] || byNames.setAt(name, nodes.append((){ Node }))
+            byNames[name] || byNames[name] := nodes.append((){ Node })
         };
         loop {
             from = getOrCreateNode();
@@ -43,5 +43,5 @@ class Graph {
 }
 
 log(Graph.fromStr("a>b b>c c>d e>f b>e e>a c>c").hasLoop()
-    ? "has loop"
-    : "has no loop");
+    ? "has sone loop"
+    : "has no loops")

@@ -32,7 +32,7 @@ class sys_Array{
         sys_moveItems(this, i, i + 1, itemsCount);
         itemsCount -= 1;
     }
-    push(int n, (int)?@Object generator) {
+    push(int n, (int)@Object generator) {
         itemsCount + n >= sys_getSize(this)
             ? sys_insertItems(this, itemsCount, (itemsCount + n + 20) / 4);
         loop{
@@ -66,6 +66,6 @@ class sys_WeakArray{
 
 test insertIntoArray() {
     a = Array;
-    a.push(2, (i){ ?Object });
+    a.push(2, (i){ Object });
     a.size() != 2 ? sys_terminate(-1)
 }

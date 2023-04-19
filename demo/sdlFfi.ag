@@ -1,8 +1,6 @@
 using sys { String; Blob; }
 
-//
 // Low level unsafe API
-//
 fn sdlInit(int flags) int;
 fn sdlQuit();
 

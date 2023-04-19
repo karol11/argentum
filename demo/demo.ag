@@ -50,7 +50,7 @@ class Flare {
             y += dy;
             dy += 1 << 13;
             scene ?=sc sc.rnd.get(0, 2) == 0 ?
-                sc.push(1, (i){ +Sparkles.init(sc, x >> 16, y >> 16, color) });
+                sc.push(1, (i){ Sparkles.init(sc, x >> 16, y >> 16, color) });
             fade += dFade;
             dFade -= 140;
             fade == 0 && scene &&=s s.rnd.get(0, generation) == 0 ?
