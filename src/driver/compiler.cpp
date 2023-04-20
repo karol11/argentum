@@ -21,6 +21,7 @@
 #include "compiler/parser.h"
 #include "compiler/name-resolver.h"
 #include "compiler/type-checker.h"
+#include "compiler/const-capture-pass.h"
 #include "compiler/generator.h"
 #include "utils/register_runtime.h"
 
@@ -115,6 +116,7 @@ int main(int argc, char* argv[]) {
         });
         resolve_names(ast);
         check_types(ast);
+        const_capture_pass(ast);
         llvm::InitializeAllTargetInfos();
         llvm::InitializeAllTargets();
         llvm::InitializeAllTargetMCs();

@@ -24,7 +24,6 @@ struct NameResolver : ast::ActionScanner {
 	unordered_map<string, pin<ast::Var>> locals;
 	pin<dom::Dom> dom;
 	pin<ast::Ast> ast;
-	vector<pin<ast::MkLambda>> lambda_levels;
 	unordered_set<pin<ast::TpClass>> ordered_classes;
 	unordered_set<pin<ast::TpClass>> active_base_list;
 
@@ -177,8 +176,6 @@ struct NameResolver : ast::ActionScanner {
 		}
 	}
 	void fix_fn(pin<ast::Function> fn) {
-		fn->lexical_depth = lambda_levels.size();
-		lambda_levels.push_back(fn);
 		this_var = dom::isa<ast::Method>(*fn) || dom::isa<ast::ImmediateDelegate>(*fn)
 			? fn->names.front().pinned()
 			: nullptr;
@@ -196,7 +193,6 @@ struct NameResolver : ast::ActionScanner {
 		fix(fn->type_expression);
 		fix_with_params(fn->names, fn->body);
 		this_var = nullptr;
-		lambda_levels.pop_back();
 	}
 	void fix_with_params(const vector<own<ast::Var>>& params, vector<own<ast::Action>>& body) {
 		vector<pair<string, pin<ast::Var>>> prev;
@@ -204,7 +200,6 @@ struct NameResolver : ast::ActionScanner {
 		for (auto& p : params) {
 			if (p->initializer)
 				fix(p->initializer);
-			p->lexical_depth = lambda_levels.size() - 1;
 			auto& dst = locals[p->name];
 			prev.push_back({ p->name, dst });
 			dst = p;
@@ -219,24 +214,13 @@ struct NameResolver : ast::ActionScanner {
 		}
 	}
 
-	void fix_var_depth(pin<ast::Var> var) {
-		if (var->lexical_depth != lambda_levels.size() - 1) {
-			if (!var->captured) {
-				var->captured = true;
-				lambda_levels[var->lexical_depth]->captured_locals.push_back(var);
-			}
-			if (lambda_levels.back()->access_depth < var->lexical_depth)
-				lambda_levels.back()->access_depth = var->lexical_depth;
-		}
-	}
-
 	template<typename F, typename M, typename C, typename FN>
 	void handle_data_ref(ast::DataRef& node, F on_field, M on_method, C on_class, FN on_function) {
 		if (node.var)
 			return;
 		if (!node.var_module) {
 			if (auto it = locals.find(node.var_name); it != locals.end()) {
-				fix_var_depth(node.var = it->second);
+				node.var = it->second;
 				return;
 			}
 		}
@@ -275,7 +259,6 @@ struct NameResolver : ast::ActionScanner {
 				get_field->field_module = node.var_module;
 				auto this_ref = ast::make_at_location<ast::Get>(node);
 				this_ref->var = this_var;
-				fix_var_depth(this_var);
 				get_field->base = this_ref;
 				*fix_result = get_field;
 			},
@@ -284,7 +267,6 @@ struct NameResolver : ast::ActionScanner {
 				mk_delegate->method = method;
 				auto this_ref = ast::make_at_location<ast::Get>(node);
 				this_ref->var = this_var;
-				fix_var_depth(this_var);
 				mk_delegate->base= this_ref;
 				*fix_result = mk_delegate;
 			},
@@ -311,7 +293,6 @@ struct NameResolver : ast::ActionScanner {
 				set_field->val = move(node.val);
 				auto this_ref = ast::make_at_location<ast::Get>(node);
 				this_ref->var = this_var;
-				fix_var_depth(this_var);
 				set_field->base = this_ref;
 				*fix_result = set_field;
 			},
@@ -324,10 +305,6 @@ struct NameResolver : ast::ActionScanner {
 			[&](pin<ast::Function> fn) {
 				node.error("Function is not assignable");
 			});
-		if (node.var && !node.var->is_mutable) {
-			node.var->is_mutable = true;
-			lambda_levels[node.var->lexical_depth]->mutables.push_back(node.var);
-		}
 	}
 
 	void on_block(ast::Block& node) override {
@@ -344,10 +321,7 @@ struct NameResolver : ast::ActionScanner {
 	}
 
 	void on_mk_lambda(ast::MkLambda& node) override {
-		node.lexical_depth = lambda_levels.size();
-		lambda_levels.push_back(&node);
 		fix_with_params(node.names, node.body);
-		lambda_levels.pop_back();
 	}
 
 	void on_immediate_delegate(ast::ImmediateDelegate& node) override {
@@ -356,12 +330,12 @@ struct NameResolver : ast::ActionScanner {
 	}
 
 	void fix_immediate_delegate(ast::ImmediateDelegate& node, pin<ast::TpClass> cls) {
-		vector<pin<ast::MkLambda>> prev_ll;
-		swap(prev_ll, lambda_levels);
+		unordered_map<string, pin<ast::Var>> prev_locals;
+		swap(prev_locals, locals);
 		this_var = node.names.front();
 		this_class = cls;
 		fix_fn(&node);
-		lambda_levels = move(prev_ll);
+		locals = move(prev_locals);
 	}
 };
 

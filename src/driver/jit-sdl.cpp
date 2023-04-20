@@ -5,6 +5,7 @@
 #include "dom/dom-to-string.h"
 #include "compiler/parser.h"
 #include "compiler/name-resolver.h"
+#include "compiler/const-capture-pass.h"
 #include "compiler/type-checker.h"
 #include "utils/register_runtime.h"
 
@@ -76,6 +77,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Checking types" << std::endl;
         check_types(ast);
         std::cout << "Building bitcode" << std::endl;
+        const_capture_pass(ast);
         generate_and_execute(ast, false, false);  // no debug info, no dump
 //    } catch (void*) {  // debug-only  TODO: replace exceptions with `quick_exit`
     } catch (int) {

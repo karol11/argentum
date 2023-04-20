@@ -42,6 +42,9 @@ set(ag_sources
     src/compiler/type-checker.h
     src/compiler/type-checker.cpp
 
+    src/compiler/const-capture-pass.h
+    src/compiler/const-capture-pass.cpp
+
     src/compiler/generator.h
     src/compiler/generator.cpp
 
