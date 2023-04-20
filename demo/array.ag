@@ -1,8 +1,6 @@
 using sys { Object; Array; }
-// Extends sys_Array with:
-// * Amortized insertions
-// * iterations
-// * producer-style assignments
+using utils { existsInRange; }
+
 class sys_Array{
     itemsCount = 0;
 
@@ -28,7 +26,7 @@ class sys_Array{
         }
     }
     deleteAt(int i) {
-        sys_setAtArray(this, i, ?sys_Object);
+        sys_setOptAt(this, i, ?sys_Object);
         sys_moveItems(this, i, i + 1, itemsCount);
         itemsCount -= 1;
     }
@@ -48,6 +46,11 @@ class sys_Array{
         push(1, (i){ provider() });
         this[itemsCount - 1]
     }
+    contain((Object)bool predicate) bool {
+        existsInRange(0, size(), (i){
+            this[i] && predicate(_)
+        })
+    }
 }
 
 class sys_WeakArray{
@@ -61,6 +64,11 @@ class sys_WeakArray{
     setAt(int n, ?Object item) ?Object {
         item ? sys_setAtWeakArray(this, n, &_);
         item
+    }
+    contain((Object)bool predicate) bool {
+        existsInRange(0, size(), (i){
+            this[i] && predicate(_)
+        })
     }
 }
 
