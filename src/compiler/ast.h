@@ -188,6 +188,11 @@ struct TpWeak : Type {
 	void match(TypeMatcher& matcher) override;
 	DECLARE_DOM_CLASS(TpWeak);
 };
+struct TpFrozenWeak : Type {
+	own<TpClass> target;
+	void match(TypeMatcher& matcher) override;
+	DECLARE_DOM_CLASS(TpFrozenWeak);
+};
 
 struct TypeMatcher {
 	virtual ~TypeMatcher() = default;
@@ -203,6 +208,7 @@ struct TypeMatcher {
 	virtual void on_ref(TpRef& type) = 0;
 	virtual void on_shared(TpShared& type) = 0;
 	virtual void on_weak(TpWeak& type) = 0;
+	virtual void on_frozen_weak(TpFrozenWeak& type) = 0;
 };
 
 struct Action: Node {
@@ -242,6 +248,7 @@ struct Ast: dom::DomItem {
 	unordered_map<own<TpClass>, own<TpRef>> refs;
 	unordered_map<own<TpClass>, own<TpShared>> shareds;
 	unordered_map<own<TpClass>, own<TpWeak>> weaks;
+	unordered_map<own<TpClass>, own<TpFrozenWeak>> frozen_weaks;
 	unordered_map<string, void(*)()> platform_exports;  // used only in JIT
 	weak<TpClass> object;
 	weak<TpClass> blob;
@@ -272,6 +279,7 @@ struct Ast: dom::DomItem {
 	pin<TpRef> get_ref(pin<TpClass> target);
 	pin<TpShared> get_shared(pin<TpClass> target);
 	pin<TpWeak> get_weak(pin<TpClass> target);
+	pin<TpFrozenWeak> get_frozen_weak(pin<TpClass> target);
 	pin<TpClass> extract_class(pin<Type> pointer); // extracts class from own, weak or pin pointer
 	DECLARE_DOM_CLASS(Ast);
 };

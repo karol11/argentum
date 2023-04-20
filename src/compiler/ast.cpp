@@ -77,6 +77,7 @@ own<TypeWithFills> TpClass::dom_type_;
 own<TypeWithFills> TpRef::dom_type_;
 own<TypeWithFills> TpShared::dom_type_;
 own<TypeWithFills> TpWeak::dom_type_;
+own<TypeWithFills> TpFrozenWeak::dom_type_;
 own<TypeWithFills> Field::dom_type_;
 own<TypeWithFills> Method::dom_type_;
 own<TypeWithFills> Function::dom_type_;
@@ -249,9 +250,11 @@ void initialize() {
 	TpRef::dom_type_ = (new CppClassType<TpRef>(cpp_dom, { "m0", "Type", "Ref" }))
 		->field("target", pin<CField<&TpRef::target>>::make(own_type));
 	TpShared::dom_type_ = (new CppClassType<TpShared>(cpp_dom, { "m0", "Type", "Shared" }))
-		->field("target", pin<CField<&TpRef::target>>::make(own_type));
+		->field("target", pin<CField<&TpShared::target>>::make(own_type));
 	TpWeak::dom_type_ = (new CppClassType<TpWeak>(cpp_dom, { "m0", "Type", "Weak" }))
-		->field("target", pin<CField<&TpRef::target>>::make(own_type));
+		->field("target", pin<CField<&TpWeak::target>>::make(own_type));
+	TpFrozenWeak::dom_type_ = (new CppClassType<TpFrozenWeak>(cpp_dom, { "m0", "Type", "FrozenWeak" }))
+		->field("target", pin<CField<&TpFrozenWeak::target>>::make(own_type));
 }
 
 own<Type>& Type::promote(own<Type>& to_patch) {
@@ -425,6 +428,7 @@ void TpClass::match(TypeMatcher& matcher) { matcher.on_class(*this); }
 void TpRef::match(TypeMatcher& matcher) { matcher.on_ref(*this); }
 void TpShared::match(TypeMatcher& matcher) { matcher.on_shared(*this); }
 void TpWeak::match(TypeMatcher& matcher) { matcher.on_weak(*this); }
+void TpFrozenWeak::match(TypeMatcher& matcher) { matcher.on_frozen_weak(*this); }
 
 size_t typelist_hasher::operator() (const vector<own<Type>>* v) const {
 	size_t r = 0;
@@ -571,6 +575,15 @@ pin<TpWeak> Ast::get_weak(pin<TpClass> target) {
 	return w;
 }
 
+pin<TpFrozenWeak> Ast::get_frozen_weak(pin<TpClass> target) {
+	auto& w = frozen_weaks[target];
+	if (!w) {
+		w = new TpFrozenWeak;
+		w->target = target;
+	}
+	return w;
+}
+
 pin<TpClass> Module::get_class(const string& name) {
 	if (auto r = peek_class(name))
 		return r;
@@ -669,15 +682,14 @@ std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t) {
 			for (auto& p : type.params) {
 				dst << (i == 0
 					? i == last
-						? "(){"
+						? "()"
 						: "("
 					: i == last
-						? "){"
+						? ")"
 						: ",")
 					<< p.pinned();
 				i++;
 			}
-			dst << "}";
 		}
 		void on_function(ast::TpFunction& type) override {
 			dst << "fn";
@@ -687,11 +699,14 @@ std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t) {
 			out_proto(type);
 		}
 		void on_cold_lambda(ast::TpColdLambda& type) override {
-			dst << "[" << type.callees.size() << "]";
 			if (type.resolved)
 				dst << type.resolved.pinned();
-			else
-				dst << "[~]";
+			else {
+				dst << "[never_called, defined here:";
+				for (auto& c : type.callees)
+					dst << " " << c.pinned();
+				dst << "]";
+			}
 		}
 		void on_delegate(ast::TpDelegate& type) override {
 			dst << "&";
@@ -719,6 +734,9 @@ std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t) {
 		}
 		void on_weak(ast::TpWeak& type) override {
 			dst << "&" << type.target->get_name();
+		}
+		void on_frozen_weak(ast::TpFrozenWeak& type) override {
+			dst << "&*" << type.target->get_name();
 		}
 	};
 	TypePrinter printer(dst);

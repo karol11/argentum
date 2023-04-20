@@ -279,6 +279,10 @@ struct Typer : ast::ActionMatcher {
 			node.type_ = ast->get_weak(as_ref->target);
 			return;
 		}
+		if (auto as_shared = dom::strict_cast<ast::TpShared>(find_type(node.p)->type())) {
+			node.type_ = ast->get_frozen_weak(as_shared->target);
+			return;
+		}
 		if (auto as_mk_instance = dom::strict_cast<ast::MkInstance>(node.p)) {
 			node.type_ = ast->get_weak(as_mk_instance->cls);
 			return;
@@ -308,10 +312,16 @@ struct Typer : ast::ActionMatcher {
 		if (&node == fix_result->pinned()) {
 			find_type(node.base);
 			node.type_ = find_type(node.field->initializer)->type();
-			if (auto as_class = dom::strict_cast<ast::TpClass>(node.type())) {
-				node.type_ = dom::isa<ast::TpShared>(*node.base->type())
-					? ast->get_shared(as_class)
-					: ast->get_ref(as_class);
+			if (dom::isa<ast::TpShared>(*node.base->type())) {
+				if (auto as_class = dom::strict_cast<ast::TpClass>(node.type())) {
+					node.type_ = ast->get_shared(as_class);
+				} else if (auto as_weak = dom::strict_cast<ast::TpWeak>(node.type())) {
+					node.type_ = ast->get_frozen_weak(as_weak->target);
+				}
+			} else {
+				if (auto as_class = dom::strict_cast<ast::TpClass>(node.type())) {
+					node.type_ = ast->get_ref(as_class);
+				}
 			}
 		}
 	}
@@ -387,6 +397,13 @@ struct Typer : ast::ActionMatcher {
 			auto deref = ast::make_at_location<ast::DerefWeakOp>(*action);
 			deref->p = move(action);
 			deref->type_ = cond = ast->tp_optional(ast->get_ref(as_weak->target));
+			action = deref;
+			return cond;
+		}
+		if (auto as_frozen_weak = dom::strict_cast<ast::TpFrozenWeak>(action->type())) {
+			auto deref = ast::make_at_location<ast::DerefWeakOp>(*action);
+			deref->p = move(action);
+			deref->type_ = cond = ast->tp_optional(ast->get_shared(as_frozen_weak->target));
 			action = deref;
 			return cond;
 		}
