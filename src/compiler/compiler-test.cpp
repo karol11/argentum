@@ -5,6 +5,7 @@
 #include "compiler/parser.h"
 #include "compiler/name-resolver.h"
 #include "compiler/type-checker.h"
+#include "compiler/const-capture-pass.h"
 
 int64_t generate_and_execute(ltm::pin<ast::Ast> ast, bool add_debug_info, bool dump_ir);  // defined in `generator.h/cpp`
 
@@ -39,6 +40,7 @@ void execute(const char* source_text, bool dump_all = false) {
     });
     resolve_names(ast);
     check_types(ast);
+    const_capture_pass(ast);
     if (dump_all)
         std::cout << std::make_pair(ast.pinned(), ast->dom.pinned()) << "\n";
     foreign_test_function_state = 0;
@@ -532,7 +534,7 @@ TEST(Parser, TypedArrays) {
         }
         a = NodeArray;
         a.add((){ Node.xy(2, 3) });
-        a.add((){ Node.xy(20, 30) });
+        a.add(Node.xy(20, 30));                    // @T to ()@T conversion
         sys_assert(34, a[0].x + a[1].y + a.size())
     )");
 }

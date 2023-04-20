@@ -536,6 +536,18 @@ struct Typer : ast::ActionMatcher {
 				find_type(node);
 				return;
 			}
+		} else if (auto exp_as_lambda = dom::strict_cast<ast::TpLambda>(expected_type)) {
+			if (exp_as_lambda->params.size() == 1) {
+				auto actual_as_class = dom::strict_cast<ast::TpClass>(actual_type);
+				auto result_as_class = dom::strict_cast<ast::TpClass>(exp_as_lambda->params.back());
+				if (actual_as_class && result_as_class && (actual_as_class == result_as_class || actual_as_class->overloads.count(result_as_class))) {
+					auto r = ast::make_at_location<ast::MkLambda>(*node);
+					r->body.push_back(move(node));
+					r->type_ = ast->tp_lambda({ actual_type });
+					node = move(r);
+					return;
+				}
+			}
 		}
 		node->context_error(context, "Expected type: ", expected_type, " not ", actual_type);
 	}
