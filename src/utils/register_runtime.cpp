@@ -46,7 +46,8 @@ void register_runtime_content(struct ast::Ast& ast) {
 	ast.own_array = ast.mk_class("Array");
 	ast.own_array->overloads[container];
 	ast.mk_fn("getAtArray", FN(ag_fn_sys_getAtArray), opt_ref_to_object, { ast.get_ref(ast.own_array), ast.tp_int64() });
-	ast.mk_fn("setAtArray", FN(ag_fn_sys_setAtArray), new ast::ConstVoid, { ast.get_ref(ast.own_array), ast.tp_int64(), ast.tp_optional(ast.object) });
+	ast.mk_fn("setAtArray", FN(ag_fn_sys_setAtArray), ref_to_object, { ast.get_ref(ast.own_array), ast.tp_int64(), ast.object });
+	ast.mk_fn("setOptAt", FN(ag_fn_sys_setOptAt), new ast::ConstVoid, { ast.get_ref(ast.own_array), ast.tp_int64(), ast.tp_optional(ast.object) });
 	ast.mk_fn("deleteItems", FN(ag_fn_sys_deleteItems), new ast::ConstVoid, { ast.get_ref(ast.own_array), ast.tp_int64(), ast.tp_int64() });
 	ast.mk_fn("spliceAt", FN(ag_fn_sys_spliceAt), new ast::ConstBool, { ast.get_ref(ast.own_array), ast.tp_int64(), ast.tp_optional(ast.get_ref(ast.object)) });
 

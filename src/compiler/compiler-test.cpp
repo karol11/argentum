@@ -689,7 +689,7 @@ TEST(Parser, GetParentArray) {
         a[0] := Object;
         assert(a[0] && par(_) && _==a ? 1:0, 1);
         v := a[0];
-        a[0] := ?Object;
+        sys_setOptAt(a, 0, ?Object);
         assert(v && !getParent(_) ? 1 : 0, 1);
         assert(!getParent(a) ? 1 : 0, 1)
     )");

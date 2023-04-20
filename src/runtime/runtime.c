@@ -479,13 +479,26 @@ AgWeak* ag_fn_sys_getAtWeakArray(AgBlob* b, uint64_t index) {
 		: 0;
 }
 
-void ag_fn_sys_setAtArray(AgBlob* b, uint64_t index, AgObject* val) {
+void ag_fn_sys_setOptAt(AgBlob* b, uint64_t index, AgObject* val) {
 	if (index < b->size) {
 		AgObject** dst = ((AgObject**)(b->data)) + index;
 		ag_retain_own(val, &b->head);
 		ag_release_own(*dst);
 		*dst = val;
 	}
+}
+
+AgObject* ag_fn_sys_setAtArray(AgBlob* b, uint64_t index, AgObject* val) {
+	if (index >= b->size) {
+		++ag_head(val)->counter;
+		return val;
+	}
+	AgObject** dst = ((AgObject**)(b->data)) + index;
+	ag_head(val)->counter += 2;
+	ag_set_parent_nn(val, &b->head);
+	ag_release_own(*dst);
+	*dst = val;
+	return val;
 }
 
 bool ag_fn_sys_spliceAt(AgBlob* b, uint64_t index, AgObject* val) {
