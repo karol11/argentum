@@ -365,6 +365,8 @@ void ActionMatcher::on_else(Else& node) { on_bin_op(node); }
 void ActionMatcher::on_lor(LOr& node) { on_bin_op(node); }
 
 void ActionMatcher::fix(own<Action>& ptr) {
+	if (!ptr)
+		return;
 	auto saved = fix_result;
 	fix_result = &ptr;
 	ptr.pinned()->match(*this);
