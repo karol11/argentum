@@ -654,6 +654,8 @@ struct Generator : ast::ActionScanner {
 			void on_shared(ast::TpShared& type) override { result = gen->di_obj_ptr; }
 			void on_weak(ast::TpWeak& type) override { result = gen->di_weak_ptr; }
 			void on_frozen_weak(ast::TpFrozenWeak& type) override { result = gen->di_weak_ptr; }
+			void on_conform_ref(ast::TpConformRef& type) override { result = gen->di_obj_ptr; }
+			void on_conform_weak(ast::TpConformWeak& type) override { result = gen->di_weak_ptr; }
 			void on_delegate(ast::TpDelegate& type) override { result = gen->di_delegate; }
 		};
 		DiTypeMatcher matcher(this);
@@ -1374,6 +1376,8 @@ struct Generator : ast::ActionScanner {
 					void on_shared(ast::TpShared& type) override { c.compare_scalar(); }
 					void on_weak(ast::TpWeak& type) override { c.compare_scalar(); }
 					void on_frozen_weak(ast::TpFrozenWeak& type) override { c.compare_scalar(); }
+					void on_conform_ref(ast::TpConformRef& type) override { c.compare_scalar(); }
+					void on_conform_weak(ast::TpConformWeak& type) override { c.compare_scalar(); }
 				};
 				OptComparer opt_comparer{ *this };
 				type.wrapped->match(opt_comparer);
@@ -1383,6 +1387,8 @@ struct Generator : ast::ActionScanner {
 			void on_shared(ast::TpShared& type) override { compare_scalar(); }
 			void on_weak(ast::TpWeak& type) override { compare_scalar(); }
 			void on_frozen_weak(ast::TpFrozenWeak& type) override { compare_scalar(); }
+			void on_conform_ref(ast::TpConformRef& type) override { compare_scalar(); }
+			void on_conform_weak(ast::TpConformWeak& type) override { compare_scalar(); }
 		};
 		auto lhs = compile(node.p[0]);
 		auto rhs = compile(node.p[1]);
@@ -1505,6 +1511,8 @@ struct Generator : ast::ActionScanner {
 			void on_shared(ast::TpShared& type) override { handle_ptr(); }
 			void on_weak(ast::TpWeak& type) override { handle_ptr(); }
 			void on_frozen_weak(ast::TpFrozenWeak& type) override { handle_ptr(); }
+			void on_conform_ref(ast::TpConformRef& type) override { handle_ptr(); }
+			void on_conform_weak(ast::TpConformWeak& type) override { handle_ptr(); }
 		};
 		ValMaker val_maker(val, this, type->depth);
 		type->wrapped->match(val_maker);
@@ -1547,6 +1555,8 @@ struct Generator : ast::ActionScanner {
 			void on_shared(ast::TpShared& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
 			void on_weak(ast::TpWeak& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
 			void on_frozen_weak(ast::TpFrozenWeak& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
+			void on_conform_ref(ast::TpConformRef& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
+			void on_conform_weak(ast::TpConformWeak& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
 		};
 		NoneMaker none_maker(this, type->depth);
 		type->wrapped->match(none_maker);
@@ -1607,6 +1617,8 @@ struct Generator : ast::ActionScanner {
 			void on_shared(ast::TpShared& type) override { handle_ptr(); }
 			void on_weak(ast::TpWeak& type) override { handle_ptr(); }
 			void on_frozen_weak(ast::TpFrozenWeak& type) override { handle_ptr(); }
+			void on_conform_ref(ast::TpConformRef& type) override { handle_ptr(); }
+			void on_conform_weak(ast::TpConformWeak& type) override { handle_ptr(); }
 		};
 		OptChecker checker(val, this, type->depth);
 		type->wrapped->match(checker);
@@ -1668,6 +1680,8 @@ struct Generator : ast::ActionScanner {
 			void on_shared(ast::TpShared& type) override { handle_ptr(type); }
 			void on_weak(ast::TpWeak& type) override { handle_ptr(type); }
 			void on_frozen_weak(ast::TpFrozenWeak& type) override { handle_ptr(type); }
+			void on_conform_ref(ast::TpConformRef& type) override { handle_ptr(type); }
+			void on_conform_weak(ast::TpConformWeak& type) override { handle_ptr(type); }
 		};
 		ValMaker val_maker(val, this, type->depth);
 		type->wrapped->match(val_maker);
@@ -1891,6 +1905,8 @@ struct Generator : ast::ActionScanner {
 					void on_shared(ast::TpShared& type) override { result = gen->tp_int_ptr; }
 					void on_weak(ast::TpWeak& type) override { result = gen->tp_int_ptr; }
 					void on_frozen_weak(ast::TpFrozenWeak& type) override { result = gen->ptr_type; }
+					void on_conform_ref(ast::TpConformRef& type) override { result = gen->ptr_type; }
+					void on_conform_weak(ast::TpConformWeak& type) override { result = gen->ptr_type; }
 				};
 				OptionalMatcher matcher(gen, type.depth);
 				type.wrapped->match(matcher);
@@ -1901,6 +1917,8 @@ struct Generator : ast::ActionScanner {
 			void on_shared(ast::TpShared& type) override { result = gen->ptr_type; }
 			void on_weak(ast::TpWeak& type) override { result = gen->ptr_type; }
 			void on_frozen_weak(ast::TpFrozenWeak& type) override { result = gen->ptr_type; }
+			void on_conform_ref(ast::TpConformRef& type) override { result = gen->ptr_type; }
+			void on_conform_weak(ast::TpConformWeak& type) override { result = gen->ptr_type; }
 		} matcher(this);
 		t.match(matcher);
 		return matcher.result;

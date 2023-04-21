@@ -189,7 +189,10 @@ struct Typer : ast::ActionMatcher {
 	void on_make_delegate(ast::MakeDelegate& node) override {
 		class_from_action(node.base);
 		node.type_ = type_fn(node.method)->type_;
-		if (dom::isa<ast::TpShared>(*node.base->type())) {
+		if (dom::isa<ast::TpConformRef>(*node.base->type())) {
+			if (node.method->mut != 0)
+				node.error("cannot call mutating or shared methods on maybe-frozen object");
+		} else if (dom::isa<ast::TpShared>(*node.base->type())) {
 			if (node.method->mut == 1)
 				node.error("cannot call a mutating method on a shared object");
 		} else {
@@ -228,7 +231,7 @@ struct Typer : ast::ActionMatcher {
 			node.p->error("expected class or interface, not ", node.p->type());
 		node.type_ = ast->get_ref(as_class);
 	}
-	void on_ref(ast::RefOp& node) override {
+	void on_conform(ast::ConformOp& node) override {
 		auto as_class = dom::strict_cast<ast::TpClass>(find_type(node.p)->type());
 		if (!as_class)
 			node.p->error("expected class or interface, not ", node.p->type());
@@ -594,6 +597,11 @@ struct Typer : ast::ActionMatcher {
 
 	void process_method(own<ast::Method>& m) {
 		m->names[0]->type = find_type(m->names[0]->initializer)->type();
+		if (m->mut == -1) {
+			m->names[0]->type = ast->get_shared(ast->extract_class(m->names[0]->type));
+		} else if (m->mut == 0) {
+			m->names[0]->type = ast->get_conform_ref(ast->extract_class(m->names[0]->type));
+		}
 		for (auto& a : m->body)
 			find_type(a);
 		if (!m->body.empty())  // empty == interface method
