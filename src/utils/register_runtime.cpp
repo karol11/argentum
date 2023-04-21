@@ -57,6 +57,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 	weak_to_object->p = inst;
 	ast.mk_fn("getAtWeakArray", FN(ag_fn_sys_getAtWeakArray), weak_to_object, { ast.get_ref(ast.weak_array), ast.tp_int64() });
 	ast.mk_fn("setAtWeakArray", FN(ag_fn_sys_setAtWeakArray), new ast::ConstVoid, { ast.get_ref(ast.weak_array), ast.tp_int64(), ast.get_weak(ast.object) });
+	ast.mk_fn("getAtFWeakArray", FN(ag_fn_sys_getAtWeakArray), weak_to_object, { ast.get_ref(ast.weak_array), ast.tp_int64() });
 	ast.mk_fn("deleteWeaks", FN(ag_fn_sys_deleteWeaks), new ast::ConstVoid, { ast.get_ref(ast.weak_array), ast.tp_int64(), ast.tp_int64() });
 
 	ast.string_cls = ast.mk_class("String", {

@@ -25,6 +25,7 @@ namespace ast {
 	struct TpClass;
 	struct Ast;
 	struct Module;
+	struct Var;
 
 	struct LongName {
 		string name;
@@ -60,6 +61,7 @@ struct Module : dom::DomItem {
 	string name;
 	unordered_map<string, weak<Module>> direct_imports;
 	unordered_map<string, weak<Node>> aliases;
+	unordered_map<string, own<Var>> constants;
 	unordered_map<string, own<Function>> tests;
 	unordered_map<string, own<TpClass>> classes;
 	unordered_map<string, own<Function>> functions;
@@ -237,6 +239,7 @@ struct Var : Node {
 	size_t lexical_depth = 0;
 	bool captured = false;
 	bool is_mutable = false;
+	bool is_const = false;
 	string get_annotation() override;
 	DECLARE_DOM_CLASS(Var);
 };
@@ -273,6 +276,7 @@ struct Ast: dom::DomItem {
 	vector<weak<TpClass>> classes_in_order; // all classes from all modules in the base-first order
 
 	unordered_map<string, own<Module>> modules;
+	vector<weak<Module>> modules_in_order; // imports of module M placed before M
 	weak<Module> starting_module;
 
 	Ast();

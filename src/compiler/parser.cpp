@@ -190,7 +190,19 @@ struct Parser {
 				expect(";");
 			}
 		}
+		ast->modules_in_order.push_back(module);
 		for (;;) {
+			if (match("const")) {
+				string id = expect_id("const name");
+				expect("=");
+				auto v = make<ast::Var>();
+				v->initializer = parse_expression();
+				v->name = id;
+				v->is_const = true;
+				module->constants.insert({ id, v });
+				expect(";");
+				continue;
+			}
 			bool is_test = match("test");
 			bool is_interface = match("interface");
 			if (is_interface || match("class")) {

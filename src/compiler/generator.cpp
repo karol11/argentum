@@ -809,7 +809,6 @@ struct Generator : ast::ActionScanner {
 				: is_ptr(p->type);
 			if (p_is_ptr && p->is_mutable)
 				build_retain(&*param_iter, p->type);
-
 			if (p->captured) {
 				auto addr = builder->CreateStructGEP(captures.back().second, capture, capture_offsets[p]);
 				builder->CreateStore(p_val, addr);
@@ -821,6 +820,23 @@ struct Generator : ast::ActionScanner {
 				locals.insert({ p, p_val });
 			}
 			++param_iter;
+		}
+		vector<Val> consts_to_dispose; // addr of const, todo: optimize with const pass
+		if (&node == &*ast->starting_module->entry_point) {
+			for (auto& m : ast->modules_in_order) {
+				for (auto& c : m->constants) {
+					auto name = ast::format_str("ag_const_", c.second->module->name, "_", c.first);
+					module->getOrInsertGlobal(name, to_llvm_type(*c.second->type));
+					auto addr = module->getGlobalVariable(name);
+					addr->setConstant(true);
+					addr->setLinkage(llvm::GlobalValue::InternalLinkage);
+					c.second->is_mutable = true;  // to make access to locations
+					consts_to_dispose.push_back(make_retained_or_non_ptr(compile(c.second->initializer)));
+					auto& initializer = consts_to_dispose.back();
+					builder->CreateStore(initializer.data, addr);
+					initializer.data = addr;
+				}
+			}
 		}
 		for (auto& a : node.body) {
 			if (a != node.body.back())
@@ -849,6 +865,9 @@ struct Generator : ast::ActionScanner {
 		}
 		if (get_if<Val::Temp>(&fn_result.lifetime)) {  // if connected to outer local/param
 			make_result_retained();
+		}
+		for (auto& c : consts_to_dispose) {
+			dispose_val(move(c));
 		}
 		if (isa<ast::TpVoid>(*fn_result.type))
 			builder->CreateRetVoid();

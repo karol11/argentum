@@ -114,6 +114,7 @@ void initialize() {
 	Module::dom_type_ = (new CppClassType<Module>(cpp_dom, { "m0", "Module" }))
 		->field("imports", pin<CField<&Module::direct_imports>>::make(str_weak_map_type))
 		->field("aliases", pin<CField<&Module::aliases>>::make(str_weak_map_type))
+		->field("constants", pin<CField<&Module::constants>>::make(str_own_map_type))
 		->field("tests", pin<CField<&Module::tests>>::make(str_own_map_type))
 		->field("classes", pin<CField<&Module::classes>>::make(str_own_map_type))
 		->field("functions", pin<CField<&Module::functions>>::make(str_own_map_type))

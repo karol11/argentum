@@ -236,6 +236,10 @@ struct NameResolver : ast::ActionScanner {
 			on_function(fi->second);
 			return;
 		}
+		if (auto it = target_module->constants.find(node.var_name); it != target_module->constants.end()) {
+			node.var = it->second;
+			return;
+		}
 		if (!node.var_module) {
 			if (auto al = node.module->aliases.find(node.var_name); al != node.module->aliases.end()) {
 				if (auto as_cls = dom::strict_cast<ast::TpClass>(al->second))
@@ -305,6 +309,8 @@ struct NameResolver : ast::ActionScanner {
 			[&](pin<ast::Function> fn) {
 				node.error("Function is not assignable");
 			});
+		if (node.var && node.var->is_const)
+			node.error("Constant is not assignable");
 	}
 
 	void on_block(ast::Block& node) override {
