@@ -308,12 +308,20 @@ struct Parser {
 			return fn;
 		};
 		if (match("&")) {
-			if (match("*"))
+			if (match("*")) {
+				return fill(
+					make<ast::MkWeakOp>(),
+					fill(
+						make<ast::ConformOp>(),
+						mk_get("class or interface name")));
+			}
+			if (match("+")) {
 				return fill(
 					make<ast::MkWeakOp>(),
 					fill(
 						make<ast::FreezeOp>(),
 						mk_get("class or interface name")));
+			}
 			if (match("(")) {
 				auto fn = make<ast::ImmediateDelegate>();
 				add_this_param(*fn, nullptr);  // to be set at type resolution pass
@@ -322,6 +330,9 @@ struct Parser {
 				return fn;
 			}
 			return fill(make<ast::MkWeakOp>(), mk_get("class or interface name"));
+		}
+		if (match("+")) {
+			return fill(make<ast::ConformOp>(), mk_get("class or interface name"));
 		}
 		if (match("*")) {
 			return fill(make<ast::FreezeOp>(), mk_get("class or interface name"));

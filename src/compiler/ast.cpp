@@ -41,6 +41,7 @@ own<TypeWithFills> ToFloatOp::dom_type_;
 own<TypeWithFills> NotOp::dom_type_;
 own<TypeWithFills> NegOp::dom_type_;
 own<TypeWithFills> RefOp::dom_type_;
+own<TypeWithFills> ConformOp::dom_type_;
 own<TypeWithFills> FreezeOp::dom_type_;
 own<TypeWithFills> Block::dom_type_;
 own<TypeWithFills> CastOp::dom_type_;
@@ -78,6 +79,8 @@ own<TypeWithFills> TpRef::dom_type_;
 own<TypeWithFills> TpShared::dom_type_;
 own<TypeWithFills> TpWeak::dom_type_;
 own<TypeWithFills> TpFrozenWeak::dom_type_;
+own<TypeWithFills> TpConformRef::dom_type_;
+own<TypeWithFills> TpConformWeak::dom_type_;
 own<TypeWithFills> Field::dom_type_;
 own<TypeWithFills> Method::dom_type_;
 own<TypeWithFills> Function::dom_type_;
@@ -157,6 +160,8 @@ void initialize() {
 	NegOp::dom_type_ = (new CppClassType<NegOp>(cpp_dom, { "m0", "Neg" }))
 		->field("p", pin<CField<&UnaryOp::p>>::make(own_type));
 	RefOp::dom_type_ = (new CppClassType<RefOp>(cpp_dom, { "m0", "Ref" }))
+		->field("p", pin<CField<&UnaryOp::p>>::make(own_type));
+	ConformOp::dom_type_ = (new CppClassType<ConformOp>(cpp_dom, { "m0", "Conform" }))
 		->field("p", pin<CField<&UnaryOp::p>>::make(own_type));
 	FreezeOp::dom_type_ = (new CppClassType<FreezeOp>(cpp_dom, { "m0", "Freeze" }))
 		->field("p", pin<CField<&UnaryOp::p>>::make(own_type));
@@ -255,6 +260,10 @@ void initialize() {
 		->field("target", pin<CField<&TpWeak::target>>::make(own_type));
 	TpFrozenWeak::dom_type_ = (new CppClassType<TpFrozenWeak>(cpp_dom, { "m0", "Type", "FrozenWeak" }))
 		->field("target", pin<CField<&TpFrozenWeak::target>>::make(own_type));
+	TpConformRef::dom_type_ = (new CppClassType<TpConformRef>(cpp_dom, { "m0", "Type", "ConformRef" }))
+		->field("target", pin<CField<&TpConformRef::target>>::make(own_type));
+	TpConformWeak::dom_type_ = (new CppClassType<TpConformWeak>(cpp_dom, { "m0", "Type", "ConformWeak" }))
+		->field("target", pin<CField<&TpConformWeak::target>>::make(own_type));
 }
 
 own<Type>& Type::promote(own<Type>& to_patch) {
@@ -293,6 +302,7 @@ void ToFloatOp::match(ActionMatcher& matcher) { matcher.on_to_float(*this); }
 void NotOp::match(ActionMatcher& matcher) { matcher.on_not(*this); }
 void NegOp::match(ActionMatcher& matcher) { matcher.on_neg(*this); }
 void RefOp::match(ActionMatcher& matcher) { matcher.on_ref(*this); }
+void ConformOp::match(ActionMatcher& matcher) { matcher.on_conform(*this); }
 void FreezeOp::match(ActionMatcher& matcher) { matcher.on_freeze(*this); }
 void Loop::match(ActionMatcher& matcher) { matcher.on_loop(*this); }
 void CopyOp::match(ActionMatcher& matcher) { matcher.on_copy(*this); }
@@ -343,6 +353,7 @@ void ActionMatcher::on_to_float(ToFloatOp& node) { on_un_op(node); }
 void ActionMatcher::on_not(NotOp& node) { on_un_op(node); }
 void ActionMatcher::on_neg(NegOp& node) { on_un_op(node); }
 void ActionMatcher::on_ref(RefOp& node) { on_un_op(node); }
+void ActionMatcher::on_conform(ConformOp& node) { on_un_op(node); }
 void ActionMatcher::on_freeze(FreezeOp& node) { on_un_op(node); }
 void ActionMatcher::on_loop(Loop& node) { on_un_op(node); }
 void ActionMatcher::on_copy(CopyOp& node) { on_un_op(node); }
@@ -429,6 +440,8 @@ void TpRef::match(TypeMatcher& matcher) { matcher.on_ref(*this); }
 void TpShared::match(TypeMatcher& matcher) { matcher.on_shared(*this); }
 void TpWeak::match(TypeMatcher& matcher) { matcher.on_weak(*this); }
 void TpFrozenWeak::match(TypeMatcher& matcher) { matcher.on_frozen_weak(*this); }
+void TpConformRef::match(TypeMatcher& matcher) { matcher.on_conform_ref(*this); }
+void TpConformWeak::match(TypeMatcher& matcher) { matcher.on_conform_weak(*this); }
 
 size_t typelist_hasher::operator() (const vector<own<Type>>* v) const {
 	size_t r = 0;
@@ -579,6 +592,24 @@ pin<TpFrozenWeak> Ast::get_frozen_weak(pin<TpClass> target) {
 	auto& w = frozen_weaks[target];
 	if (!w) {
 		w = new TpFrozenWeak;
+		w->target = target;
+	}
+	return w;
+}
+
+pin<TpConformRef> Ast::get_conform_ref(pin<TpClass> target) {
+	auto& w = conform_refs[target];
+	if (!w) {
+		w = new TpConformRef;
+		w->target = target;
+	}
+	return w;
+}
+
+pin<TpConformWeak> Ast::get_conform_weak(pin<TpClass> target) {
+	auto& w = conform_weaks[target];
+	if (!w) {
+		w = new TpConformWeak;
 		w->target = target;
 	}
 	return w;
@@ -737,6 +768,12 @@ std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t) {
 		}
 		void on_frozen_weak(ast::TpFrozenWeak& type) override {
 			dst << "&*" << type.target->get_name();
+		}
+		void on_conform_ref(ast::TpConformRef& type) override {
+			dst << "+" << type.target->get_name();
+		}
+		void on_conform_weak(ast::TpConformWeak& type) override {
+			dst << "&+" << type.target->get_name();
 		}
 	};
 	TypePrinter printer(dst);

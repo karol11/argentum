@@ -225,8 +225,14 @@ struct Typer : ast::ActionMatcher {
 	void on_ref(ast::RefOp& node) override {
 		auto as_class = dom::strict_cast<ast::TpClass>(find_type(node.p)->type());
 		if (!as_class)
-			node.p->error("expected own class or interface, not ", node.p->type());
+			node.p->error("expected class or interface, not ", node.p->type());
 		node.type_ = ast->get_ref(as_class);
+	}
+	void on_ref(ast::RefOp& node) override {
+		auto as_class = dom::strict_cast<ast::TpClass>(find_type(node.p)->type());
+		if (!as_class)
+			node.p->error("expected class or interface, not ", node.p->type());
+		node.type_ = ast->get_conform_ref(as_class);
 	}
 	void on_freeze(ast::FreezeOp& node) override {
 		auto cls = class_from_action(node.p);
@@ -283,6 +289,10 @@ struct Typer : ast::ActionMatcher {
 			node.type_ = ast->get_frozen_weak(as_shared->target);
 			return;
 		}
+		if (auto as_conform_ref = dom::strict_cast<ast::TpConformRef>(find_type(node.p)->type())) {
+			node.type_ = ast->get_conform_weak(as_conform_ref->target);
+			return;
+		}
 		if (auto as_mk_instance = dom::strict_cast<ast::MkInstance>(node.p)) {
 			node.type_ = ast->get_weak(as_mk_instance->cls);
 			return;
@@ -312,7 +322,13 @@ struct Typer : ast::ActionMatcher {
 		if (&node == fix_result->pinned()) {
 			find_type(node.base);
 			node.type_ = find_type(node.field->initializer)->type();
-			if (dom::isa<ast::TpShared>(*node.base->type())) {
+			if (dom::isa<ast::TpConformRef>(*node.base->type())) {
+				if (auto as_class = dom::strict_cast<ast::TpClass>(node.type())) {
+					node.type_ = ast->get_conform_ref(as_class);
+				} else if (auto as_weak = dom::strict_cast<ast::TpWeak>(node.type())) {
+					node.type_ = ast->get_conform_weak(as_weak->target);
+				}
+			} else if (dom::isa<ast::TpShared>(*node.base->type())) {
 				if (auto as_class = dom::strict_cast<ast::TpClass>(node.type())) {
 					node.type_ = ast->get_shared(as_class);
 				} else if (auto as_weak = dom::strict_cast<ast::TpWeak>(node.type())) {
@@ -404,6 +420,13 @@ struct Typer : ast::ActionMatcher {
 			auto deref = ast::make_at_location<ast::DerefWeakOp>(*action);
 			deref->p = move(action);
 			deref->type_ = cond = ast->tp_optional(ast->get_shared(as_frozen_weak->target));
+			action = deref;
+			return cond;
+		}
+		if (auto as_conform_weak = dom::strict_cast<ast::TpConformWeak>(action->type())) {
+			auto deref = ast::make_at_location<ast::DerefWeakOp>(*action);
+			deref->p = move(action);
+			deref->type_ = cond = ast->tp_optional(ast->get_conform_ref(as_conform_weak->target));
 			action = deref;
 			return cond;
 		}

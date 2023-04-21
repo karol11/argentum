@@ -193,6 +193,16 @@ struct TpFrozenWeak : Type {
 	void match(TypeMatcher& matcher) override;
 	DECLARE_DOM_CLASS(TpFrozenWeak);
 };
+struct TpConformRef : Type {
+	own<TpClass> target;
+	void match(TypeMatcher& matcher) override;
+	DECLARE_DOM_CLASS(TpConformRef);
+};
+struct TpConformWeak : Type {
+	own<TpClass> target;
+	void match(TypeMatcher& matcher) override;
+	DECLARE_DOM_CLASS(TpConformWeak);
+};
 
 struct TypeMatcher {
 	virtual ~TypeMatcher() = default;
@@ -209,6 +219,8 @@ struct TypeMatcher {
 	virtual void on_shared(TpShared& type) = 0;
 	virtual void on_weak(TpWeak& type) = 0;
 	virtual void on_frozen_weak(TpFrozenWeak& type) = 0;
+	virtual void on_conform_ref(TpConformRef& type) = 0;
+	virtual void on_conform_weak(TpConformWeak& type) = 0;
 };
 
 struct Action: Node {
@@ -249,6 +261,8 @@ struct Ast: dom::DomItem {
 	unordered_map<own<TpClass>, own<TpShared>> shareds;
 	unordered_map<own<TpClass>, own<TpWeak>> weaks;
 	unordered_map<own<TpClass>, own<TpFrozenWeak>> frozen_weaks;
+	unordered_map<own<TpClass>, own<TpConformRef>> conform_refs;
+	unordered_map<own<TpClass>, own<TpConformWeak>> conform_weaks;
 	unordered_map<string, void(*)()> platform_exports;  // used only in JIT
 	weak<TpClass> object;
 	weak<TpClass> blob;
@@ -280,6 +294,8 @@ struct Ast: dom::DomItem {
 	pin<TpShared> get_shared(pin<TpClass> target);
 	pin<TpWeak> get_weak(pin<TpClass> target);
 	pin<TpFrozenWeak> get_frozen_weak(pin<TpClass> target);
+	pin<TpConformRef> get_conform_ref(pin<TpClass> target);
+	pin<TpConformWeak> get_conform_weak(pin<TpClass> target);
 	pin<TpClass> extract_class(pin<Type> pointer); // extracts class from own, weak or pin pointer
 	DECLARE_DOM_CLASS(Ast);
 };
@@ -545,6 +561,10 @@ struct RefOp : UnaryOp { // converts TpClass to TpRef, used only in type definit
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(RefOp);
 };
+struct ConformOp : UnaryOp { // converts TpClass to TpConformRef, used only in type definitions.
+	void match(ActionMatcher& matcher) override;
+	DECLARE_DOM_CLASS(ConformOp);
+};
 struct FreezeOp : UnaryOp { // converts TpClass/TpRef to TpShared.
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(FreezeOp);
@@ -601,6 +621,7 @@ struct ActionMatcher {
 	virtual void on_not(NotOp& node);
 	virtual void on_neg(NegOp& node);
 	virtual void on_ref(RefOp& node);
+	virtual void on_conform(ConformOp& node);
 	virtual void on_freeze(FreezeOp& node);
 
 	own<Action>* fix_result = nullptr;
