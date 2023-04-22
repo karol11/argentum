@@ -224,10 +224,6 @@ AgObject* ag_copy_object_field(AgObject* src, AgObject* parent) {
 		parent = (AgObject*) AG_SHARED;
 	if (!src || (size_t)src < 256)
 		return src;
-	if (((ag_head(src)->wb_p & AG_F_PARENT)
-			? ag_head(src)->wb_p == (AG_SHARED | AG_F_PARENT)
-			: ((AgWeak*)ag_head(src)->wb_p)->org_pointer_to_parent) == AG_SHARED)
-		return ag_retain(src);
 	AgVmt* vmt = ((AgVmt*)(ag_head(src)->dispatcher)) - 1;
 	AgObject* dh = (AgObject*) ag_alloc(vmt->instance_alloc_size + AG_HEAD_SIZE);
 	if (!dh) { exit(-42); }
