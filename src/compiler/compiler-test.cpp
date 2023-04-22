@@ -47,6 +47,23 @@ void execute(const char* source_text, bool dump_all = false) {
     generate_and_execute(ast, false, dump_all);
 }
 
+TEST(Parser, Consts) {
+    execute(R"-(
+      using sys{assert;}
+      const xDefPoint = Point;
+      const xCount = 4;
+      const xHello = "Hello world";
+
+      class Point {
+         x = 0;
+         y = 0;
+      }
+      p = @xDefPoint;
+      sys_log(@xHello);
+      assert(xCount, 4)
+    )-");
+}
+
 TEST(Parser, Ints) {
     execute("sys_assert(7, (2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1)))");
 }
