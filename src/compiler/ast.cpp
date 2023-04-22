@@ -638,6 +638,8 @@ pin<TpClass> Ast::extract_class(pin<Type> pointer) {
 		return as_shared->target;
 	if (auto as_class = dom::strict_cast<ast::TpClass>(pointer))
 		return as_class;
+	if (auto as_conform_ref = dom::strict_cast<ast::TpConformRef>(pointer))
+		return as_conform_ref->target;
 	// no weaks here, their targets are not directly accessible without a null check
 	return nullptr;
 }
