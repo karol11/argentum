@@ -208,6 +208,10 @@ struct Typer : ast::ActionMatcher {
 		auto param_type = find_type(node.p)->type();
 		if (auto param_as_ref = dom::strict_cast<ast::TpRef>(param_type))
 			node.type_ = param_as_ref->target;
+		if (auto param_as_shared = dom::strict_cast<ast::TpShared>(param_type))
+			node.type_ = param_as_shared->target;
+		if (auto param_as_conform_ref = dom::strict_cast<ast::TpConformRef>(param_type))
+			node.type_ = param_as_conform_ref->target;
 		else
 			node.error("copy operand should be a reference, not ", param_type);
 	}
@@ -250,8 +254,14 @@ struct Typer : ast::ActionMatcher {
 		}
 	}
 	void on_get(ast::Get& node) override {
-		if (auto as_class = dom::strict_cast<ast::TpClass>(node.var->type)) {
-			node.type_ = ast->get_ref(as_class);
+		if (node.var->is_const) {
+			if (auto as_class = dom::strict_cast<ast::TpClass>(node.var->type)) {
+				node.type_ = ast->get_shared(as_class);
+			} else if (auto as_weak = dom::strict_cast<ast::TpWeak>(node.var->type)) {
+				node.type_ = ast->get_frozen_weak(as_class);
+			}
+		} else if (auto as_class = dom::strict_cast<ast::TpClass>(node.var->type)) {
+				node.type_ = ast->get_ref(as_class);
 		} else {
 			node.type_ = node.var->type;
 		}
