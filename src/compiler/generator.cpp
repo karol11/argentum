@@ -883,7 +883,7 @@ struct Generator : ast::ActionScanner {
 		capture_ptrs = move(prev_capture_ptrs);
 	}
 
-	// `closure_ptr_type` define the type `this` or `closure` parameter.
+	// `closure_ptr_type` define the type of `this` or `closure` parameter.
 	llvm::Function* compile_function(ast::MkLambda& node, string name, llvm::Type* closure_ptr_type) {
 		if (auto seen = compiled_functions[&node])
 			return seen;
@@ -2225,7 +2225,7 @@ struct Generator : ast::ActionScanner {
 					pin<ast::Type> type = f->initializer->type();
 					if (auto as_opt = dom::strict_cast<ast::TpOptional>(type))
 						type = as_opt->wrapped;
-					if (isa<ast::TpWeak>(*type)) {
+					if (isa<ast::TpWeak>(*type) || isa<ast::TpFrozenWeak>(*type)) {
 						builder.CreateCall(fn_copy_weak_field, {
 							builder.CreateStructGEP(info.fields, dst, f->offset),
 							builder.CreateLoad(
@@ -2243,7 +2243,7 @@ struct Generator : ast::ActionScanner {
 									delegate_struct,
 									builder.CreateStructGEP(info.fields, src, f->offset),
 									0)) });
-					} else if (isa<ast::TpClass>(*type) || isa<ast::TpRef>(*type)) {
+					} else if (isa<ast::TpClass>(*type)) {
 						builder.CreateStore(
 							builder.CreateCall(fn_copy_object_field, {
 								builder.CreateLoad(
@@ -2251,6 +2251,12 @@ struct Generator : ast::ActionScanner {
 									builder.CreateStructGEP(info.fields, src, f->offset)),
 								dst }),
 							builder.CreateStructGEP(info.fields, dst, f->offset));
+					} else if (isa<ast::TpShared>(*type)) {
+						build_retain(
+							builder.CreateLoad(
+								ptr_type,
+								builder.CreateStructGEP(info.fields, src, f->offset)),
+							f->initializer->type());
 					}
 				}
 				builder.CreateRetVoid();
