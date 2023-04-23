@@ -167,6 +167,8 @@ struct NameResolver : ast::ActionScanner {
 		}
 		this_class = nullptr;
 		for (auto& m : ast->modules) {
+			for (auto& c : m.second->constants)
+				fix(c.second->initializer);
 			for (auto& f : m.second->functions)
 				fix_fn(f.second);
 			for (auto& t : m.second->tests)

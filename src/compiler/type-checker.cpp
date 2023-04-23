@@ -213,7 +213,7 @@ struct Typer : ast::ActionMatcher {
 		if (auto param_as_conform_ref = dom::strict_cast<ast::TpConformRef>(param_type))
 			node.type_ = param_as_conform_ref->target;
 		else
-			node.error("copy operand should be a reference, not ", param_type);
+			node.error("copy operand should be a reference, not ", param_type.pinned());
 	}
 	void on_to_float(ast::ToFloatOp& node) override {
 		node.type_ = ast->tp_double();
@@ -254,17 +254,13 @@ struct Typer : ast::ActionMatcher {
 		}
 	}
 	void on_get(ast::Get& node) override {
-		if (node.var->is_const) {
+		if (!node.var->is_const) {
 			if (auto as_class = dom::strict_cast<ast::TpClass>(node.var->type)) {
-				node.type_ = ast->get_shared(as_class);
-			} else if (auto as_weak = dom::strict_cast<ast::TpWeak>(node.var->type)) {
-				node.type_ = ast->get_frozen_weak(as_class);
-			}
-		} else if (auto as_class = dom::strict_cast<ast::TpClass>(node.var->type)) {
 				node.type_ = ast->get_ref(as_class);
-		} else {
-			node.type_ = node.var->type;
+				return;
+			}
 		}
+		node.type_ = node.var->type;
 	}
 	void on_set(ast::Set& node) override {
 		auto value_type = find_type(node.val)->type();
@@ -630,6 +626,14 @@ struct Typer : ast::ActionMatcher {
 					type_fn(m);
 		}
 		for (auto& m : ast->modules) {
+			for (auto& ct : m.second->constants) {
+				auto tp = ct.second->type = find_type(ct.second->initializer)->type();
+				if (auto as_opt = dom::strict_cast<ast::TpOptional>(tp))
+					tp = as_opt->wrapped;
+				if (dom::isa<ast::TpClass>(*tp) || dom::isa<ast::TpRef>(*tp) || dom::isa<ast::TpWeak>(*tp)) {
+					ct.second->error("Constants cannot be mutable objects @own, ref or &weak. Make them *frozen or &*frozen weaks.");
+				}
+			}
 			for (auto& fn : m.second->functions)
 				type_fn(fn.second);
 		}
@@ -637,8 +641,8 @@ struct Typer : ast::ActionMatcher {
 			this_class = c;
 			for (auto& f : c->fields) {
 				find_type(f->initializer);
-				if (dom::strict_cast<ast::TpRef>(f->initializer->type())) {
-					f->error("Fields cannot be temp-references. Make it @own or &weak");
+				if (dom::isa<ast::TpRef>(*f->initializer->type()) || dom::isa<ast::TpConformRef>(*f->initializer->type())) {
+					f->error("Fields cannot be temp-references. Make it @own, *shared or &weak");
 				}
 			}
 			for (auto& m : c->new_methods)

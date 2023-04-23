@@ -50,16 +50,16 @@ void execute(const char* source_text, bool dump_all = false) {
 TEST(Parser, Consts) {
     execute(R"-(
       using sys{assert;}
-      const xDefPoint = Point;
+      const xDefPoint = *Point;
       const xCount = 4;
-      const xHello = "Hello world";
+      const xHello = *"Hello world";
 
       class Point {
          x = 0;
          y = 0;
       }
       p = @xDefPoint;
-      sys_log(@xHello);
+      sys_log(xHello);
       assert(xCount, 4)
     )-");
 }
