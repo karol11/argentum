@@ -159,6 +159,7 @@ struct Generator : ast::ActionScanner {
 
 	llvm::Function* current_function = nullptr;
 	unordered_map<weak<ast::Var>, llvm::Value*> locals;
+	unordered_map<weak<ast::Var>, llvm::Value*> globals;
 	unordered_map<weak<ast::Var>, int> capture_offsets;
 	vector<pair<int, llvm::StructType*>> captures;
 	vector<llvm::Value*> capture_ptrs;
@@ -488,7 +489,7 @@ struct Generator : ast::ActionScanner {
 	}
 	
 	llvm::Value* remove_indirection(const ast::Var& var, llvm::Value* val) {
-		return var.is_mutable || var.captured
+		return var.is_mutable || var.captured || var.is_const
 			? builder->CreateLoad(to_llvm_type(*var.type),  val)
 			: val;
 	}
@@ -825,12 +826,7 @@ struct Generator : ast::ActionScanner {
 		if (&node == &*ast->starting_module->entry_point) {
 			for (auto& m : ast->modules_in_order) {
 				for (auto& c : m->constants) {
-					auto name = ast::format_str("ag_const_", c.second->module->name, "_", c.first);
-					module->getOrInsertGlobal(name, to_llvm_type(*c.second->type));
-					auto addr = module->getGlobalVariable(name);
-					addr->setConstant(true);
-					addr->setLinkage(llvm::GlobalValue::InternalLinkage);
-					c.second->is_mutable = true;  // to make access to locations
+					auto addr = globals[c.second];
 					consts_to_dispose.push_back(make_retained_or_non_ptr(compile(c.second->initializer)));
 					auto& initializer = consts_to_dispose.back();
 					builder->CreateStore(initializer.data, addr);
@@ -867,7 +863,9 @@ struct Generator : ast::ActionScanner {
 			make_result_retained();
 		}
 		for (auto& c : consts_to_dispose) {
-			dispose_val(move(c));
+			if (is_ptr(c.type)) {
+				build_release(builder->CreateLoad(ptr_type, c.data), c.type, false);
+			}
 		}
 		if (isa<ast::TpVoid>(*fn_result.type))
 			builder->CreateRetVoid();
@@ -1136,8 +1134,9 @@ struct Generator : ast::ActionScanner {
 	}
 
 	llvm::Value* get_data_ref(const weak<ast::Var>& var) {
-		auto it = locals.find(var);
-		if (it != locals.end())
+		if (auto it = locals.find(var); it != locals.end())
+			return it->second;
+		if (auto it = globals.find(var); it != globals.end())
 			return it->second;
 		int ptr_index = 0;
 		auto var_depth = var->lexical_depth;
@@ -2122,6 +2121,17 @@ struct Generator : ast::ActionScanner {
 			} else {
 				info.vmt = llvm::StructType::get(*context, vmt_content);
 				info.vmt_size = layout.getTypeStoreSize(info.vmt);
+			}
+		}
+		for (auto& m : ast->modules_in_order) {
+			for (auto& c : m->constants) {
+				auto name = ast::format_str("ag_const_", c.second->module->name, "_", c.first);
+				auto type = to_llvm_type(*c.second->type);
+				module->getOrInsertGlobal(name, type);
+				auto addr = module->getGlobalVariable(name);
+				addr->setLinkage(llvm::GlobalValue::InternalLinkage);
+				addr->setInitializer(llvm::Constant::getNullValue(type));
+				globals.insert({ c.second, addr });
 			}
 		}
 		// From this point it is possible to build code that access fleds and methods.
