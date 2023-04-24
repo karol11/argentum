@@ -183,6 +183,13 @@ AgObject* ag_allocate_obj(size_t size) {
 	return r;
 }
 AgObject* ag_freeze(AgObject* src) {
+	if (AG_SHARED == (src->wb_p & AG_F_PARENT
+		? src->wb_p & ~AG_F_PARENT
+		: ((AgWeak*)src->wb_p)->org_pointer_to_parent))
+	{
+		src->counter++;
+		return src;
+	}
 	ag_copy_freeze = true;
 	AgObject* r = ag_copy(src); // todo make optimized version
 	ag_copy_freeze = false;
