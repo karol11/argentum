@@ -773,10 +773,10 @@ std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t) {
 			dst << "&*" << type.target->get_name();
 		}
 		void on_conform_ref(ast::TpConformRef& type) override {
-			dst << "+" << type.target->get_name();
+			dst << "-" << type.target->get_name();
 		}
 		void on_conform_weak(ast::TpConformWeak& type) override {
-			dst << "&+" << type.target->get_name();
+			dst << "&-" << type.target->get_name();
 		}
 	};
 	TypePrinter printer(dst);

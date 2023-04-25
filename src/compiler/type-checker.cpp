@@ -559,6 +559,10 @@ struct Typer : ast::ActionMatcher {
 				if (actual_as_shared->target == exp_as_conform_ref->target || actual_as_shared->target->overloads.count(exp_as_conform_ref->target))
 					return;
 			}
+			if (auto actual_as_class = dom::strict_cast<ast::TpClass>(actual_type)) {
+				if (actual_as_class == exp_as_conform_ref->target || actual_as_class->overloads.count(exp_as_conform_ref->target))
+					return;
+			}
 		} else if (auto exp_as_weak = dom::strict_cast<ast::TpWeak>(expected_type)) {
 			if (auto actual_as_weak = dom::strict_cast<ast::TpWeak>(actual_type)) {
 				if (actual_as_weak->target->overloads.count(exp_as_weak->target))
