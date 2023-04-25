@@ -530,6 +530,8 @@ struct Typer : ast::ActionMatcher {
 		if (actual_type == expected_type)
 			return;
 		if (auto exp_as_ref = dom::strict_cast<ast::TpRef>(expected_type)) {
+			if (dom::isa<ast::TpShared>(*actual_type) || dom::isa<ast::TpConformRef>(*actual_type))
+				node->context_error(context, "expected mutable type, not ", actual_type);
 			if (auto actual_class = ast->extract_class(actual_type)) {
 				if (actual_class == exp_as_ref->target || actual_class->overloads.count(exp_as_ref->target))
 					return;
@@ -544,9 +546,40 @@ struct Typer : ast::ActionMatcher {
 				if (actual_as_shared->target->overloads.count(exp_as_shared->target))
 					return;
 			}
+		} else if (auto exp_as_conform_ref = dom::strict_cast<ast::TpConformRef>(expected_type)) {
+			if (auto actual_as_conform_ref = dom::strict_cast<ast::TpConformRef>(actual_type)) {
+				if (actual_as_conform_ref->target->overloads.count(exp_as_conform_ref->target))
+					return;
+			}
+			if (auto actual_as_ref = dom::strict_cast<ast::TpRef>(actual_type)) {
+				if (actual_as_ref->target == exp_as_conform_ref->target || actual_as_ref->target->overloads.count(exp_as_conform_ref->target))
+					return;
+			}
+			if (auto actual_as_shared = dom::strict_cast<ast::TpShared>(actual_type)) {
+				if (actual_as_shared->target == exp_as_conform_ref->target || actual_as_shared->target->overloads.count(exp_as_conform_ref->target))
+					return;
+			}
 		} else if (auto exp_as_weak = dom::strict_cast<ast::TpWeak>(expected_type)) {
 			if (auto actual_as_weak = dom::strict_cast<ast::TpWeak>(actual_type)) {
 				if (actual_as_weak->target->overloads.count(exp_as_weak->target))
+					return;
+			}
+		} else if (auto exp_as_frozen_weak = dom::strict_cast<ast::TpFrozenWeak>(expected_type)) {
+			if (auto actual_as_frozen_weak = dom::strict_cast<ast::TpFrozenWeak>(actual_type)) {
+				if (actual_as_frozen_weak->target->overloads.count(exp_as_frozen_weak->target))
+					return;
+			}
+		} else if (auto exp_as_conform_weak = dom::strict_cast<ast::TpConformWeak>(expected_type)) {
+			if (auto actual_as_conform_weak = dom::strict_cast<ast::TpConformWeak>(actual_type)) {
+				if (actual_as_conform_weak->target->overloads.count(exp_as_conform_weak->target))
+					return;
+			}
+			if (auto actual_as_weak = dom::strict_cast<ast::TpWeak>(actual_type)) {
+				if (actual_as_weak->target == exp_as_conform_weak->target || actual_as_weak->target->overloads.count(exp_as_conform_weak->target))
+					return;
+			}
+			if (auto actual_as_frozen_weak = dom::strict_cast<ast::TpFrozenWeak>(actual_type)) {
+				if (actual_as_frozen_weak->target == exp_as_conform_weak->target  || actual_as_frozen_weak->target->overloads.count(exp_as_conform_weak->target))
 					return;
 			}
 		} else if (auto act_as_cold = dom::strict_cast<ast::TpColdLambda>(actual_type)) {
