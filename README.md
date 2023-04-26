@@ -27,6 +27,11 @@ See: [Project site](aglang.org)
 
 ## Examples
 
+This language is safe and managed, like Java.\
+This code samples compile to a less than 20K Windows executables.\
+No virtual machine/framework needed.\
+They can work in a loop forever, no GC pauses, no leaks, no memory corruptions.
+
 #### Fizz-buzz
 
 ```Rust
