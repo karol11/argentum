@@ -20,10 +20,73 @@ See: [Project site](aglang.org)
 * Tiny runtime (it is designed with wasm in mind)
 
 ## Links
-* Presentation slides: [here](https://docs.google.com/presentation/d/1Cqbh30gTnfoFL3xJh3hhW4Hqhdk9tHw4akZExtiSivA/edit?usp=share_link)
-* Documentaion: [here](https://docs.google.com/document/d/1QCvxUGr2kce67jht8PLH822ZuZSXHvMIFgsACsbV4Y4/edit?usp=sharing)
 * Site: [aglang.org](aglang.org)
 * Hackaday: [project page](https://hackaday.io/project/190397-argentum-programming-language)
+* Presentation slides: [here](https://docs.google.com/presentation/d/1Cqbh30gTnfoFL3xJh3hhW4Hqhdk9tHw4akZExtiSivA/edit?usp=share_link)
+* Documentaion: [here](https://docs.google.com/document/d/1QCvxUGr2kce67jht8PLH822ZuZSXHvMIFgsACsbV4Y4/edit?usp=sharing)
+
+## Examples
+
+#### Fizz-buzz
+
+```Rust
+using sys { String; log; }
+using string { Builder; }
+using utils{ forRange; }
+
+b = Builder;
+forRange(1, 101, (i){
+   i % 3 == 0 ? b.putStr("fizz");
+   i % 5 == 0 ? b.putStr("buzz");
+   b.pos == 0 ? b.putInt(i);
+   log(b.newLine().toStr());
+});
+```
+
+#### Find loop in graph
+
+```Rust
+using sys { WeakArray; Array; String; log; }
+using utils { existsInRange; }
+using string;
+using array;
+
+class Node {
+    connections = WeakArray;
+    isVisited = false;
+    isActive = false;
+    hasLoop() bool {
+        isActive || (!isVisited && {
+            isVisited := isActive := true;
+            r = connections.contain((c){ c~Node && _.hasLoop() });
+            isActive := false;
+            r
+        })
+    }
+}
+class Graph {
+    nodes = Array;
+    fromStr(String in) this {
+        byNames = WeakArray.resize('z' + 1);
+        getOrCreateNode = () {
+            name = in.get();
+            byNames[name] || byNames[name] := nodes.append(Node)
+        };
+        loop {
+            from = getOrCreateNode();
+            in.get();
+            from ? _~Node ? _.connections.append(getOrCreateNode());
+            in.get() == 0
+        }
+    }    
+    hasLoop() bool {
+        nodes.contain((n){ n~Node && _.hasLoop() })
+    }
+}
+log(Graph.fromStr("a>b b>c c>d e>f b>e e>a c>c").hasLoop()
+    ? "has some loop"
+    : "has no loops");
+```
 
 ## Why not X
 
