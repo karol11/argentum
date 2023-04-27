@@ -28,7 +28,7 @@ See: [Project site](aglang.org)
 ## Examples
 
 This language is safe and managed, like Java.\
-This code samples compile to a less than 20K Windows executables.\
+This code samples compile to less than 20K Windows executables.\
 No virtual machine/framework needed.\
 They can work in a loop forever, no GC pauses, no leaks, no memory corruptions.
 
@@ -48,7 +48,7 @@ forRange(1, 101, (i){
 });
 ```
 
-#### Find loop in graph
+#### Find loop in a graph
 
 ```Rust
 using sys { WeakArray; Array; String; log; }
