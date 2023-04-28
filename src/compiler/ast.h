@@ -22,7 +22,7 @@ namespace ast {
 	struct Node;  // having file position
 	struct Action;  // having result, able to build code
 	struct Function;
-	struct TpClass;
+	struct Class;
 	struct Ast;
 	struct Module;
 	struct Var;
@@ -63,12 +63,12 @@ struct Module : dom::DomItem {
 	unordered_map<string, weak<Node>> aliases;
 	unordered_map<string, own<Var>> constants;
 	unordered_map<string, own<Function>> tests;
-	unordered_map<string, own<TpClass>> classes;
+	unordered_map<string, own<Class>> classes;
 	unordered_map<string, own<Function>> functions;
 	own<Function> entry_point;
 
-	pin<TpClass> get_class(const string& name); // gets or creates class
-	pin<TpClass> peek_class(const string& name); // gets class or null
+	pin<Class> get_class(const string& name); // gets or creates class
+	pin<Class> peek_class(const string& name); // gets class or null
 	DECLARE_DOM_CLASS(Module);
 };
 
@@ -91,7 +91,7 @@ struct Node: dom::DomItem {
 struct TypeMatcher;
 struct ActionMatcher;
 
-struct Type : Node {
+struct Type : dom::DomItem {
 	Type() { make_shared(); }
 	static own<Type>& promote(own<Type>& to_patch);  // replaces cold lambda with a resolved lambda type
 	virtual void match(TypeMatcher& matcher) = 0;
@@ -133,26 +133,38 @@ struct TpOptional : Type {
 	void match(TypeMatcher& matcher) override;
 	DECLARE_DOM_CLASS(TpOptional);
 };
-struct Field : Node {  // TODO: combine with Var
+struct AbstractClass : Node {
+	virtual string get_name();
+	DECLARE_DOM_CLASS(AbstractClass);
+};
+struct ClassParam: AbstractClass {
+	bool is_in = true;
+	bool is_out = true;
+	int index = 0; // in TpClass::params
+	string name;
+	own<Class> base;
+	string get_name() override;
+	DECLARE_DOM_CLASS(ClassParam);
+};
+struct Field : Node {
 	string name;
 	own<Action> initializer;
 	int offset = 0;
 	DECLARE_DOM_CLASS(Field);
 };
-struct TpClass : Type {
+struct Class : AbstractClass {
 	string name;
+	bool is_interface = true;
+	bool is_test = true;
+	own<Class> base_class;
+	vector<own<ClassParam>> params;
 	vector<own<Field>> fields;
 	vector<own<struct Method>> new_methods;  // new methods ordered by source order
-	unordered_map<weak<TpClass>, vector<own<struct Method>>> overloads;  // overloads for interfaces and the base class, ordered by source order
-	weak<TpClass> base_class;
+	unordered_map<weak<AbstractClass>, vector<own<struct Method>>> overloads;  // overloads for interfaces and the base class, ordered by source order
 	unordered_map<LongName, weak<Node>> this_names;  // this names - defined and inhrited. ambiguous excluded.
 	unordered_map<           
-		weak<TpClass>,                       // base interface
+		weak<Class>,                                   // base interface
 		vector<weak<struct Method>>> interface_vmts;   // inherited and overloaded methods in the order of new_methods in that interface
-	bool is_interface = false;
-	bool is_test = false;
-
-	void match(TypeMatcher& matcher) override;
 
 	template<typename F, typename M, typename A>
 	bool handle_member(ast::Node& node, const LongName& name, F on_field, M on_method, A on_anbiguous) {
@@ -169,39 +181,44 @@ struct TpClass : Type {
 		}
 		return false;
 	}
-	string get_name() {
-		return module
-			? format_str(module->name, "_", name)
-			: name;
-	}
-	DECLARE_DOM_CLASS(TpClass);
+	string get_name() override;
+	DECLARE_DOM_CLASS(Class);
 };
-struct TpRef : Type {
-	own<TpClass> target;
+
+struct ClassInstance : AbstractClass {
+	own<Class> cls;
+	vector<own<Class>> params;
+	string get_name() override;
+	DECLARE_DOM_CLASS(ClassInstance);
+};
+
+struct TpOwn : Type {
+	own<AbstractClass> target;
+	void match(TypeMatcher& matcher) override;
+	DECLARE_DOM_CLASS(TpOwn);
+};
+struct TpRef : TpOwn {
+	own<AbstractClass> target;
 	void match(TypeMatcher& matcher) override;
 	DECLARE_DOM_CLASS(TpRef);
 };
-struct TpShared : TpRef {
+struct TpShared : TpOwn {
 	void match(TypeMatcher& matcher) override;
 	DECLARE_DOM_CLASS(TpShared);
 };
-struct TpWeak : Type {
-	own<TpClass> target;
+struct TpWeak : TpOwn {
 	void match(TypeMatcher& matcher) override;
 	DECLARE_DOM_CLASS(TpWeak);
 };
-struct TpFrozenWeak : Type {
-	own<TpClass> target;
+struct TpFrozenWeak : TpOwn {
 	void match(TypeMatcher& matcher) override;
 	DECLARE_DOM_CLASS(TpFrozenWeak);
 };
-struct TpConformRef : Type {
-	own<TpClass> target;
+struct TpConformRef : TpOwn {
 	void match(TypeMatcher& matcher) override;
 	DECLARE_DOM_CLASS(TpConformRef);
 };
-struct TpConformWeak : Type {
-	own<TpClass> target;
+struct TpConformWeak : TpOwn {
 	void match(TypeMatcher& matcher) override;
 	DECLARE_DOM_CLASS(TpConformWeak);
 };
@@ -216,7 +233,7 @@ struct TypeMatcher {
 	virtual void on_cold_lambda(TpColdLambda& type) = 0;
 	virtual void on_void(TpVoid& type) = 0;
 	virtual void on_optional(TpOptional& type) =0;
-	virtual void on_class(TpClass& type) = 0;
+	virtual void on_own(TpOwn& type) = 0;
 	virtual void on_ref(TpRef& type) = 0;
 	virtual void on_shared(TpShared& type) = 0;
 	virtual void on_weak(TpWeak& type) = 0;
@@ -260,20 +277,21 @@ struct Ast: dom::DomItem {
 	unordered_map<const vector<own<Type>>*, own<TpFunction>, typelist_hasher, typelist_comparer> function_types_;
 	unordered_map<const vector<own<Type>>*, own<TpDelegate>, typelist_hasher, typelist_comparer> delegate_types_;
 	unordered_map<own<Type>, vector<own<TpOptional>>> optional_types_;  // maps base types to all levels of their optionals
-	unordered_map<own<TpClass>, own<TpRef>> refs;
-	unordered_map<own<TpClass>, own<TpShared>> shareds;
-	unordered_map<own<TpClass>, own<TpWeak>> weaks;
-	unordered_map<own<TpClass>, own<TpFrozenWeak>> frozen_weaks;
-	unordered_map<own<TpClass>, own<TpConformRef>> conform_refs;
-	unordered_map<own<TpClass>, own<TpConformWeak>> conform_weaks;
+	unordered_map<own<AbstractClass>, own<TpOwn>> owns;
+	unordered_map<own<AbstractClass>, own<TpRef>> refs;
+	unordered_map<own<AbstractClass>, own<TpShared>> shareds;
+	unordered_map<own<AbstractClass>, own<TpWeak>> weaks;
+	unordered_map<own<AbstractClass>, own<TpFrozenWeak>> frozen_weaks;
+	unordered_map<own<AbstractClass>, own<TpConformRef>> conform_refs;
+	unordered_map<own<AbstractClass>, own<TpConformWeak>> conform_weaks;
 	unordered_map<string, void(*)()> platform_exports;  // used only in JIT
-	weak<TpClass> object;
-	weak<TpClass> blob;
-	weak<TpClass> own_array;
-	weak<TpClass> weak_array;
-	weak<TpClass> string_cls;
+	weak<Class> object;
+	weak<Class> blob;
+	weak<Class> own_array;
+	weak<Class> weak_array;
+	weak<Class> string_cls;
 	weak<Module> sys;
-	vector<weak<TpClass>> classes_in_order; // all classes from all modules in the base-first order
+	vector<weak<Class>> classes_in_order; // all classes from all modules in the base-first order
 
 	unordered_map<string, own<Module>> modules;
 	vector<weak<Module>> modules_in_order; // imports of module M placed before M
@@ -283,7 +301,7 @@ struct Ast: dom::DomItem {
 
 	// Used by platform modules, always populate sys module
 	pin<Field> mk_field(string name, pin<Action> initializer);
-	pin<TpClass> mk_class(string name, std::initializer_list<pin<Field>> fields = {});
+	pin<Class> mk_class(string name, std::initializer_list<pin<Field>> fields = {});
 	pin<ast::Function> mk_fn(string name, void(*entry_point)(), pin<Action> result_type, std::initializer_list<pin<Type>> params);
 
 	pin<TpInt64> tp_int64();
@@ -294,13 +312,14 @@ struct Ast: dom::DomItem {
 	pin<TpDelegate> tp_delegate(vector<own<Type>>&& params);
 	pin<TpOptional> tp_optional(pin<Type> wrapped);
 	pin<Type> get_wrapped(pin<TpOptional> opt);
-	pin<TpRef> get_ref(pin<TpClass> target);
-	pin<TpShared> get_shared(pin<TpClass> target);
-	pin<TpWeak> get_weak(pin<TpClass> target);
-	pin<TpFrozenWeak> get_frozen_weak(pin<TpClass> target);
-	pin<TpConformRef> get_conform_ref(pin<TpClass> target);
-	pin<TpConformWeak> get_conform_weak(pin<TpClass> target);
-	pin<TpClass> extract_class(pin<Type> pointer); // extracts class from own, weak or pin pointer
+	pin<TpOwn> get_own(pin<AbstractClass> target);
+	pin<TpRef> get_ref(pin<AbstractClass> target);
+	pin<TpShared> get_shared(pin<AbstractClass> target);
+	pin<TpWeak> get_weak(pin<AbstractClass> target);
+	pin<TpFrozenWeak> get_frozen_weak(pin<AbstractClass> target);
+	pin<TpConformRef> get_conform_ref(pin<AbstractClass> target);
+	pin<TpConformWeak> get_conform_weak(pin<AbstractClass> target);
+	pin<AbstractClass> extract_class(pin<Type> pointer); // extracts class from pointer types
 	DECLARE_DOM_CLASS(Ast);
 };
 
@@ -366,7 +385,7 @@ struct ImmediateDelegate : Function {
 struct Method : Function {  // Cannot be in the tree of ops. Resides in TpClass::new_methods/overloads.
 	weak<Method> ovr;  // direct method that was overridden by this one
 	weak<Method> base; // first original class/interface method that was implemented by this one
-	weak<TpClass> cls;  // class in which this method is declared.
+	weak<Class> cls;  // class in which this method is declared.
 	weak<Module> base_module; // along with `name` defines the name of the method as it is declared, null if name is short
 	int ordinal = 0; // index int cls->new_methods.
 	bool is_factory = false; // @-method
@@ -448,7 +467,7 @@ struct SpliceField : SetField {
 };
 
 struct MkInstance : Action {
-	own<TpClass> cls;
+	own<Type> cls;  // TpClass or TpTemplateParam
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(MkInstance);
 };

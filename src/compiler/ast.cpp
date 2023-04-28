@@ -74,7 +74,7 @@ own<TypeWithFills> TpColdLambda::dom_type_;
 own<TypeWithFills> TpDelegate::dom_type_;
 own<TypeWithFills> TpVoid::dom_type_;
 own<TypeWithFills> TpOptional::dom_type_;
-own<TypeWithFills> TpClass::dom_type_;
+own<TypeWithFills> TpOwn::dom_type_;
 own<TypeWithFills> TpRef::dom_type_;
 own<TypeWithFills> TpShared::dom_type_;
 own<TypeWithFills> TpWeak::dom_type_;
@@ -85,6 +85,10 @@ own<TypeWithFills> Field::dom_type_;
 own<TypeWithFills> Method::dom_type_;
 own<TypeWithFills> Function::dom_type_;
 own<TypeWithFills> ImmediateDelegate::dom_type_;
+own<TypeWithFills> AbstractClass::dom_type_;
+own<TypeWithFills> Class::dom_type_;
+own<TypeWithFills> ClassInstance::dom_type_;
+own<TypeWithFills> ClassParam::dom_type_;
 
 namespace {
 	template<typename CLS>
@@ -98,6 +102,7 @@ void initialize() {
 	if (cpp_dom)
 		return;
 	cpp_dom = new dom::Dom;
+	auto bool_type = cpp_dom->mk_type(Kind::BOOL);
 	auto weak_type = cpp_dom->mk_type(Kind::WEAK);
 	auto own_type = cpp_dom->mk_type(Kind::OWN);
 	auto size_t_type = cpp_dom->mk_type(Kind::UINT, sizeof(size_t));
@@ -133,7 +138,7 @@ void initialize() {
 			cpp_dom->mk_type(Kind::FLOAT, sizeof(double))));
 	ConstVoid::dom_type_ = (new CppClassType<ConstVoid>(cpp_dom, { "m0", "VoidVal" }));
 	ConstBool::dom_type_ = (new CppClassType<ConstBool>(cpp_dom, { "m0", "BoolVal" }))
-		->field("val", pin<CField<&ConstBool::value>>::make(cpp_dom->mk_type(Kind::BOOL)));
+		->field("val", pin<CField<&ConstBool::value>>::make(bool_type));
 	Get::dom_type_ = (new CppClassType<Get>(cpp_dom, { "m0", "Get" }))
 		->field("var", pin<CField<&Get::var>>::make(weak_type));
 	Set::dom_type_ = (new CppClassType<Set>(cpp_dom, { "m0", "Set" }))
@@ -182,8 +187,8 @@ void initialize() {
 		->field("params", pin<CField<&Block::names>>::make(own_vector_type));
 	Function::dom_type_ = (new CppClassType<Function>(cpp_dom, { "m0", "Function" }))
 		->field("name", pin<CField<&Function::name>>::make(string_type))
-		->field("is_external", pin<CField<&Function::is_platform>>::make(cpp_dom->mk_type(Kind::BOOL)))
-		->field("is_test", pin<CField<&Function::is_platform>>::make(cpp_dom->mk_type(Kind::BOOL)))
+		->field("is_external", pin<CField<&Function::is_platform>>::make(bool_type))
+		->field("is_test", pin<CField<&Function::is_platform>>::make(bool_type))
 		->field("body", pin<CField<&Block::body>>::make(own_vector_type))
 		->field("params", pin<CField<&Block::names>>::make(own_vector_type));
 	ImmediateDelegate::dom_type_ = (new CppClassType<ImmediateDelegate>(cpp_dom, { "m0", "ImmediateDelegate" }))
@@ -243,28 +248,41 @@ void initialize() {
 		->field("name", pin<CField<&Function::name>>::make(string_type))
 		->field("body", pin<CField<&Block::body>>::make(own_vector_type))
 		->field("result_type", pin<CField<&Function::type_expression>>::make(own_type))
-		->field("is_factory", pin<CField<&Method::is_factory>>::make(cpp_dom->mk_type(Kind::BOOL)))
+		->field("is_factory", pin<CField<&Method::is_factory>>::make(bool_type))
 		->field("mut", pin<CField<&Method::mut>>::make(cpp_dom->mk_type(Kind::INT)))
 		->field("params", pin<CField<&Block::names>>::make(own_vector_type));
-	TpClass::dom_type_ = (new CppClassType<TpClass>(cpp_dom, { "m0", "Type", "Class" }))
-		->field("name", pin<CField<&TpClass::name>>::make(string_type))
-		->field("is_interface", pin<CField<&TpClass::is_interface>>::make(cpp_dom->mk_type(Kind::BOOL)))
-		->field("is_test", pin<CField<&TpClass::is_test>>::make(cpp_dom->mk_type(Kind::BOOL)))
-		->field("base", pin<CField<&TpClass::base_class>>::make(weak_type))
-		->field("fields", pin<CField<&TpClass::fields>>::make(own_vector_type))
-		->field("methods", pin<CField<&TpClass::new_methods>>::make(own_vector_type));
+	AbstractClass::dom_type_ = (new CppClassType<AbstractClass>(cpp_dom, { "m0", "AbstractClass" }));
+	Class::dom_type_ = (new CppClassType<Class>(cpp_dom, { "m0", "Class" }))
+		->field("name", pin<CField<&Class::name>>::make(string_type))
+		->field("is_interface", pin<CField<&Class::is_interface>>::make(bool_type))
+		->field("is_test", pin<CField<&Class::is_test>>::make(bool_type))
+		->field("params", pin<CField<&Class::params>>::make(own_vector_type))
+		->field("base", pin<CField<&Class::base_class>>::make(weak_type))
+		->field("fields", pin<CField<&Class::fields>>::make(own_vector_type))
+		->field("methods", pin<CField<&Class::new_methods>>::make(own_vector_type));
+	ClassParam::dom_type_ = (new CppClassType<ClassParam>(cpp_dom, { "m0", "ClassParam" }))
+		->field("is_in", pin<CField<&ClassParam::is_in>>::make(bool_type))
+		->field("is_out", pin<CField<&ClassParam::is_out>>::make(bool_type))
+		->field("index", pin<CField<&ClassParam::index>>::make(cpp_dom->mk_type(Kind::INT)))
+		->field("name", pin<CField<&ClassParam::name>>::make(string_type))
+		->field("base", pin<CField<&ClassParam::base>>::make(own_type));
+	ClassInstance::dom_type_ = (new CppClassType<ClassInstance>(cpp_dom, { "m0", "ClassInstance" }))
+		->field("cls", pin<CField<&ClassInstance::cls>>::make(own_type))
+		->field("params", pin<CField<&ClassInstance::params>>::make(own_vector_type));
+	TpOwn::dom_type_ = (new CppClassType<TpOwn>(cpp_dom, { "m0", "Type", "Own" }))
+		->field("target", pin<CField<&TpOwn::target>>::make(own_type));
 	TpRef::dom_type_ = (new CppClassType<TpRef>(cpp_dom, { "m0", "Type", "Ref" }))
-		->field("target", pin<CField<&TpRef::target>>::make(own_type));
+		->field("target", pin<CField<&TpOwn::target>>::make(own_type));
 	TpShared::dom_type_ = (new CppClassType<TpShared>(cpp_dom, { "m0", "Type", "Shared" }))
-		->field("target", pin<CField<&TpShared::target>>::make(own_type));
+		->field("target", pin<CField<&TpOwn::target>>::make(own_type));
 	TpWeak::dom_type_ = (new CppClassType<TpWeak>(cpp_dom, { "m0", "Type", "Weak" }))
-		->field("target", pin<CField<&TpWeak::target>>::make(own_type));
+		->field("target", pin<CField<&TpOwn::target>>::make(own_type));
 	TpFrozenWeak::dom_type_ = (new CppClassType<TpFrozenWeak>(cpp_dom, { "m0", "Type", "FrozenWeak" }))
-		->field("target", pin<CField<&TpFrozenWeak::target>>::make(own_type));
+		->field("target", pin<CField<&TpOwn::target>>::make(own_type));
 	TpConformRef::dom_type_ = (new CppClassType<TpConformRef>(cpp_dom, { "m0", "Type", "ConformRef" }))
-		->field("target", pin<CField<&TpConformRef::target>>::make(own_type));
+		->field("target", pin<CField<&TpOwn::target>>::make(own_type));
 	TpConformWeak::dom_type_ = (new CppClassType<TpConformWeak>(cpp_dom, { "m0", "Type", "ConformWeak" }))
-		->field("target", pin<CField<&TpConformWeak::target>>::make(own_type));
+		->field("target", pin<CField<&TpOwn::target>>::make(own_type));
 }
 
 own<Type>& Type::promote(own<Type>& to_patch) {
@@ -436,7 +454,7 @@ void TpColdLambda::match(TypeMatcher& matcher) { matcher.on_cold_lambda(*this); 
 void TpDelegate::match(TypeMatcher& matcher) { matcher.on_delegate(*this); }
 void TpVoid::match(TypeMatcher& matcher) { matcher.on_void(*this); }
 void TpOptional::match(TypeMatcher& matcher) { matcher.on_optional(*this); }
-void TpClass::match(TypeMatcher& matcher) { matcher.on_class(*this); }
+void TpOwn::match(TypeMatcher& matcher) { matcher.on_own(*this); }
 void TpRef::match(TypeMatcher& matcher) { matcher.on_ref(*this); }
 void TpShared::match(TypeMatcher& matcher) { matcher.on_shared(*this); }
 void TpWeak::match(TypeMatcher& matcher) { matcher.on_weak(*this); }
@@ -463,8 +481,8 @@ pin<Field> Ast::mk_field (string name, pin<Action> initializer) {
 	return f;
 };
 
-pin<TpClass> Ast::mk_class(string name, std::initializer_list<pin<Field>> fields) {
-	auto r = new TpClass;
+pin<Class> Ast::mk_class(string name, std::initializer_list<pin<Field>> fields) {
+	auto r = new Class;
 	sys->classes.insert({ name, r });
 	r->module = sys;
 	r->line = 1;
@@ -562,7 +580,16 @@ pin<Type> Ast::get_wrapped(pin<TpOptional> opt) {
 		: optional_types_[opt->wrapped][size_t(opt->depth) - 1];
 }
 
-pin<TpRef> Ast::get_ref(pin<TpClass> target) {
+pin<TpOwn> Ast::get_own(pin<AbstractClass> target) {
+	auto& r = owns[target];
+	if (!r) {
+		r = new TpRef;
+		r->target = target;
+	}
+	return r;
+}
+
+pin<TpRef> Ast::get_ref(pin<AbstractClass> target) {
 	auto& r = refs[target];
 	if (!r) {
 		r = new TpRef;
@@ -571,7 +598,7 @@ pin<TpRef> Ast::get_ref(pin<TpClass> target) {
 	return r;
 }
 
-pin<TpShared> Ast::get_shared(pin<TpClass> target) {
+pin<TpShared> Ast::get_shared(pin<AbstractClass> target) {
 	auto& r = shareds[target];
 	if (!r) {
 		r = new TpShared;
@@ -580,7 +607,7 @@ pin<TpShared> Ast::get_shared(pin<TpClass> target) {
 	return r;
 }
 
-pin<TpWeak> Ast::get_weak(pin<TpClass> target) {
+pin<TpWeak> Ast::get_weak(pin<AbstractClass> target) {
 	auto& w = weaks[target];
 	if (!w) {
 		w = new TpWeak;
@@ -589,7 +616,7 @@ pin<TpWeak> Ast::get_weak(pin<TpClass> target) {
 	return w;
 }
 
-pin<TpFrozenWeak> Ast::get_frozen_weak(pin<TpClass> target) {
+pin<TpFrozenWeak> Ast::get_frozen_weak(pin<AbstractClass> target) {
 	auto& w = frozen_weaks[target];
 	if (!w) {
 		w = new TpFrozenWeak;
@@ -598,7 +625,7 @@ pin<TpFrozenWeak> Ast::get_frozen_weak(pin<TpClass> target) {
 	return w;
 }
 
-pin<TpConformRef> Ast::get_conform_ref(pin<TpClass> target) {
+pin<TpConformRef> Ast::get_conform_ref(pin<AbstractClass> target) {
 	auto& w = conform_refs[target];
 	if (!w) {
 		w = new TpConformRef;
@@ -607,7 +634,7 @@ pin<TpConformRef> Ast::get_conform_ref(pin<TpClass> target) {
 	return w;
 }
 
-pin<TpConformWeak> Ast::get_conform_weak(pin<TpClass> target) {
+pin<TpConformWeak> Ast::get_conform_weak(pin<AbstractClass> target) {
 	auto& w = conform_weaks[target];
 	if (!w) {
 		w = new TpConformWeak;
@@ -616,31 +643,31 @@ pin<TpConformWeak> Ast::get_conform_weak(pin<TpClass> target) {
 	return w;
 }
 
-pin<TpClass> Module::get_class(const string& name) {
+pin<Class> Module::get_class(const string& name) {
 	if (auto r = peek_class(name))
 		return r;
-	auto r = pin<TpClass>::make();
+	auto r = pin<Class>::make();
 	r->name = name;
 	r->module = this;
 	classes.insert({ string(name), r });
 	return r;
 }
 
-pin<TpClass> Module::peek_class(const string& name) {
+pin<Class> Module::peek_class(const string& name) {
 	auto it = classes.find(name);
 	return it == classes.end() ? nullptr : it->second;
 }
 
-pin<TpClass> Ast::extract_class(pin<Type> pointer) {
+pin<AbstractClass> Ast::extract_class(pin<Type> pointer) {
+	if (auto as_own = dom::strict_cast<ast::TpOwn>(pointer))
+		return as_own->target;
 	if (auto as_ref = dom::strict_cast<ast::TpRef>(pointer))
 		return as_ref->target;
 	if (auto as_shared = dom::strict_cast<ast::TpShared>(pointer))
 		return as_shared->target;
-	if (auto as_class = dom::strict_cast<ast::TpClass>(pointer))
-		return as_class;
 	if (auto as_conform_ref = dom::strict_cast<ast::TpConformRef>(pointer))
 		return as_conform_ref->target;
-	// no weaks here, their targets are not directly accessible without a null check
+	// no weaks here, their targets are not directly accessible without null checks
 	return nullptr;
 }
 
@@ -683,6 +710,34 @@ string FieldRef::get_annotation() {
 		field ? Node::get_annotation() :
 		field_module ? format_str(Node::get_annotation(), " field_name=", field_module->name, "_", field_name) :
 		format_str(Node::get_annotation(), " field_name=", field_name);
+}
+
+string Class::get_name() {
+	return module
+		? format_str(module->name, "_", name)
+		: name;
+}
+
+string AbstractClass::get_name() {
+	throw 1;
+}
+
+string ClassParam::get_name() {
+	return format_str("'", name);
+}
+string ClassInstance::get_name() {
+	std::stringstream dst;
+	dst << cls->get_name() << "(";
+	bool is_first = true;
+	for (auto& p : params) {
+		if (is_first)
+			is_first = false;
+		else
+			dst << ", ";
+		dst << p->get_name();
+	}
+	dst << ")";
+	return dst.str();
 }
 
 } // namespace ast
@@ -757,8 +812,8 @@ std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t) {
 				dst << type.wrapped.pinned();
 			}
 		}
-		void on_class(ast::TpClass& type) override {
-			dst << "@" <<  type.get_name();
+		void on_own(ast::TpOwn& type) override {
+			dst << "@" << type.target->get_name();
 		}
 		void on_ref(ast::TpRef& type) override {
 			dst << type.target->get_name();
@@ -774,6 +829,9 @@ std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t) {
 		}
 		void on_conform_ref(ast::TpConformRef& type) override {
 			dst << "-" << type.target->get_name();
+		}
+		void on_conform_weak(ast::TpConformWeak& type) override {
+			dst << "&-" << type.target->get_name();
 		}
 		void on_conform_weak(ast::TpConformWeak& type) override {
 			dst << "&-" << type.target->get_name();
