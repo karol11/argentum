@@ -467,7 +467,7 @@ struct SpliceField : SetField {
 };
 
 struct MkInstance : Action {
-	own<Type> cls;  // TpClass or TpTemplateParam
+	own<AbstractClass> cls;
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(MkInstance);
 };

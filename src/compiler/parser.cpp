@@ -53,6 +53,7 @@ struct Parser {
 	const char* cur = nullptr;
 	unordered_set<string>& modules_in_dep_path;
 	unordered_map<string, pin<ast::ImmediateDelegate>> delegates;
+	pin<ast::Class> current_class;  // To match type parameters
 
 	Parser(pin<Ast> ast, string module_name, unordered_set<string>& modules_in_dep_path)
 		: dom(ast->dom)
@@ -105,7 +106,7 @@ struct Parser {
 		}
 		expect("}");
 	}
-	void add_this_param(ast::Function& fn, pin<ast::TpClass> cls) {
+	void add_this_param(ast::Function& fn, pin<ast::Class> cls) {
 		auto this_param = make<ast::Var>();
 		fn.names.push_back(this_param);
 		this_param->name = "this";
@@ -113,7 +114,7 @@ struct Parser {
 		this_init->cls = cls;
 		this_param->initializer = this_init;
 	}
-	pin<ast::Method> make_method(const ast::LongName& name, pin<ast::TpClass> cls, bool is_interface) {
+	pin<ast::Method> make_method(const ast::LongName& name, pin<ast::Class> cls, bool is_interface) {
 		auto method = make<ast::Method>();
 		method->name = name.name;
 		method->base_module = name.module;
@@ -135,11 +136,11 @@ struct Parser {
 		else
 			error("module ", id, " is not visible from module ", module->name);
 	}
-	pin<ast::TpClass> get_class_by_name(char* message) {
+	pin<ast::Class> get_class_by_name(char* message) {
 		auto [c_name, m] = expect_long_name(message, nullptr);
 		if (!m) {
 			if (auto it = module->aliases.find(c_name); it != module->aliases.end()) {
-				if (auto as_cls = dom::strict_cast<ast::TpClass>(it->second))
+				if (auto as_cls = dom::strict_cast<ast::Class>(it->second))
 					return as_cls;
 			}
 			m = module;
@@ -207,11 +208,28 @@ struct Parser {
 			bool is_interface = match("interface");
 			if (is_interface || match("class")) {
 				auto cls = get_class_by_name("class or interface");
+				current_class = cls;
+				bool is_first_time_seen = cls->line == 0;
 				cls->line = line;
 				cls->pos = pos;
 				// TODO match attributes if existed
 				cls->is_interface = is_interface;
 				cls->is_test = is_test;
+				if (match("(")) {
+					if (!is_first_time_seen)
+						error("Reopened class must reuse existing type parameters");
+					do {
+						auto param = make<ast::ClassParam>();
+						param->name = expect_id("type parameter name");
+						if (match(">"))
+							param->is_out = false;
+						else if (match("<"))
+							param->is_in = false;
+						param->base = get_class_by_name("base class for type parameter");
+						cls->params.push_back(param);
+					} while (match(","));
+					expect(")");
+				}
 				expect("{");
 				while (!match("}")) {
 					if (match("+")) {
@@ -242,6 +260,7 @@ struct Parser {
 						}
 					}
 				}
+				current_class = nullptr;
 			} else if (match("fn")) {
 				auto fn = make<ast::Function>();
 				fn->name = expect_id("function name");
@@ -282,9 +301,18 @@ struct Parser {
 			body.push_back(parse_statement());
 		} while (match(";"));
 	}
-	pin<ast::Get> mk_get(char* kind) {
-		auto get = make<ast::Get>();
+	pin<ast::Action> mk_get(char* kind) {
 		auto n = expect_long_name(kind, nullptr);
+		if (!n.module && current_class) {
+			for (auto& p : current_class->params) {
+				if (n.name == p->name) {
+					auto inst = make<ast::MkInstance>();
+					inst->cls = p;
+					return inst;
+				}
+			}
+		}
+		auto get = make<ast::Get>();
 		get->var_name = n.name;
 		get->var_module = n.module;
 		return get;
