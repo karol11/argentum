@@ -135,6 +135,9 @@ struct TpOptional : Type {
 };
 struct AbstractClass : Node {
 	virtual string get_name();
+	virtual pin<Class> get_implementation() {
+		error("internal error class member is neither method nor field");
+	}
 	DECLARE_DOM_CLASS(AbstractClass);
 };
 struct ClassParam: AbstractClass {
@@ -144,6 +147,9 @@ struct ClassParam: AbstractClass {
 	string name;
 	weak<AbstractClass> base;
 	string get_name() override;
+	pin<Class> get_implementation() override {
+		return base->get_implementation();
+	}
 	DECLARE_DOM_CLASS(ClassParam);
 };
 struct Field : Node {
@@ -177,10 +183,13 @@ struct Class : AbstractClass {
 			else if (auto as_method = dom::strict_cast<ast::Method>(m))
 				on_method(as_method);
 			else
-				node.error("internal error class member is neither method nor field");
+				
 			return true;
 		}
 		return false;
+	}
+	pin<Class> get_implementation() override {
+		return this;
 	}
 	DECLARE_DOM_CLASS(Class);
 };
@@ -188,6 +197,9 @@ struct Class : AbstractClass {
 struct ClassInstance : AbstractClass {
 	vector<weak<AbstractClass>> params;  // parameterized class + parameters
 	string get_name() override;
+	pin<Class> get_implementation() override {
+		return params[0]->get_implementation();
+	}		
 	DECLARE_DOM_CLASS(ClassInstance);
 };
 

@@ -31,16 +31,6 @@ struct NameResolver : ast::ActionScanner {
 		: dom(dom)
 		, ast(ast) {}
 
-	pin<ast::Class> get_implementation(pin<ast::AbstractClass> cls) {
-		if (auto as_param = dom::strict_cast<ast::ClassParam>(cls))
-			get_implementation(as_param->base);
-		if (auto as_inst = dom::strict_cast<ast::ClassInstance>(cls))
-			get_implementation(as_inst->params[0]);
-		if (auto as_cls = dom::strict_cast<ast::Class>(cls))
-			as_cls;
-		cls->error("internal, name is neither class, instance or param");
-	}
-
 	void order_class(pin<ast::Class> c) {
 		if (ordered_classes.count(c))
 			return;
@@ -51,7 +41,7 @@ struct NameResolver : ast::ActionScanner {
 		active_base_list.insert(c);
 		unordered_set<weak<ast::AbstractClass>> indirect_bases_to_add;
 		for (auto& abstract_base : c->overloads) {
-			auto base = get_implementation(abstract_base.first);
+			auto base = abstract_base.first->get_implementation();
 			if (base->is_interface) {
 			} else if (c->base_class) {
 				c->error("there might be only one base class in ", c->get_name());
@@ -99,9 +89,9 @@ struct NameResolver : ast::ActionScanner {
 			// Conflict can be overridden by new method of this class.
 			if (!c->is_interface) {
 				if (c->base_class)
-					c->interface_vmts = get_implementation(c->base_class)->interface_vmts;
+					c->interface_vmts = c->base_class->get_implementation()->interface_vmts;
 				for (auto& abstract_overload : c->overloads) {
-					auto overload = get_implementation(abstract_overload.first);
+					auto overload = abstract_overload.first->get_implementation();
 					if (!overload->is_interface)
 						continue;
 					auto& vmt = c->interface_vmts[overload];
@@ -162,7 +152,7 @@ struct NameResolver : ast::ActionScanner {
 				c->this_names[{m->name, nullptr}] = m;
 			}
 			if (c->base_class) {
-				for (auto& n : get_implementation(c->base_class)->this_names) {
+				for (auto& n : c->base_class->get_implementation()->this_names) {
 					if (c->this_names.count(n.first) == 0)
 						c->this_names.insert(n);
 				}
