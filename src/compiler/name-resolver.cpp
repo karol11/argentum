@@ -327,6 +327,21 @@ struct NameResolver : ast::ActionScanner {
 			node.error("Constant is not assignable");
 	}
 
+	void on_call(ast::Call& node) override {
+		ast::ActionScanner::on_call(node);
+		if (auto callee_as_mk_inst = dom::strict_cast<ast::MkInstance>(node.callee)) {
+			vector<weak<ast::AbstractClass>> params{ callee_as_mk_inst };
+			for (auto& p : node.params) {
+				if (auto p_as_inst = dom::strict_cast<ast::MkInstance>(p))
+					params.push_back(p_as_inst->cls);
+				else
+					p->error("Class param should be a class");
+			}
+			callee_as_mk_inst->cls = ast->get_class_instance(move(params));
+			*fix_result = move(callee_as_mk_inst);
+		}
+	}
+
 	void on_block(ast::Block& node) override {
 		fix_with_params(node.names, node.body);
 		if (node.body.size() == 1) {
