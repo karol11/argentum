@@ -142,7 +142,7 @@ struct ClassParam: AbstractClass {
 	bool is_out = true;
 	int index = 0; // in TpClass::params
 	string name;
-	own<Class> base;
+	weak<AbstractClass> base;
 	string get_name() override;
 	DECLARE_DOM_CLASS(ClassParam);
 };
@@ -156,18 +156,19 @@ struct Class : AbstractClass {
 	string name;
 	bool is_interface = true;
 	bool is_test = true;
-	own<Class> base_class;
+	weak<AbstractClass> base_class; // Class or ClassInstance
 	vector<own<ClassParam>> params;
 	vector<own<Field>> fields;
+	unordered_map<LongName, weak<Node>> this_names;  // memoized this names - defined and inhrited. ambiguous and absent - stored as null node.
 	vector<own<struct Method>> new_methods;  // new methods ordered by source order
 	unordered_map<weak<AbstractClass>, vector<own<struct Method>>> overloads;  // overloads for interfaces and the base class, ordered by source order
-	unordered_map<LongName, weak<Node>> this_names;  // this names - defined and inhrited. ambiguous excluded.
 	unordered_map<           
 		weak<Class>,                                   // base interface
 		vector<weak<struct Method>>> interface_vmts;   // inherited and overloaded methods in the order of new_methods in that interface
+	string get_name() override;
 
 	template<typename F, typename M, typename A>
-	bool handle_member(ast::Node& node, const LongName& name, F on_field, M on_method, A on_anbiguous) {
+	bool handle_member(Node& node, const LongName& name, F on_field, M on_method, A on_anbiguous) {
 		if (auto m = dom::peek(this_names, name)) {
 			if (!m)
 				on_anbiguous();
@@ -181,24 +182,21 @@ struct Class : AbstractClass {
 		}
 		return false;
 	}
-	string get_name() override;
 	DECLARE_DOM_CLASS(Class);
 };
 
 struct ClassInstance : AbstractClass {
-	own<Class> cls;
-	vector<own<Class>> params;
+	vector<weak<AbstractClass>> params;  // parameterized class + parameters
 	string get_name() override;
 	DECLARE_DOM_CLASS(ClassInstance);
 };
 
 struct TpOwn : Type {
-	own<AbstractClass> target;
+	weak<AbstractClass> target;
 	void match(TypeMatcher& matcher) override;
 	DECLARE_DOM_CLASS(TpOwn);
 };
 struct TpRef : TpOwn {
-	own<AbstractClass> target;
 	void match(TypeMatcher& matcher) override;
 	DECLARE_DOM_CLASS(TpRef);
 };
@@ -263,27 +261,54 @@ struct Var : Node {
 
 extern own<dom::Dom> cpp_dom;
 
-struct typelist_hasher {
-	size_t operator() (const vector<own<Type>>*) const;
+template<typename T>
+struct ptr_vec_hasher {
+	size_t operator() (const vector<T>*) const {
+		size_t r = 0;
+		for (const auto& p : *v)
+			r += std::hash<void*>()(p);
+		return r;
+	}
 };
-struct typelist_comparer {
-	bool operator() (const vector<own<Type>>*, const vector<own<Type>>*) const;
+
+template<typename T>
+struct ptr_vec_comparer {
+	bool operator() (const vector<T>*, const vector<T>*) const {
+		return *a == *b;
+	}
 };
 
 struct Ast: dom::DomItem {
 	string absolute_path;
 	own<dom::Dom> dom;
-	unordered_map<const vector<own<Type>>*, own<TpLambda>, typelist_hasher, typelist_comparer> lambda_types_;
-	unordered_map<const vector<own<Type>>*, own<TpFunction>, typelist_hasher, typelist_comparer> function_types_;
-	unordered_map<const vector<own<Type>>*, own<TpDelegate>, typelist_hasher, typelist_comparer> delegate_types_;
+	unordered_map<
+		const vector<weak<AbstractClass>>*,
+		own<ClassInstance>,
+		ptr_vec_hasher<weak<AbstractClass>>,
+		ptr_vec_comparer<weak<AbstractClass>>> class_instances_;
+	unordered_map<
+		const vector<own<Type>>*,
+		own<TpLambda>,
+		ptr_vec_hasher<own<Type>>,
+		ptr_vec_comparer<own<Type>>> lambda_types_;
+	unordered_map<
+		const vector<own<Type>>*,
+		own<TpFunction>,
+		ptr_vec_hasher<own<Type>>,
+		ptr_vec_comparer<own<Type>>> function_types_;
+	unordered_map<
+		const vector<own<Type>>*,
+		own<TpDelegate>,
+		ptr_vec_hasher<own<Type>>,
+		ptr_vec_comparer<own<Type>>> delegate_types_;
 	unordered_map<own<Type>, vector<own<TpOptional>>> optional_types_;  // maps base types to all levels of their optionals
-	unordered_map<own<AbstractClass>, own<TpOwn>> owns;
-	unordered_map<own<AbstractClass>, own<TpRef>> refs;
-	unordered_map<own<AbstractClass>, own<TpShared>> shareds;
-	unordered_map<own<AbstractClass>, own<TpWeak>> weaks;
-	unordered_map<own<AbstractClass>, own<TpFrozenWeak>> frozen_weaks;
-	unordered_map<own<AbstractClass>, own<TpConformRef>> conform_refs;
-	unordered_map<own<AbstractClass>, own<TpConformWeak>> conform_weaks;
+	unordered_map<weak<AbstractClass>, own<TpOwn>> owns;
+	unordered_map<weak<AbstractClass>, own<TpRef>> refs;
+	unordered_map<weak<AbstractClass>, own<TpShared>> shareds;
+	unordered_map<weak<AbstractClass>, own<TpWeak>> weaks;
+	unordered_map<weak<AbstractClass>, own<TpFrozenWeak>> frozen_weaks;
+	unordered_map<weak<AbstractClass>, own<TpConformRef>> conform_refs;
+	unordered_map<weak<AbstractClass>, own<TpConformWeak>> conform_weaks;
 	unordered_map<string, void(*)()> platform_exports;  // used only in JIT
 	weak<Class> object;
 	weak<Class> blob;
@@ -320,6 +345,7 @@ struct Ast: dom::DomItem {
 	pin<TpConformRef> get_conform_ref(pin<AbstractClass> target);
 	pin<TpConformWeak> get_conform_weak(pin<AbstractClass> target);
 	pin<AbstractClass> extract_class(pin<Type> pointer); // extracts class from pointer types
+	pin<ClassInstance> get_class_instance(vector<weak<AbstractClass>>&& params);
 	DECLARE_DOM_CLASS(Ast);
 };
 
@@ -467,7 +493,7 @@ struct SpliceField : SetField {
 };
 
 struct MkInstance : Action {
-	own<AbstractClass> cls;
+	weak<AbstractClass> cls; // Class stored in Module::classes, ClassParam soread in Class::params, ClassInstance in Ast::class_insts
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(MkInstance);
 };

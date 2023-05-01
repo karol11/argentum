@@ -107,6 +107,7 @@ void initialize() {
 	auto own_type = cpp_dom->mk_type(Kind::OWN);
 	auto size_t_type = cpp_dom->mk_type(Kind::UINT, sizeof(size_t));
 	pin<dom::TypeInfo> own_vector_type = new dom::VectorType<own<dom::DomItem>>(own_type);
+	pin<dom::TypeInfo> weak_vector_type = new dom::VectorType<weak<dom::DomItem>>(weak_type);
 	pin<dom::TypeInfo> string_type = cpp_dom->mk_type(Kind::STRING);
 	pin<dom::TypeInfo> str_own_map_type = new dom::UnorderedMapType<string, own<dom::DomItem>>(string_type, own_type);
 	pin<dom::TypeInfo> str_weak_map_type = new dom::UnorderedMapType<string, weak<dom::DomItem>>(string_type, weak_type);
@@ -265,24 +266,23 @@ void initialize() {
 		->field("is_out", pin<CField<&ClassParam::is_out>>::make(bool_type))
 		->field("index", pin<CField<&ClassParam::index>>::make(cpp_dom->mk_type(Kind::INT)))
 		->field("name", pin<CField<&ClassParam::name>>::make(string_type))
-		->field("base", pin<CField<&ClassParam::base>>::make(own_type));
+		->field("base", pin<CField<&ClassParam::base>>::make(weak_type));
 	ClassInstance::dom_type_ = (new CppClassType<ClassInstance>(cpp_dom, { "m0", "ClassInstance" }))
-		->field("cls", pin<CField<&ClassInstance::cls>>::make(own_type))
-		->field("params", pin<CField<&ClassInstance::params>>::make(own_vector_type));
+		->field("params", pin<CField<&ClassInstance::params>>::make(weak_vector_type));
 	TpOwn::dom_type_ = (new CppClassType<TpOwn>(cpp_dom, { "m0", "Type", "Own" }))
-		->field("target", pin<CField<&TpOwn::target>>::make(own_type));
+		->field("target", pin<CField<&TpOwn::target>>::make(weak_type));
 	TpRef::dom_type_ = (new CppClassType<TpRef>(cpp_dom, { "m0", "Type", "Ref" }))
-		->field("target", pin<CField<&TpOwn::target>>::make(own_type));
+		->field("target", pin<CField<&TpOwn::target>>::make(weak_type));
 	TpShared::dom_type_ = (new CppClassType<TpShared>(cpp_dom, { "m0", "Type", "Shared" }))
-		->field("target", pin<CField<&TpOwn::target>>::make(own_type));
+		->field("target", pin<CField<&TpOwn::target>>::make(weak_type));
 	TpWeak::dom_type_ = (new CppClassType<TpWeak>(cpp_dom, { "m0", "Type", "Weak" }))
-		->field("target", pin<CField<&TpOwn::target>>::make(own_type));
+		->field("target", pin<CField<&TpOwn::target>>::make(weak_type));
 	TpFrozenWeak::dom_type_ = (new CppClassType<TpFrozenWeak>(cpp_dom, { "m0", "Type", "FrozenWeak" }))
-		->field("target", pin<CField<&TpOwn::target>>::make(own_type));
+		->field("target", pin<CField<&TpOwn::target>>::make(weak_type));
 	TpConformRef::dom_type_ = (new CppClassType<TpConformRef>(cpp_dom, { "m0", "Type", "ConformRef" }))
-		->field("target", pin<CField<&TpOwn::target>>::make(own_type));
+		->field("target", pin<CField<&TpOwn::target>>::make(weak_type));
 	TpConformWeak::dom_type_ = (new CppClassType<TpConformWeak>(cpp_dom, { "m0", "Type", "ConformWeak" }))
-		->field("target", pin<CField<&TpOwn::target>>::make(own_type));
+		->field("target", pin<CField<&TpOwn::target>>::make(weak_type));
 }
 
 own<Type>& Type::promote(own<Type>& to_patch) {
@@ -462,17 +462,6 @@ void TpFrozenWeak::match(TypeMatcher& matcher) { matcher.on_frozen_weak(*this); 
 void TpConformRef::match(TypeMatcher& matcher) { matcher.on_conform_ref(*this); }
 void TpConformWeak::match(TypeMatcher& matcher) { matcher.on_conform_weak(*this); }
 
-size_t typelist_hasher::operator() (const vector<own<Type>>* v) const {
-	size_t r = 0;
-	for (const auto& p : *v)
-		r += std::hash<void*>()(p);
-	return r;
-}
-
-bool typelist_comparer::operator() (const vector<own<Type>>* a, const vector<own<Type>>* b) const {
-	return *a == *b;
-}
-
 pin<Field> Ast::mk_field (string name, pin<Action> initializer) {
 	auto f = pin<Field>::make();
 	f->name = move(name);
@@ -531,9 +520,16 @@ pin<TpVoid> Ast::tp_void() {
 	static auto r = own<TpVoid>::make();
 	return r;
 }
+pin<ClassInstance> Ast::get_class_instance(vector<weak<AbstractClass>>&& params) {
+	if (auto at = class_instances_.find(&params); at != class_instances_.end())
+		return at->second;
+	auto r = pin<ClassInstance>::make();
+	r->params = move(params);
+	class_instances_.insert({ &r->params, r });
+	return r;
+}
 pin<TpFunction> Ast::tp_function(vector<own<Type>>&& params) {
-	auto at = function_types_.find(&params);
-	if (at != function_types_.end())
+	if (auto at = function_types_.find(&params); at != function_types_.end())
 		return at->second;
 	auto r = pin<TpFunction>::make();
 	r->params = move(params);
@@ -727,14 +723,11 @@ string ClassParam::get_name() {
 }
 string ClassInstance::get_name() {
 	std::stringstream dst;
-	dst << cls->get_name() << "(";
 	bool is_first = true;
 	for (auto& p : params) {
-		if (is_first)
-			is_first = false;
-		else
-			dst << ", ";
 		dst << p->get_name();
+		dst << is_first ? ", " : "(";
+		is_first = false;
 	}
 	dst << ")";
 	return dst.str();
