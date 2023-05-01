@@ -7,7 +7,7 @@
 
 namespace {
 
-	using std::vector;
+using std::vector;
 using ltm::own;
 using ltm::pin;
 using ltm::weak;
@@ -94,7 +94,7 @@ struct Typer : ast::ActionMatcher {
 				if (fn->names.size() != actual_params.size())
 					node.error("Mismatched params count: expected ", fn->names.size(), " provided ", actual_params.size(), " see function definition:", *fn);
 				if (!lambda_type) {
-					vector<own<ast::Type>> param_types;
+					vector<own<Type>> param_types;
 					auto fn_param = fn->names.begin();
 					for (auto& p : actual_params) {
 						param_types.push_back(p->type());
@@ -171,7 +171,7 @@ struct Typer : ast::ActionMatcher {
 	pin<ast::Function> type_fn(pin<ast::Function> fn) {
 		if (!fn->type_ || fn->type_ == type_in_progress) {
 			bool is_method = dom::isa<ast::Method>(*fn) || dom::isa<ast::ImmediateDelegate>(*fn);
-			vector<own<ast::Type>> params;
+			vector<own<Type>> params;
 			for (size_t i = 0; i < fn->names.size(); i++) {
 				auto& p = fn->names[i];
 				if (!p->type)
@@ -388,7 +388,7 @@ struct Typer : ast::ActionMatcher {
 		auto src_cls = class_from_action(node.p[0]);
 		auto dst_cls = class_from_action(node.p[1]);
 		node.type_ = dom::strict_cast<ast::TpClass>(node.p[0]->type())
-			? (pin<ast::Type>) dst_cls
+			? (pin<Type>) dst_cls
 			: ast->get_ref(dst_cls);
 		if (src_cls->overloads.count(dst_cls))  // no-op conversion
 			node.p[1] = nullptr;
@@ -521,10 +521,10 @@ struct Typer : ast::ActionMatcher {
 			}
 		}
 	}
-	void expect_type(own<ast::Action>& node, pin<ast::Type> expected_type, const function<string()>& context) {
+	void expect_type(own<ast::Action>& node, pin<Type> expected_type, const function<string()>& context) {
 		expect_type(node, node->type(), expected_type, context);
 	}
-	void expect_type(own<ast::Action>& node, pin<ast::Type> actual_type, pin<ast::Type> expected_type, const function<string()>& context) {
+	void expect_type(own<ast::Action>& node, pin<Type> actual_type, pin<Type> expected_type, const function<string()>& context) {
 		if (expected_type == ast->tp_void())
 			return;
 		if (actual_type == expected_type)
