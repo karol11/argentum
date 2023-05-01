@@ -20,18 +20,28 @@ namespace {
 
 struct NameResolver : ast::ActionScanner {
 	pin<ast::Var> this_var;
-	pin<ast::TpClass> this_class;
+	pin<ast::Class> this_class;
 	unordered_map<string, pin<ast::Var>> locals;
 	pin<dom::Dom> dom;
 	pin<ast::Ast> ast;
-	unordered_set<pin<ast::TpClass>> ordered_classes;
-	unordered_set<pin<ast::TpClass>> active_base_list;
+	unordered_set<pin<ast::Class>> ordered_classes;
+	unordered_set<pin<ast::Class>> active_base_list;
 
 	NameResolver(pin<ast::Ast> ast, pin<dom::Dom> dom)
 		: dom(dom)
 		, ast(ast) {}
 
-	void order_class(pin<ast::TpClass> c) {
+	pin<ast::Class> get_implementation(pin<ast::AbstractClass> cls) {
+		if (auto as_param = dom::strict_cast<ast::ClassParam>(cls))
+			get_implementation(as_param->base);
+		if (auto as_inst = dom::strict_cast<ast::ClassInstance>(cls))
+			get_implementation(as_inst->params[0]);
+		if (auto as_cls = dom::strict_cast<ast::Class>(cls))
+			as_cls;
+		cls->error("internal, name is neither class, instance or param");
+	}
+
+	void order_class(pin<ast::Class> c) {
 		if (ordered_classes.count(c))
 			return;
 		if (active_base_list.count(c))
@@ -39,17 +49,18 @@ struct NameResolver : ast::ActionScanner {
 		if (!c->line)
 			c->error("class hasn't been defined ", c->get_name());
 		active_base_list.insert(c);
-		unordered_set<weak<ast::TpClass>> indirect_bases_to_add;
-		for (auto& base : c->overloads) {
-			if (base.first->is_interface) {
+		unordered_set<weak<ast::AbstractClass>> indirect_bases_to_add;
+		for (auto& abstract_base : c->overloads) {
+			auto base = get_implementation(abstract_base.first);
+			if (base->is_interface) {
 			} else if (c->base_class) {
 				c->error("there might be only one base class in ", c->get_name());
 			} else if (c->is_interface) {
-				c->error("interface ", c->get_name(), " cannot extend class ", base.first->get_name());
+				c->error("interface ", c->get_name(), " cannot extend class ", abstract_base.first->get_name());
 			} else
-				c->base_class = base.first;
-			order_class(base.first);
-			for (auto& i : base.first->overloads)
+				c->base_class = abstract_base.first;
+			order_class(base);
+			for (auto& i : base->overloads)
 				indirect_bases_to_add.insert(i.first);
 		}
 		if (!c->base_class && c != ast->object) {
@@ -88,24 +99,25 @@ struct NameResolver : ast::ActionScanner {
 			// Conflict can be overridden by new method of this class.
 			if (!c->is_interface) {
 				if (c->base_class)
-					c->interface_vmts = c->base_class->interface_vmts;
-				for (auto& overload : c->overloads) {
-					if (!overload.first->is_interface)
+					c->interface_vmts = get_implementation(c->base_class)->interface_vmts;
+				for (auto& abstract_overload : c->overloads) {
+					auto overload = get_implementation(abstract_overload.first);
+					if (!overload->is_interface)
 						continue;
-					auto& vmt = c->interface_vmts[overload.first];
+					auto& vmt = c->interface_vmts[overload];
 					if (vmt.empty()) {
-						for (auto& m : overload.first->new_methods)
+						for (auto& m : overload->new_methods)
 							vmt.push_back(m);
 					}
-					for (auto& base_name : overload.first->this_names) {
+					for (auto& base_name : overload->this_names) {
 						if (c->this_names.count(base_name.first) != 0)
 							c->this_names[base_name.first] = nullptr;  // mark ambiguous
 						else
 							c->this_names[base_name.first] = base_name.second;
 					}
-					for (auto& ovr_method : overload.second) {
+					for (auto& ovr_method : abstract_overload.second) {
 						ovr_method->cls = c;
-						if (!overload.first->handle_member(*ovr_method, { ovr_method->name, ovr_method->base_module },
+						if (!overload->handle_member(*ovr_method, { ovr_method->name, ovr_method->base_module },
 							[&](auto& field) { ovr_method->error("method overriding field:", field); },
 							[&](auto& base_method) {
 								if (ovr_method == base_method) // each class member regustered in this_names twice with short and long name.
@@ -150,7 +162,7 @@ struct NameResolver : ast::ActionScanner {
 				c->this_names[{m->name, nullptr}] = m;
 			}
 			if (c->base_class) {
-				for (auto& n : c->base_class->this_names) {
+				for (auto& n : get_implementation(c->base_class)->this_names) {
 					if (c->this_names.count(n.first) == 0)
 						c->this_names.insert(n);
 				}
@@ -276,7 +288,7 @@ struct NameResolver : ast::ActionScanner {
 				mk_delegate->base= this_ref;
 				*fix_result = mk_delegate;
 			},
-			[&](pin<ast::TpClass> cls) {
+			[&](pin<ast::Class> cls) {
 				auto mk_instance = ast::make_at_location<ast::MkInstance>(node);
 				mk_instance->cls = cls;
 				*fix_result = mk_instance;
@@ -305,7 +317,7 @@ struct NameResolver : ast::ActionScanner {
 			[&](pin<ast::Method> method) {
 				node.error("Method is not assignable");
 			},
-			[&](pin<ast::TpClass> cls) {
+			[&](pin<ast::Class> cls) {
 				node.error("Class is not assignable");
 			},
 			[&](pin<ast::Function> fn) {
@@ -337,7 +349,7 @@ struct NameResolver : ast::ActionScanner {
 			fix(node.base);
 	}
 
-	void fix_immediate_delegate(ast::ImmediateDelegate& node, pin<ast::TpClass> cls) {
+	void fix_immediate_delegate(ast::ImmediateDelegate& node, pin<ast::Class> cls) {
 		unordered_map<string, pin<ast::Var>> prev_locals;
 		swap(prev_locals, locals);
 		this_var = node.names.front();
@@ -353,7 +365,7 @@ void resolve_names(pin<ast::Ast> ast) {
 	NameResolver(ast, ast->dom).fix_globals();
 }
 
-void resolve_immediate_delegate(pin<ast::Ast> ast, ast::ImmediateDelegate& node, pin<ast::TpClass> cls)
+void resolve_immediate_delegate(pin<ast::Ast> ast, ast::ImmediateDelegate& node, pin<ast::Class> cls)
 {
 	NameResolver(ast, ast->dom).fix_immediate_delegate(node, cls);
 }
