@@ -19,6 +19,10 @@ using std::string;
 auto type_in_progress = own<ast::TpInt64>::make();
 
 struct Typer : ast::ActionMatcher {
+	pin<ast::Ast> ast;
+	pin<Type> tp_bool;
+	pin<ast::Class> this_class;
+
 	Typer(ltm::pin<ast::Ast> ast)
 		: ast(ast)
 	{
@@ -49,7 +53,7 @@ struct Typer : ast::ActionMatcher {
 		node.type_ = r;
 	}
 	void on_const_string(ast::ConstString& node) override {
-		node.type_ = ast->string_cls.pinned();
+		node.type_ = ast->get_own(ast->string_cls.pinned());
 	}
 	void on_block(ast::Block& node) override {
 		if (node.body.empty()) {
@@ -135,7 +139,8 @@ struct Typer : ast::ActionMatcher {
 		auto indexed = ast->extract_class(find_type(node.indexed)->type());
 		if (!indexed)
 			node.error("Only objects can be indexed, not ", node.indexed->type());
-		if (auto m = dom::peek(indexed->this_names, ast::LongName{ name, nullptr })) {
+		auto indexed_cls = indexed->get_implementation();
+		if (auto m = dom::peek(indexed_cls->this_names, ast::LongName { name, nullptr })) {
 			if (auto method = dom::strict_cast<ast::Method>(m)) {
 				auto r = ast::make_at_location<ast::Call>(node).owned();
 				auto callee = ast::make_at_location<ast::MakeDelegate>(node);
@@ -151,7 +156,7 @@ struct Typer : ast::ActionMatcher {
 			}
 			node.error(name, " is not a method in ", node.indexed);
 		}
-		if (auto fn = indexed->module->functions[name + indexed->name].pinned()) {
+		if (auto fn = indexed_cls->module->functions[name + indexed_cls->name].pinned()) {
 			auto fnref = ast::make_at_location<ast::MakeFnPtr>(node);
 			fnref->fn = fn;
 			auto r = ast::make_at_location<ast::Call>(node).owned();
@@ -164,7 +169,7 @@ struct Typer : ast::ActionMatcher {
 			*fix_result = move(r);
 			return;
 		}
-		node.error("function ", indexed->module->name, "_", name, indexed->name, " or method ", node.indexed->type().pinned(), ".", name, " not found");
+		node.error("function ", indexed_cls->module->name, "_", name, indexed_cls->name, " or method ", node.indexed->type().pinned(), ".", name, " not found");
 	}
 	void on_get_at_index(ast::GetAtIndex& node) override { handle_index_op(node, nullptr, "getAt"); }
 	void on_set_at_index(ast::SetAtIndex& node) override { handle_index_op(node, move(node.value), "setAt"); }
@@ -206,12 +211,8 @@ struct Typer : ast::ActionMatcher {
 	}
 	void on_copy(ast::CopyOp& node) override {
 		auto param_type = find_type(node.p)->type();
-		if (auto param_as_ref = dom::strict_cast<ast::TpRef>(param_type))
-			node.type_ = param_as_ref->target;
-		else if (auto param_as_shared = dom::strict_cast<ast::TpShared>(param_type))
-			node.type_ = param_as_shared->target;
-		else if (auto param_as_conform_ref = dom::strict_cast<ast::TpConformRef>(param_type))
-			node.type_ = param_as_conform_ref->target;
+		if (auto src_cls = ast->extract_class(param_type))
+			node.type_ = ast->get_own(src_cls);
 		else
 			node.error("copy operand should be a reference, not ", param_type.pinned());
 	}
@@ -230,16 +231,16 @@ struct Typer : ast::ActionMatcher {
 		node.type_ = t;
 	}
 	void on_ref(ast::RefOp& node) override {
-		auto as_class = dom::strict_cast<ast::TpClass>(find_type(node.p)->type());
-		if (!as_class)
+		auto as_own = dom::strict_cast<ast::TpOwn>(find_type(node.p)->type());
+		if (!as_own)
 			node.p->error("expected class or interface, not ", node.p->type());
-		node.type_ = ast->get_ref(as_class);
+		node.type_ = ast->get_ref(as_own->target);
 	}
 	void on_conform(ast::ConformOp& node) override {
-		auto as_class = dom::strict_cast<ast::TpClass>(find_type(node.p)->type());
-		if (!as_class)
+		auto as_own = dom::strict_cast<ast::TpOwn>(find_type(node.p)->type());
+		if (!as_own)
 			node.p->error("expected class or interface, not ", node.p->type());
-		node.type_ = ast->get_conform_ref(as_class);
+		node.type_ = ast->get_conform_ref(as_own->target);
 	}
 	void on_freeze(ast::FreezeOp& node) override {
 		auto cls = class_from_action(node.p);
@@ -255,8 +256,8 @@ struct Typer : ast::ActionMatcher {
 	}
 	void on_get(ast::Get& node) override {
 		if (!node.var->is_const) {
-			if (auto as_class = dom::strict_cast<ast::TpClass>(node.var->type)) {
-				node.type_ = ast->get_ref(as_class);
+			if (auto as_own = dom::strict_cast<ast::TpOwn>(node.var->type)) {
+				node.type_ = ast->get_ref(as_own->target);
 				return;
 			}
 		}
@@ -265,16 +266,16 @@ struct Typer : ast::ActionMatcher {
 	void on_set(ast::Set& node) override {
 		auto value_type = find_type(node.val)->type();
 		auto& variable_type = node.var->type;
-		if (auto value_as_class = dom::strict_cast<ast::TpClass>(value_type)) {
-			node.type_ = ast->get_ref(value_as_class);
-			auto variable_as_class = dom::strict_cast<ast::TpClass>(variable_type);
-			if (!variable_as_class)
-				value_type = ast->get_ref(value_as_class);
+		if (auto value_as_own = dom::strict_cast<ast::TpOwn>(value_type)) {
+			node.type_ = ast->get_ref(value_as_own->target);
+			auto variable_as_own = dom::strict_cast<ast::TpOwn>(variable_type);
+			if (!variable_as_own)
+				value_type = ast->get_ref(value_as_own->target);
 		} else {
 			node.type_ = value_type;
 			if (dom::strict_cast<ast::TpRef>(value_type)) {
-				if (auto variable_as_class = dom::strict_cast<ast::TpClass>(variable_type))
-					variable_type = ast->get_ref(variable_as_class);
+				if (auto variable_as_own = dom::strict_cast<ast::TpOwn>(variable_type))
+					variable_type = ast->get_ref(variable_as_own->target);
 			}
 		}
 		expect_type(
@@ -284,7 +285,7 @@ struct Typer : ast::ActionMatcher {
 			[&] { return ast::format_str("assign to vaiable", node.var_name, node.var.pinned()); });
 	}
 	void on_mk_instance(ast::MkInstance& node) override {
-		node.type_ = node.cls;
+		node.type_ = ast->get_own(node.cls);
 	}
 	void on_make_fn_ptr(ast::MakeFnPtr& node) override {
 		node.type_ = node.fn->type();
@@ -308,7 +309,7 @@ struct Typer : ast::ActionMatcher {
 		}
 		node.p->error("Expected &ClassName or expression returning reference, not expr of type ", node.p->type().pinned());
 	}
-	pin<ast::TpClass> class_from_action(own<ast::Action>& node) {
+	pin<ast::AbstractClass> class_from_action(own<ast::Action>& node) {
 		if (auto cls = ast->extract_class(find_type(node)->type()))
 			return cls;
 		node->error("Expected pointer to class, not ", node->type().pinned());
@@ -316,7 +317,7 @@ struct Typer : ast::ActionMatcher {
 	void on_get_field(ast::GetField& node) override {
 		if (!node.field) {
 			auto cls = class_from_action(node.base);
-			if (!cls->handle_member(node, ast::LongName{ node.field_name, node.field_module },
+			if (!cls->get_implementation()->handle_member(node, ast::LongName{ node.field_name, node.field_module },
 				[&](auto field) { node.field = field; },
 				[&](auto method) {
 					auto r = ast::make_at_location<ast::MakeDelegate>(node).owned();
@@ -332,20 +333,20 @@ struct Typer : ast::ActionMatcher {
 			find_type(node.base);
 			node.type_ = find_type(node.field->initializer)->type();
 			if (dom::isa<ast::TpConformRef>(*node.base->type())) {
-				if (auto as_class = dom::strict_cast<ast::TpClass>(node.type())) {
-					node.type_ = ast->get_conform_ref(as_class);
+				if (auto as_own = dom::strict_cast<ast::TpOwn>(node.type())) {
+					node.type_ = ast->get_conform_ref(as_own->target);
 				} else if (auto as_weak = dom::strict_cast<ast::TpWeak>(node.type())) {
 					node.type_ = ast->get_conform_weak(as_weak->target);
 				}
 			} else if (dom::isa<ast::TpShared>(*node.base->type())) {
-				if (auto as_class = dom::strict_cast<ast::TpClass>(node.type())) {
-					node.type_ = ast->get_shared(as_class);
+				if (auto as_own = dom::strict_cast<ast::TpOwn>(node.type())) {
+					node.type_ = ast->get_shared(as_own->target);
 				} else if (auto as_weak = dom::strict_cast<ast::TpWeak>(node.type())) {
 					node.type_ = ast->get_frozen_weak(as_weak->target);
 				}
 			} else {
-				if (auto as_class = dom::strict_cast<ast::TpClass>(node.type())) {
-					node.type_ = ast->get_ref(as_class);
+				if (auto as_own = dom::strict_cast<ast::TpOwn>(node.type())) {
+					node.type_ = ast->get_ref(as_own->target);
 				}
 			}
 		}
@@ -353,17 +354,17 @@ struct Typer : ast::ActionMatcher {
 	void resolve_set_field(ast::SetField& node) {
 		auto cls = class_from_action(node.base);
 		if (!node.field) {
-			if (!cls->handle_member(node, ast::LongName{ node.field_name, node.field_module },
+			if (!cls->get_implementation()->handle_member(node, ast::LongName{node.field_name, node.field_module},
 				[&](auto field) { node.field = field; },
 				[&](auto method) { node.error("Cannot assign to method"); },
 				[&] { node.error("field name is ambiguous, use cast"); }))
-				node.error("class ", cls->name, " doesn't have field/method ", ast::LongName{ node.field_name, node.field_module });
+				node.error("class ", cls->get_name(), " doesn't have field/method ", ast::LongName{node.field_name, node.field_module});
 		}
 		if (dom::isa<ast::TpShared>(*node.base->type()))
 			node.error("Cannot assign to a shared object field ", ast::LongName{ node.field_name, node.field_module });
 		node.type_ = find_type(node.field->initializer)->type();
-		if (auto as_class = dom::strict_cast<ast::TpClass>(node.type())) {
-			node.type_ = ast->get_ref(as_class);
+		if (auto as_own = dom::strict_cast<ast::TpOwn>(node.type())) {
+			node.type_ = ast->get_ref(as_own->target);
 		}
 	}
 	void on_set_field(ast::SetField& node) override {
@@ -377,7 +378,7 @@ struct Typer : ast::ActionMatcher {
 		auto ft = node.field->initializer->type();
 		if (auto as_opt = dom::strict_cast<ast::TpOptional>(ft))
 			ft = as_opt->wrapped;
-		if (!dom::isa<ast::TpClass>(*ft))
+		if (!dom::isa<ast::TpOwn>(*ft))
 			node.error("Field must be @-pointer, not ", node.field->initializer->type().pinned());
 		expect_type(find_type(node.val), node.type_, [&] {
 			return ast::format_str("splice field ", ast::LongName{ node.field_name, node.field_module }, *node.field.pinned());
@@ -387,10 +388,10 @@ struct Typer : ast::ActionMatcher {
 	void on_cast(ast::CastOp& node) override {
 		auto src_cls = class_from_action(node.p[0]);
 		auto dst_cls = class_from_action(node.p[1]);
-		node.type_ = dom::strict_cast<ast::TpClass>(node.p[0]->type())
-			? (pin<Type>) dst_cls
-			: ast->get_ref(dst_cls);
-		if (src_cls->overloads.count(dst_cls))  // no-op conversion
+		node.type_ = dom::isa<ast::TpOwn>(*node.p[0]->type())
+			? (pin<Type>) ast->get_own(dst_cls)
+			: (pin<Type>) ast->get_ref(dst_cls);
+		if (src_cls->get_implementation()->overloads.count(dst_cls))  // no-op conversion
 			node.p[1] = nullptr;
 		else
 			node.type_ = ast->tp_optional(node.type_);
@@ -482,7 +483,7 @@ struct Typer : ast::ActionMatcher {
 		auto cls = ast->extract_class(find_type(node.base)->type());
 		if (!cls)
 			node.error("delegate should be connected to class pointer, not to ", node.base->type());
-		resolve_immediate_delegate(ast, node, cls);
+		resolve_immediate_delegate(ast, node, cls->get_implementation());
 		dom::strict_cast<ast::MkInstance>(node.names[0]->initializer)->cls = cls;
 		type_fn(&node);
 		for (auto& a : node.body)
@@ -524,6 +525,9 @@ struct Typer : ast::ActionMatcher {
 	void expect_type(own<ast::Action>& node, pin<Type> expected_type, const function<string()>& context) {
 		expect_type(node, node->type(), expected_type, context);
 	}
+	bool is_compatible(pin<ast::AbstractClass> actual, pin<ast::AbstractClass> expected) {
+		return actual == expected || actual->get_implementation()->overloads.count(expected->get_implementation());
+	}
 	void expect_type(own<ast::Action>& node, pin<Type> actual_type, pin<Type> expected_type, const function<string()>& context) {
 		if (expected_type == ast->tp_void())
 			return;
@@ -533,57 +537,57 @@ struct Typer : ast::ActionMatcher {
 			if (dom::isa<ast::TpShared>(*actual_type) || dom::isa<ast::TpConformRef>(*actual_type))
 				node->context_error(context, "expected mutable type, not ", actual_type);
 			if (auto actual_class = ast->extract_class(actual_type)) {
-				if (actual_class == exp_as_ref->target || actual_class->overloads.count(exp_as_ref->target))
+				if (is_compatible(actual_class, exp_as_ref->target))
 					return;
 			}
-		} else if (auto exp_as_class = dom::strict_cast<ast::TpClass>(expected_type)) {
-			if (auto actual_class = dom::strict_cast<ast::TpClass>(actual_type)) {
-				if (actual_class->overloads.count(exp_as_class))
+		} else if (auto exp_as_own = dom::strict_cast<ast::TpOwn>(expected_type)) {
+			if (auto actual_as_own = dom::strict_cast<ast::TpOwn>(actual_type)) {
+				if (is_compatible(actual_as_own->target, exp_as_own->target))
 					return;
 			}
 		} else if (auto exp_as_shared = dom::strict_cast<ast::TpShared>(expected_type)) {
 			if (auto actual_as_shared = dom::strict_cast<ast::TpShared>(actual_type)) {
-				if (actual_as_shared->target->overloads.count(exp_as_shared->target))
+				if (is_compatible(actual_as_shared->target, exp_as_shared->target))
 					return;
 			}
 		} else if (auto exp_as_conform_ref = dom::strict_cast<ast::TpConformRef>(expected_type)) {
 			if (auto actual_as_conform_ref = dom::strict_cast<ast::TpConformRef>(actual_type)) {
-				if (actual_as_conform_ref->target->overloads.count(exp_as_conform_ref->target))
+				if (is_compatible(actual_as_conform_ref->target, exp_as_conform_ref->target))
 					return;
 			}
 			if (auto actual_as_ref = dom::strict_cast<ast::TpRef>(actual_type)) {
-				if (actual_as_ref->target == exp_as_conform_ref->target || actual_as_ref->target->overloads.count(exp_as_conform_ref->target))
+				if (is_compatible(actual_as_ref->target, exp_as_conform_ref->target))
 					return;
 			}
 			if (auto actual_as_shared = dom::strict_cast<ast::TpShared>(actual_type)) {
-				if (actual_as_shared->target == exp_as_conform_ref->target || actual_as_shared->target->overloads.count(exp_as_conform_ref->target))
+				if (is_compatible(actual_as_shared->target, exp_as_conform_ref->target))
 					return;
 			}
-			if (auto actual_as_class = dom::strict_cast<ast::TpClass>(actual_type)) {
-				if (actual_as_class == exp_as_conform_ref->target || actual_as_class->overloads.count(exp_as_conform_ref->target))
+			if (auto actual_as_own = dom::strict_cast<ast::TpOwn>(actual_type)) {
+				if (is_compatible(actual_as_own->target, exp_as_conform_ref->target))
 					return;
 			}
 		} else if (auto exp_as_weak = dom::strict_cast<ast::TpWeak>(expected_type)) {
 			if (auto actual_as_weak = dom::strict_cast<ast::TpWeak>(actual_type)) {
-				if (actual_as_weak->target->overloads.count(exp_as_weak->target))
+				if (is_compatible(actual_as_weak->target, exp_as_weak->target))
 					return;
 			}
 		} else if (auto exp_as_frozen_weak = dom::strict_cast<ast::TpFrozenWeak>(expected_type)) {
 			if (auto actual_as_frozen_weak = dom::strict_cast<ast::TpFrozenWeak>(actual_type)) {
-				if (actual_as_frozen_weak->target->overloads.count(exp_as_frozen_weak->target))
+				if (is_compatible(actual_as_frozen_weak->target, exp_as_frozen_weak->target))
 					return;
 			}
 		} else if (auto exp_as_conform_weak = dom::strict_cast<ast::TpConformWeak>(expected_type)) {
 			if (auto actual_as_conform_weak = dom::strict_cast<ast::TpConformWeak>(actual_type)) {
-				if (actual_as_conform_weak->target->overloads.count(exp_as_conform_weak->target))
+				if (is_compatible(actual_as_conform_weak->target, exp_as_conform_weak->target))
 					return;
 			}
 			if (auto actual_as_weak = dom::strict_cast<ast::TpWeak>(actual_type)) {
-				if (actual_as_weak->target == exp_as_conform_weak->target || actual_as_weak->target->overloads.count(exp_as_conform_weak->target))
+				if (is_compatible(actual_as_weak->target, exp_as_conform_weak->target))
 					return;
 			}
 			if (auto actual_as_frozen_weak = dom::strict_cast<ast::TpFrozenWeak>(actual_type)) {
-				if (actual_as_frozen_weak->target == exp_as_conform_weak->target  || actual_as_frozen_weak->target->overloads.count(exp_as_conform_weak->target))
+				if (is_compatible(actual_as_frozen_weak->target, exp_as_conform_weak->target))
 					return;
 			}
 		} else if (auto act_as_cold = dom::strict_cast<ast::TpColdLambda>(actual_type)) {
@@ -624,9 +628,9 @@ struct Typer : ast::ActionMatcher {
 			}
 		} else if (auto exp_as_lambda = dom::strict_cast<ast::TpLambda>(expected_type)) {
 			if (exp_as_lambda->params.size() == 1) {
-				auto actual_as_class = dom::strict_cast<ast::TpClass>(actual_type);
-				auto result_as_class = dom::strict_cast<ast::TpClass>(exp_as_lambda->params.back());
-				if (actual_as_class && result_as_class && (actual_as_class == result_as_class || actual_as_class->overloads.count(result_as_class))) {
+				auto actual_as_own = dom::strict_cast<ast::TpOwn>(actual_type);
+				auto result_as_own = dom::strict_cast<ast::TpOwn>(exp_as_lambda->params.back());
+				if (actual_as_own && result_as_own && is_compatible(actual_as_own->target, result_as_own->target)) {
 					auto r = ast::make_at_location<ast::MkLambda>(*node);
 					r->body.push_back(move(node));
 					r->type_ = ast->tp_lambda({ actual_type });
@@ -667,7 +671,7 @@ struct Typer : ast::ActionMatcher {
 				auto tp = ct.second->type = find_type(ct.second->initializer)->type();
 				if (auto as_opt = dom::strict_cast<ast::TpOptional>(tp))
 					tp = as_opt->wrapped;
-				if (dom::isa<ast::TpClass>(*tp) || dom::isa<ast::TpRef>(*tp) || dom::isa<ast::TpWeak>(*tp)) {
+				if (dom::isa<ast::TpOwn>(*tp) || dom::isa<ast::TpRef>(*tp) || dom::isa<ast::TpWeak>(*tp)) {
 					ct.second->error("Constants cannot be mutable objects @own, ref or &weak. Make them *frozen or &*frozen weaks.");
 				}
 			}
@@ -707,10 +711,6 @@ struct Typer : ast::ActionMatcher {
 			}
 		}
 	}
-
-	pin<ast::Ast> ast;
-	pin<Type> tp_bool;
-	pin<ast::TpClass> this_class;
 };
 
 }  // namespace
