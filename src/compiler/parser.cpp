@@ -125,7 +125,7 @@ struct Parser {
 		}
 		return method;
 	}
-	ast::LongName expect_long_name(char* message, pin<ast::Module> def_module) {
+	ast::LongName expect_long_name(const char* message, pin<ast::Module> def_module) {
 		auto id = expect_id(message);
 		if (!match("_"))
 			return { id, def_module };
@@ -136,9 +136,15 @@ struct Parser {
 		else
 			error("module ", id, " is not visible from module ", module->name);
 	}
-	pin<ast::Class> get_class_by_name(char* message) {
+	pin<ast::AbstractClass> get_class_by_name(const char* message) {
 		auto [c_name, m] = expect_long_name(message, nullptr);
 		if (!m) {
+			if (current_class) {
+				for (auto& p : current_class->params) {
+					if (p->name == c_name)
+						return p;
+				}
+			}
 			if (auto it = module->aliases.find(c_name); it != module->aliases.end()) {
 				if (auto as_cls = dom::strict_cast<ast::Class>(it->second))
 					return as_cls;
@@ -146,6 +152,19 @@ struct Parser {
 			m = module;
 		}
 		return m->get_class(c_name);
+	}
+	pin<ast::AbstractClass> parse_class_with_params(const char* message, bool allow_class_param) {
+		auto r = get_class_by_name(message);
+		if (dom::isa<ast::ClassParam>(*r) && !allow_class_param)
+			error("Class parameter is not allowed as root name: ", r->get_name());
+		if (!match("("))
+			return r;
+		vector<weak<ast::AbstractClass>> params{ r };
+		do
+			params.push_back(parse_class_with_params("class parameter", true));
+		while (match(","));
+		expect(")");
+		return ast->get_class_instance(move(params));
 	}
 	pin<ast::Module> parse(module_text_provider_t module_text_provider)
 	{
@@ -207,7 +226,9 @@ struct Parser {
 			bool is_test = match("test");
 			bool is_interface = match("interface");
 			if (is_interface || match("class")) {
-				auto cls = get_class_by_name("class or interface");
+				auto cls = dom::strict_cast<ast::Class>(get_class_by_name("class or interface"));
+				if (!cls)
+					error("interrnal error, class params from outer class");
 				current_class = cls;
 				bool is_first_time_seen = cls->line == 0;
 				cls->line = line;
@@ -225,7 +246,11 @@ struct Parser {
 							param->is_out = false;
 						else if (match("<"))
 							param->is_in = false;
-						param->base = get_class_by_name("base class for type parameter");
+						if (*cur != ',' || *cur != ')') {
+							param->base = parse_class_with_params("base class for type parameter", false);
+							if (dom::strict_cast<ast::ClassParam>(param->base))
+								error("Parameter base must be a real class, not parameter");
+						}
 						cls->params.push_back(param);
 					} while (match(","));
 					expect(")");
@@ -233,7 +258,7 @@ struct Parser {
 				expect("{");
 				while (!match("}")) {
 					if (match("+")) {
-						auto base_class = get_class_by_name("base class or interface");
+						auto base_class = parse_class_with_params("base class", false); // disallow class param in root
 						auto& base_content = cls->overloads[base_class];
 						if (match("{")) {
 							if (is_interface)
