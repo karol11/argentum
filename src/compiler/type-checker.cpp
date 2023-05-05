@@ -192,8 +192,11 @@ struct Typer : ast::ActionMatcher {
 		return fn;
 	}
 	void on_make_delegate(ast::MakeDelegate& node) override {
-		class_from_action(node.base);
+		auto base_cls = class_from_action(node.base);
 		node.type_ = type_fn(node.method)->type_;
+		auto base_as_inst = dom::strict_cast<ast::ClassInstance>(base_cls);
+		if (base_as_inst)
+			node.type_ = remove_params(node.type_.pinned(), *ast, *base_as_inst);
 		if (dom::isa<ast::TpConformRef>(*node.base->type())) {
 			if (node.method->mut != 0)
 				node.error("cannot call mutating or shared methods on maybe-frozen object");
@@ -285,6 +288,7 @@ struct Typer : ast::ActionMatcher {
 			[&] { return ast::format_str("assign to vaiable", node.var_name, node.var.pinned()); });
 	}
 	void on_mk_instance(ast::MkInstance& node) override {
+		check_class_params(node.cls);
 		node.type_ = ast->get_own(node.cls);
 	}
 	void on_make_fn_ptr(ast::MakeFnPtr& node) override {
@@ -334,7 +338,7 @@ struct Typer : ast::ActionMatcher {
 		node.type_ = find_type(node.field->initializer)->type();
 		auto base_as_inst = dom::strict_cast<ast::ClassInstance>(base_cls);
 		if (base_as_inst)
-		node.type_ = remove_params(node.type_.pinned(), *ast, *base_as_inst);
+			node.type_ = remove_params(node.type_.pinned(), *ast, *base_as_inst);
 		if (dom::isa<ast::TpConformRef>(*node.base->type())) {
 			if (auto as_own = dom::strict_cast<ast::TpOwn>(node.type())) {
 				node.type_ = ast->get_conform_ref(as_own->target);
@@ -353,7 +357,31 @@ struct Typer : ast::ActionMatcher {
 			}
 		}
 	}
-
+	void check_class_params(pin<ast::AbstractClass> cls) {
+		if (auto as_param = dom::strict_cast<ast::ClassParam>(cls)) {
+			if (dom::isa<ast::ClassParam>(*as_param->base.pinned()))
+				cls->error("Class parameter cannot be bound to another parameter");
+			cls = as_param->base;
+		}
+		if (auto as_cls = dom::strict_cast<ast::Class>(cls)) {
+			if (!as_cls->params.empty())
+				cls->error("expected class parameters");
+			return;
+		}
+		auto as_inst = dom::strict_cast<ast::ClassInstance>(cls);
+		auto ctr = as_inst->params[0].pinned();
+		if (dom::isa<ast::ClassInstance>(*ctr))
+			cls->error("Doubly parameterized class");
+		if (dom::isa<ast::ClassParam>(*ctr))
+			cls->error("Class parameter cannot be a class constructor");
+		auto as_cls = dom::strict_cast<ast::Class>(ctr);
+		if (as_cls->params.size() != as_inst->params.size() - 1)
+			cls->error("Expected ", as_cls->params.size(), " parameters");
+		for (int i = 0; i < as_cls->params.size(); i++) {
+			if (!is_compatible(as_inst->params[i + 1], as_cls->params[i]->base))
+				cls->error("Expected ", as_cls->params[i]->base->get_name(), " not ", as_inst->params[i + 1]);
+		}
+	}
 	static pin<ast::AbstractClass> remove_params(pin<ast::AbstractClass> cls, ast::Ast& ast, const ast::ClassInstance& context) {
 		if (auto as_cls = dom::strict_cast<ast::Class>(cls))
 			return cls;
@@ -436,10 +464,11 @@ struct Typer : ast::ActionMatcher {
 	void on_cast(ast::CastOp& node) override {
 		auto src_cls = class_from_action(node.p[0]);
 		auto dst_cls = class_from_action(node.p[1]);
+		check_class_params(dst_cls);
 		node.type_ = dom::isa<ast::TpOwn>(*node.p[0]->type())
 			? (pin<Type>) ast->get_own(dst_cls)
 			: (pin<Type>) ast->get_ref(dst_cls);
-		if (src_cls->get_implementation()->overloads.count(dst_cls))  // no-op conversion
+		if (is_compatible(src_cls, dst_cls))  // no-op conversion
 			node.p[1] = nullptr;
 		else
 			node.type_ = ast->tp_optional(node.type_);
@@ -574,7 +603,19 @@ struct Typer : ast::ActionMatcher {
 		expect_type(node, node->type(), expected_type, context);
 	}
 	bool is_compatible(pin<ast::AbstractClass> actual, pin<ast::AbstractClass> expected) {
-		return actual == expected || actual->get_implementation()->overloads.count(expected->get_implementation());
+		if (actual != expected && !actual->get_implementation()->overloads.count(expected->get_implementation()))
+			return false;
+		auto act_as_inst = dom::strict_cast<ast::ClassInstance>(actual);
+		auto exp_as_inst = dom::strict_cast<ast::ClassInstance>(expected);
+		if (!act_as_inst)
+			return !act_as_inst;
+		if (exp_as_inst->params.size() != act_as_inst->params.size())
+			return false;
+		for (size_t i = 0; i < act_as_inst->params.size(); i++) {
+			if (act_as_inst->params[i] != exp_as_inst->params[i])
+				return false; // TODO, support co- and contravariance.
+		}
+		return true;
 	}
 	void expect_type(own<ast::Action>& node, pin<Type> actual_type, pin<Type> expected_type, const function<string()>& context) {
 		if (expected_type == ast->tp_void())
