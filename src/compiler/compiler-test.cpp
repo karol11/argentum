@@ -47,20 +47,12 @@ void execute(const char* source_text, bool dump_all = false) {
     generate_and_execute(ast, false, dump_all);
 }
 
-TEST(Parser, Consts) {
+TEST(Parser, Multiline) {
     execute(R"-(
-      using sys{assert;}
-      const xDefPoint = *Point;
-      const xCount = 4;
-      const xHello = *"Hello world";
-
-      class Point {
-         x = 0;
-         y = 0;
-      }
-      p = @xDefPoint;
-      sys_log(xHello);
-      assert(xCount, 4)
+      sys_log("..../
+         Multiline
+         string
+      );
     )-");
 }
 
@@ -743,6 +735,23 @@ TEST(Parser, Shared) {
       p2 = p;
       assert(p2.sum(), 3);
       assert(p == p2 ? 1:0, 1)
+    )-");
+}
+
+TEST(Parser, Consts) {
+    execute(R"-(
+      using sys{assert;}
+      const xDefPoint = *Point;
+      const xCount = 4;
+      const xHello = *"Hello world";
+
+      class Point {
+         x = 0;
+         y = 0;
+      }
+      p = @xDefPoint;
+      sys_log(xHello);
+      assert(xCount, 4)
     )-");
 }
 

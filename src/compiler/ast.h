@@ -553,6 +553,10 @@ struct ToFloatOp : UnaryOp {
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(ToFloatOp);
 };
+struct ToStrOp : BinaryOp {
+	void match(ActionMatcher& matcher) override;
+	DECLARE_DOM_CLASS(ToStrOp);
+};
 struct NotOp : UnaryOp {
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(NotOp);
@@ -599,6 +603,7 @@ struct ActionMatcher {
 	virtual void on_make_fn_ptr(MakeFnPtr& node);
 	virtual void on_block(Block& node);
 	virtual void on_cast(CastOp& node);
+	virtual void on_to_str(ToStrOp& node);
 	virtual void on_add(AddOp& node);
 	virtual void on_sub(SubOp& node);
 	virtual void on_mul(MulOp& node);
