@@ -964,7 +964,7 @@ struct Generator : ast::ActionScanner {
 			if (temp_var == p) { // result is locked by the dying temp ptr.
 				if (!get_if<Val::Retained>(&val_iter->lifetime))
 					build_retain(r.data, p->type);
-				r.type = temp_var->type;  // revert own->pin cohersion
+				r.type = node.type();  // revert own->pin cohersion
 				r.lifetime = Val::Retained{};
 			} else if (is_ptr(p->type)) {
 				if (p->is_mutable) {

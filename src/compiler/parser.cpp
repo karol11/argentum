@@ -756,8 +756,13 @@ struct Parser {
 				pos += (int32_t) (cur - prev_cur);
 				if (!c)
 					error("incomplete string constant");
-				if (c < ' ')
+				if (c < ' ') {
+					if (c == '\n' || c == '\r') {
+						cur--;
+						return handle_multiline_string(r->value);
+					}
 					error("control characters in the string constant");
+				}
 				if (c == '"')
 						break;
 				if (c == '\\') {
@@ -794,6 +799,115 @@ struct Parser {
 		if (is_id_head(*cur))
 			return mk_get("name");
 		error("syntax error");
+	}
+
+	pin<Action> handle_multiline_string(const string& format) {
+		const char* c = format.c_str();
+		string prefix;
+		for (;; c++) {
+			if (*c == '.') prefix += ' ';
+			else if (*c == 't') prefix += '\t';
+			else break;
+		}
+		int tabstops = 0;
+		for (; *c >= '0' && *c <= '9'; c++)
+			tabstops = tabstops * 10 + *c - '0';
+		char open_escape_char = 0;
+		char close_escape_char = 0;
+		if (*c == '{') {
+			open_escape_char = '{';
+			close_escape_char = '}';
+		} else if (*c == '(') {
+			open_escape_char = '(';
+			close_escape_char = ')';
+		} else if (*c == '[') {
+			open_escape_char = '[';
+			close_escape_char = ']';
+		}
+		if (close_escape_char != 0) {
+			if (c[1] != close_escape_char)
+				error("Expected ", close_escape_char, " at format string ", c);
+			c += 2;
+		}
+		string eoln;
+		for (;; c++) {
+			if (*c == 'n') eoln += "\n";
+			else if (*c == 'r') eoln += "\r";
+			else break;
+		}
+		if (eoln.empty())
+			eoln = "\n";
+		string last_suffix;
+		while (*c == '/') {
+			last_suffix += eoln;
+			if (*++c == '+') {
+				c++;
+				last_suffix += prefix;
+			}
+		}
+		if (*c != 0)
+			error("Unexpected sumbols in format string at ", c);
+		match_eoln();
+		skip_spaces();
+		auto base_indent = pos;
+		auto current_part = make<ast::ConstString>();
+		current_part->value = prefix;
+		vector<pin<Action>> parts;
+		for (;;) {
+			for (; !match_eoln(); cur++) {
+				if (open_escape_char && *cur == open_escape_char) {
+					cur++;
+					if (*cur == close_escape_char) {
+						cur++;
+						current_part->value += open_escape_char;
+					} else {
+						if (!current_part->value.empty())
+							parts.push_back(current_part);
+						match_ws();
+						parts.push_back(parse_expression());
+						if (*cur != close_escape_char)
+							error("Expected ", close_escape_char);
+						current_part = make<ast::ConstString>();
+					}
+				} else {
+					current_part->value += *cur;
+				}
+			}
+			skip_spaces();
+			if (pos < base_indent)
+				break;
+			current_part->value += eoln;
+			current_part->value += prefix;
+			if (pos > base_indent) {
+				char c = ' ';
+				int count = pos - base_indent;
+				if (tabstops) {
+					if (count % tabstops != 0)
+						error("Indent is not aligned to tab width");
+					count /= tabstops;
+					c = '\t';
+				}
+				for (count++; --count;)
+					current_part->value += c;
+			}
+ 		}
+		expect("\"");
+		current_part->value += last_suffix;
+		if (!current_part->value.empty() || parts.empty())
+			parts.push_back(current_part);
+		if (parts.size() == 1)
+			return parts[0];
+		auto inst = make_at_location<ast::MkInstance>(*parts[0]);
+		inst->cls = ast->str_builder.pinned();
+		pin<Action> r = inst;
+		for (auto& p : parts)
+			r = fill(make_at_location<ast::ToStrOp>(*p), r, p);
+		auto delegate = make<ast::GetField>();
+		delegate->base = r;
+		delegate->field_name = "toStr";
+		auto call = make<ast::Call>();
+		call->callee = delegate;
+		return call;
 	}
 
 	template<typename T, typename VT>
@@ -890,30 +1004,40 @@ struct Parser {
 			error(string("expected '") + str + "'");
 	}
 
+	bool match_eoln() {
+		if (*cur == '\n') {
+			if (*++cur == '\r')
+				++cur;
+		} else if (*cur == '\r') {
+			if (*++cur == '\n')
+				++cur;
+		} else
+			return false;
+		line++;
+		pos = 1;
+		return true;
+	}
+
+	void skip_spaces() {
+		while (*cur == ' ') {
+			++cur;
+			++pos;
+		}
+		if (*cur == '\t') {
+			error("tabs aren't allowed as white space");
+		}
+	}
+
 	bool match_ws() {
 		const char* c = cur;
-		for (;; line++, pos = 1) {
-			while (*cur == ' ') {
-				++cur;
-				++pos;
-			}
-			if (*cur == '\t') {
-				error("tabs aren't allowed as white space");
-			}
+		for (;;) {
+			skip_spaces();
 			if (*cur == '/' && cur[1] == '/') {
 				while (*cur && *cur != '\n' && *cur != '\r') {
 					++cur;
 				}
 			}
-			if (*cur == '\n') {
-				if (*++cur == '\r')
-					++cur;
-			}
-			else if (*cur == '\r') {
-				if (*++cur == '\n')
-					++cur;
-			}
-			else if (!*cur || *cur > ' ')
+			if (!match_eoln() && (*cur == 0 || *cur > ' '))
 				return c != cur;
 		}
 	}

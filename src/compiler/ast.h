@@ -322,11 +322,12 @@ struct Ast: dom::DomItem {
 	unordered_map<weak<AbstractClass>, own<TpConformRef>> conform_refs;
 	unordered_map<weak<AbstractClass>, own<TpConformWeak>> conform_weaks;
 	unordered_map<string, void(*)()> platform_exports;  // used only in JIT
-	weak<Class> object;
-	weak<Class> blob;
-	weak<Class> own_array;
-	weak<Class> weak_array;
-	weak<Class> string_cls;
+	weak<TpClass> object;
+	weak<TpClass> blob;
+	weak<TpClass> str_builder;
+	weak<TpClass> own_array;
+	weak<TpClass> weak_array;
+	weak<TpClass> string_cls;
 	weak<Module> sys;
 	vector<weak<Class>> classes_in_order; // all classes from all modules in the base-first order
 
@@ -610,6 +611,10 @@ struct ToFloatOp : UnaryOp {
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(ToFloatOp);
 };
+struct ToStrOp : BinaryOp {
+	void match(ActionMatcher& matcher) override;
+	DECLARE_DOM_CLASS(ToStrOp);
+};
 struct NotOp : UnaryOp {
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(NotOp);
@@ -656,6 +661,7 @@ struct ActionMatcher {
 	virtual void on_make_fn_ptr(MakeFnPtr& node);
 	virtual void on_block(Block& node);
 	virtual void on_cast(CastOp& node);
+	virtual void on_to_str(ToStrOp& node);
 	virtual void on_add(AddOp& node);
 	virtual void on_sub(SubOp& node);
 	virtual void on_mul(MulOp& node);

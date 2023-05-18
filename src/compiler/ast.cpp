@@ -36,6 +36,7 @@ own<TypeWithFills> SetField::dom_type_;
 own<TypeWithFills> SpliceField::dom_type_;
 own<TypeWithFills> MkInstance::dom_type_;
 
+own<TypeWithFills> ToStrOp::dom_type_;
 own<TypeWithFills> ToIntOp::dom_type_;
 own<TypeWithFills> ToFloatOp::dom_type_;
 own<TypeWithFills> NotOp::dom_type_;
@@ -213,6 +214,7 @@ void initialize() {
 	MakeFnPtr::dom_type_ = (new CppClassType<MakeFnPtr>(cpp_dom, { "m0", "MkFnPtr" }))
 		->field("fn", pin<CField<&MakeFnPtr::fn>>::make(weak_type));
 	make_bin_op<CastOp>("Cast", op_array_2);
+	make_bin_op<ToStrOp>("ToStr", op_array_2);
 	make_bin_op<AddOp>("Add", op_array_2);
 	make_bin_op<SubOp>("Sub", op_array_2);
 	make_bin_op<MulOp>("Mul", op_array_2);
@@ -329,6 +331,7 @@ void MkWeakOp::match(ActionMatcher& matcher) { matcher.on_mk_weak(*this); }
 void DerefWeakOp::match(ActionMatcher& matcher) { matcher.on_deref_weak(*this); }
 void Block::match(ActionMatcher& matcher) { matcher.on_block(*this); }
 void CastOp::match(ActionMatcher& matcher) { matcher.on_cast(*this); }
+void ToStrOp::match(ActionMatcher& matcher) { matcher.on_to_str(*this); }
 void AddOp::match(ActionMatcher& matcher) { matcher.on_add(*this); }
 void SubOp::match(ActionMatcher& matcher) { matcher.on_sub(*this); }
 void MulOp::match(ActionMatcher& matcher) { matcher.on_mul(*this); }
@@ -380,6 +383,7 @@ void ActionMatcher::on_mk_weak(MkWeakOp& node) { on_un_op(node); }
 void ActionMatcher::on_deref_weak(DerefWeakOp& node) { on_un_op(node); }
 void ActionMatcher::on_block(Block& node) { on_unmatched(node); }
 void ActionMatcher::on_cast(CastOp& node) { on_bin_op(node); }
+void ActionMatcher::on_to_str(ToStrOp& node) { on_bin_op(node); }
 void ActionMatcher::on_add(AddOp& node) { on_bin_op(node); }
 void ActionMatcher::on_sub(SubOp& node) { on_bin_op(node); }
 void ActionMatcher::on_mul(MulOp& node) { on_bin_op(node); }

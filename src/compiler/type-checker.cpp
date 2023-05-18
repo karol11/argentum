@@ -145,7 +145,7 @@ struct Typer : ast::ActionMatcher {
 				auto r = ast::make_at_location<ast::Call>(node).owned();
 				auto callee = ast::make_at_location<ast::MakeDelegate>(node);
 				r->callee = callee;
-				callee->base = node.indexed;
+				callee->base = move(node.indexed);
 				callee->method = method;
 				r->params = move(node.indexes);
 				if (opt_value)
@@ -170,6 +170,59 @@ struct Typer : ast::ActionMatcher {
 			return;
 		}
 		node.error("function ", indexed_cls->module->name, "_", name, indexed_cls->name, " or method ", node.indexed->type().pinned(), ".", name, " not found");
+	}
+	void on_to_str(ast::ToStrOp& node) override {
+		auto stream_class = ast->extract_class(find_type(node.p[0])->type());
+		if (!stream_class)
+			node.error("Only objects can be to_string receivers, not ", node.p[1]->type());
+		struct TypeNameGenerator : ast::TypeMatcher {
+			string result;
+			ast::Node& node;
+			ast::Ast& ast;
+			TypeNameGenerator(ast::Node& node, ast::Ast& ast) :node(node), ast(ast) {}
+			void on_int64(ast::TpInt64& type) override { result = "Int"; }
+			void on_double(ast::TpDouble& type) override { result = "Double"; }
+			void on_function(ast::TpFunction& type) override { error(type); }
+			void on_lambda(ast::TpLambda& type) override { error(type); }
+			void on_delegate(ast::TpDelegate& type) override { error(type); }
+			void on_cold_lambda(ast::TpColdLambda& type) override { error(type); }
+			void on_void(ast::TpVoid& type) override { result = "Void"; }
+			void on_optional(ast::TpOptional& type) override {
+				ast.get_wrapped(&type)->match(*this);
+				result = ast::format_str("Opt", result);
+			}
+			void on_class(ast::TpClass& type) override { ptr_type(type); }
+			void on_ref(ast::TpRef& type) override { ptr_type(type); }
+			void on_shared(ast::TpShared& type) override { ptr_type(type); }
+			void on_weak(ast::TpWeak& type) override { error(type); }
+			void on_frozen_weak(ast::TpFrozenWeak& type) override { error(type); }
+			void on_conform_ref(ast::TpConformRef& type) override { ptr_type(type); }
+			void on_conform_weak(ast::TpConformWeak& type) override { error(type); }
+
+			void error(ast::Type& type) {
+				node.error("Expected printable type, not ", ltm::pin<ast::Type>(&type));
+			}
+			void ptr_type(ast::Type& type) {
+				result = &type == ast.string_cls.pinned() ? "Str" : "Obj";
+			}
+		} type_name_gen(node, *ast);
+		find_type(node.p[1])->type()->match(type_name_gen);
+		auto methodName = ast::format_str("put", type_name_gen.result);
+		if (auto m = dom::peek(stream_class->this_names, ast::LongName{ methodName, nullptr})) {
+			if (auto method = dom::strict_cast<ast::Method>(m)) {
+				auto callee = ast::make_at_location<ast::MakeDelegate>(node);
+				callee->base = move(node.p[0]);
+				callee->method = method;
+				auto r = ast::make_at_location<ast::Call>(node).owned();
+				r->callee = callee;
+				r->params.push_back(move(node.p[1]));
+				fix(r);
+				*fix_result = move(r);
+				return;
+			}
+			node.error(methodName, " is not a method in ", node.p[0]->type());
+		}
+		node.error("method ", stream_class->get_name(), ".", methodName, " not found");
 	}
 	void on_get_at_index(ast::GetAtIndex& node) override { handle_index_op(node, nullptr, "getAt"); }
 	void on_set_at_index(ast::SetAtIndex& node) override { handle_index_op(node, move(node.value), "setAt"); }
