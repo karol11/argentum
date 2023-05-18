@@ -803,11 +803,14 @@ struct Parser {
 		for (;;) {
 			for (; !match_eoln(); cur++) {
 				if (open_escape_char && *cur == open_escape_char) {
+					cur++;
 					if (*cur == close_escape_char) {
+						cur++;
 						current_part->value += open_escape_char;
 					} else {
 						if (!current_part->value.empty())
 							parts.push_back(current_part);
+						match_ws();
 						parts.push_back(parse_expression());
 						if (*cur != close_escape_char)
 							error("Expected ", close_escape_char);
@@ -835,14 +838,14 @@ struct Parser {
 					current_part->value += c;
 			}
  		}
+		expect("\"");
 		current_part->value += last_suffix;
 		if (!current_part->value.empty() || parts.empty())
 			parts.push_back(current_part);
 		if (parts.size() == 1)
 			return parts[0];
-		auto inst = make_at_location<ast::Get>(*parts[0]);
-		inst->var_name = "StrBuilder";
-		inst->module = ast->sys;
+		auto inst = make_at_location<ast::MkInstance>(*parts[0]);
+		inst->cls = ast->str_builder.pinned();
 		pin<Action> r = inst;
 		for (auto& p : parts)
 			r = fill(make_at_location<ast::ToStrOp>(*p), r, p);

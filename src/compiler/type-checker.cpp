@@ -176,7 +176,7 @@ struct Typer : ast::ActionMatcher {
 			ast::Ast& ast;
 			TypeNameGenerator(ast::Node& node, ast::Ast& ast) :node(node), ast(ast) {}
 			void on_int64(ast::TpInt64& type) override { result = "Int"; }
-			void on_double(ast::TpDouble& type) override { result = "String"; }
+			void on_double(ast::TpDouble& type) override { result = "Double"; }
 			void on_function(ast::TpFunction& type) override { error(type); }
 			void on_lambda(ast::TpLambda& type) override { error(type); }
 			void on_delegate(ast::TpDelegate& type) override { error(type); }
@@ -201,8 +201,8 @@ struct Typer : ast::ActionMatcher {
 				result = &type == ast.string_cls.pinned() ? "Str" : "Obj";
 			}
 		} type_name_gen(node, *ast);
-		auto methodName = ast::format_str("handle", type_name_gen.result);
-		find_type(node.p[0])->type()->match(type_name_gen);
+		find_type(node.p[1])->type()->match(type_name_gen);
+		auto methodName = ast::format_str("put", type_name_gen.result);
 		if (auto m = dom::peek(stream_class->this_names, ast::LongName{ methodName, nullptr})) {
 			if (auto method = dom::strict_cast<ast::Method>(m)) {
 				auto callee = ast::make_at_location<ast::MakeDelegate>(node);
@@ -217,7 +217,7 @@ struct Typer : ast::ActionMatcher {
 			}
 			node.error(methodName, " is not a method in ", node.p[0]->type());
 		}
-		node.error("method ", stream_class, ".", methodName, " not found");
+		node.error("method ", stream_class->get_name(), ".", methodName, " not found");
 	}
 	void on_get_at_index(ast::GetAtIndex& node) override { handle_index_op(node, nullptr, "getAt"); }
 	void on_set_at_index(ast::SetAtIndex& node) override { handle_index_op(node, move(node.value), "setAt"); }
