@@ -36,6 +36,9 @@ void register_runtime_content(struct ast::Ast& ast) {
 	ast.mk_fn("copyBytes", FN(ag_fn_sys_copyBytes), new ast::ConstBool, { ast.get_ref(ast.blob), ast.tp_int64(), ast.get_conform_ref(ast.blob), ast.tp_int64(), ast.tp_int64() });
 	ast.mk_fn("putCh", FN(ag_fn_sys_putCh), new ast::ConstInt64, { ast.get_ref(ast.blob), ast.tp_int64(), ast.tp_int64() });
 
+	ast.str_builder = ast.mk_class("StrBuilder");
+	ast.str_builder->overloads[ast.blob];
+
 	auto inst = new ast::MkInstance;
 	inst->cls = ast.object.pinned();
 	auto ref_to_object = new ast::RefOp;

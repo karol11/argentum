@@ -269,6 +269,7 @@ struct Ast: dom::DomItem {
 	unordered_map<string, void(*)()> platform_exports;  // used only in JIT
 	weak<TpClass> object;
 	weak<TpClass> blob;
+	weak<TpClass> str_builder;
 	weak<TpClass> own_array;
 	weak<TpClass> weak_array;
 	weak<TpClass> string_cls;
