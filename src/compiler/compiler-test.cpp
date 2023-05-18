@@ -47,15 +47,6 @@ void execute(const char* source_text, bool dump_all = false) {
     generate_and_execute(ast, false, dump_all);
 }
 
-TEST(Parser, Multiline) {
-    execute(R"-(
-      sys_log("..../
-         Multiline
-         string
-      );
-    )-");
-}
-
 TEST(Parser, Ints) {
     execute("sys_assert(7, (2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1)))");
 }
@@ -752,6 +743,55 @@ TEST(Parser, Consts) {
       p = @xDefPoint;
       sys_log(xHello);
       assert(xCount, 4)
+    )-");
+}
+
+TEST(Parser, Multiline) {
+    execute(R"-(
+      sys_log("..../
+         Multiline
+         string
+      ");
+    )-");
+}
+
+TEST(Parser, StringInterpolation) {
+    execute(R"-(
+      using sys {
+            getCh;
+      }
+      class sys_StrBuilder{
+            pos = 0;
+            put(int codePoint) this {
+                size = sys_getSize(this);
+                growStep = 100;
+                pos + 5 >= size ?
+                    sys_insertItems(this, size, growStep);
+                pos := sys_putCh(this, pos, codePoint)
+            }
+            putStr(sys_String s) this {
+                loop !{
+                    c = sys_getCh(s);
+                    c != 0 ? put(c)
+                }
+            }
+            putInt(int v) this {
+                put(v % 10 + '0')
+            }
+            toStr() @sys_String {
+                r = sys_String;
+                sys_stringFromBlob(r, this, 0, pos);
+                pos := 0;
+                r
+            }
+      }
+      sys_log("{}/
+         Name={
+            1 < 2
+                ? "asdf"
+                : "zxcv"}
+         Age={2 * 2}
+      ");
     )-");
 }
 
