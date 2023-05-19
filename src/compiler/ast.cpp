@@ -583,7 +583,7 @@ pin<Type> Ast::get_wrapped(pin<TpOptional> opt) {
 pin<TpOwn> Ast::get_own(pin<AbstractClass> target) {
 	auto& r = owns[target];
 	if (!r) {
-		r = new TpRef;
+		r = new TpOwn;
 		r->target = target;
 	}
 	return r;
@@ -655,7 +655,7 @@ pin<Class> Module::get_class(const string& name) {
 
 pin<Class> Module::peek_class(const string& name) {
 	auto it = classes.find(name);
-	return it == classes.end() ? nullptr : it->second;
+	return it == classes.end() ? nullptr : it->second.pinned();
 }
 
 pin<AbstractClass> Ast::extract_class(pin<Type> pointer) {
@@ -753,7 +753,7 @@ string to_string(const ast::LongName& name) {
 }
 
 std::ostream& operator<< (std::ostream& dst, const ast::Node& n) {
-	return dst << '(' << n.module->name << ':' << n.line << ':' << n.pos << ')';
+	return dst << '(' << (n.module ? n.module->name : "built-in") << ':' << n.line << ':' << n.pos << ')';
 }
 
 std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t) {
@@ -826,9 +826,6 @@ std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t) {
 		}
 		void on_conform_ref(ast::TpConformRef& type) override {
 			dst << "-" << type.target->get_name();
-		}
-		void on_conform_weak(ast::TpConformWeak& type) override {
-			dst << "&-" << type.target->get_name();
 		}
 		void on_conform_weak(ast::TpConformWeak& type) override {
 			dst << "&-" << type.target->get_name();

@@ -246,7 +246,7 @@ struct NameResolver : ast::ActionScanner {
 		}
 		if (!node.var_module) {
 			if (auto al = node.module->aliases.find(node.var_name); al != node.module->aliases.end()) {
-				if (auto as_cls = dom::strict_cast<ast::TpClass>(al->second))
+				if (auto as_cls = dom::strict_cast<ast::Class>(al->second.pinned()))
 					on_class(as_cls);
 				else if (auto as_fn = dom::strict_cast<ast::Function>(al->second))
 					on_function(as_fn);

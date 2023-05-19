@@ -136,8 +136,14 @@ struct TpOptional : Type {
 struct AbstractClass : Node {
 	virtual string get_name();
 	virtual pin<Class> get_implementation() {
-		error("internal error class member is neither method nor field");
+		error("internal error abstract class has no implementation");
 	}
+	enum struct InstMode {
+		direct,      // this is a well-defined class that can be instantiated with no lookups
+		in_context,  // class param or parameterized instance. requires this pointer and lookup in vmt
+		off,         // parameterized class with no params provided, cannot be instantiated
+	};
+	virtual InstMode inst_mode() { return InstMode::off; }
 	DECLARE_DOM_CLASS(AbstractClass);
 };
 struct ClassParam: AbstractClass {
@@ -150,6 +156,7 @@ struct ClassParam: AbstractClass {
 	pin<Class> get_implementation() override {
 		return base->get_implementation();
 	}
+	InstMode inst_mode() override { return InstMode::in_context; }
 	DECLARE_DOM_CLASS(ClassParam);
 };
 struct Field : Node {
@@ -160,16 +167,16 @@ struct Field : Node {
 };
 struct Class : AbstractClass {
 	string name;
-	bool is_interface = true;
-	bool is_test = true;
+	bool is_interface = false;
+	bool is_test = false;
 	weak<AbstractClass> base_class; // Class or ClassInstance
 	vector<own<ClassParam>> params;
 	vector<own<Field>> fields;
-	unordered_map<LongName, weak<Node>> this_names;  // memoized this names - defined and inhrited. ambiguous and absent - stored as null node.
+	unordered_map<LongName, weak<Node>> this_names;  // memoized this names - defined and inhrited. ambiguous and absent - stored as null nodes.
 	vector<own<struct Method>> new_methods;  // new methods ordered by source order
 	unordered_map<weak<AbstractClass>, vector<own<struct Method>>> overloads;  // overloads for interfaces and the base class, ordered by source order
 	unordered_map<           
-		weak<Class>,                                   // base interface
+		weak<Class>,                                   // base interface with stripped parameters, used only in codegen phase
 		vector<weak<struct Method>>> interface_vmts;   // inherited and overloaded methods in the order of new_methods in that interface
 	string get_name() override;
 
@@ -183,7 +190,7 @@ struct Class : AbstractClass {
 			else if (auto as_method = dom::strict_cast<ast::Method>(m))
 				on_method(as_method);
 			else
-				
+				node.error("internal error, class member nor field nor method");
 			return true;
 		}
 		return false;
@@ -191,15 +198,26 @@ struct Class : AbstractClass {
 	pin<Class> get_implementation() override {
 		return this;
 	}
+	InstMode inst_mode() override { return params.empty() ? InstMode::direct : InstMode::off; }
 	DECLARE_DOM_CLASS(Class);
 };
 
 struct ClassInstance : AbstractClass {
 	vector<weak<AbstractClass>> params;  // parameterized class + parameters
+	InstMode inst_cache = InstMode::off;
 	string get_name() override;
 	pin<Class> get_implementation() override {
 		return params[0]->get_implementation();
-	}		
+	}
+	InstMode inst_mode() override {
+		if (inst_cache != InstMode::off)
+			return inst_cache;
+		for (auto& p : params) {
+			if (p->inst_mode() == InstMode::in_context)
+				return inst_cache = InstMode::in_context;
+		}
+		return inst_cache = InstMode::direct;
+	}
 	DECLARE_DOM_CLASS(ClassInstance);
 };
 
@@ -275,7 +293,7 @@ extern own<dom::Dom> cpp_dom;
 
 template<typename T>
 struct ptr_vec_hasher {
-	size_t operator() (const vector<T>*) const {
+	size_t operator() (const vector<T>* v) const {
 		size_t r = 0;
 		for (const auto& p : *v)
 			r += std::hash<void*>()(p);
@@ -285,7 +303,7 @@ struct ptr_vec_hasher {
 
 template<typename T>
 struct ptr_vec_comparer {
-	bool operator() (const vector<T>*, const vector<T>*) const {
+	bool operator() (const vector<T>* a, const vector<T>* b) const {
 		return *a == *b;
 	}
 };
@@ -322,12 +340,12 @@ struct Ast: dom::DomItem {
 	unordered_map<weak<AbstractClass>, own<TpConformRef>> conform_refs;
 	unordered_map<weak<AbstractClass>, own<TpConformWeak>> conform_weaks;
 	unordered_map<string, void(*)()> platform_exports;  // used only in JIT
-	weak<TpClass> object;
-	weak<TpClass> blob;
-	weak<TpClass> str_builder;
-	weak<TpClass> own_array;
-	weak<TpClass> weak_array;
-	weak<TpClass> string_cls;
+	weak<Class> object;
+	weak<Class> blob;
+	weak<Class> str_builder;
+	weak<Class> own_array;
+	weak<Class> weak_array;
+	weak<Class> string_cls;
 	weak<Module> sys;
 	vector<weak<Class>> classes_in_order; // all classes from all modules in the base-first order
 

@@ -111,6 +111,7 @@ struct MethodInfo {
 	size_t ordinal = 0;  // index in vmt
 };
 
+// ClassInstance has own vmt and dispatcher and share with its inplementation class all other fields.
 struct ClassInfo {
 	llvm::StructType* fields = nullptr; // header{disp, counter} + fields. To access dispatcher or counter
 										// obj_ptr{dispatcher_fn*, counter}; where dispatcher_fn void*(uint64_t interface_and_method_id)
@@ -140,7 +141,7 @@ struct Generator : ast::ActionScanner {
 	llvm::DataLayout layout;
 	unordered_map<pin<ast::TpLambda>, llvm::FunctionType*> lambda_fns; // function having 0th param of ptr_type
 	unordered_map<pin<ast::TpFunction>, llvm::FunctionType*> function_types;
-	unordered_map<pin<ast::TpClass>, ClassInfo> classes;
+	unordered_map<pin<ast::AbstractClass>, ClassInfo> classes;  // for classes and class instances
 	unordered_map<pin<ast::Method>, MethodInfo> methods;
 	unordered_map<pin<ast::Function>, llvm::Function*> functions;
 	
@@ -390,7 +391,7 @@ struct Generator : ast::ActionScanner {
 		auto as_opt = dom::strict_cast<ast::TpOptional>(type);
 		if (as_opt)
 			type = as_opt->wrapped;
-		return dom::strict_cast<ast::TpClass>(type) ||
+		return dom::strict_cast<ast::TpOwn>(type) ||
 			dom::strict_cast<ast::TpRef>(type) ||
 			dom::strict_cast<ast::TpWeak>(type) ||
 			dom::strict_cast<ast::TpShared>(type) ||
@@ -413,9 +414,9 @@ struct Generator : ast::ActionScanner {
 					obj_struct,
 					builder->CreateExtractValue(cast_to(ptr, ptr_type), { 0 }),
 					1));
-		} else if (isa<ast::TpRef>(type) || isa<ast::TpShared>(type) || (isa<ast::TpClass>(type) && !maybe_own_parent)) {
+		} else if (isa<ast::TpRef>(type) || isa<ast::TpShared>(type) || (isa<ast::TpOwn>(type) && !maybe_own_parent)) {
 			build_inc(builder->CreateStructGEP(obj_struct, cast_to(ptr, ptr_type), 1));
-		} else if (isa<ast::TpClass>(type)) {
+		} else if (isa<ast::TpOwn>(type)) {
 			builder->CreateCall(fn_retain_own, { cast_to(ptr, ptr_type), maybe_own_parent });
 		}
 	}
@@ -423,7 +424,7 @@ struct Generator : ast::ActionScanner {
 		if (!is_ptr(type))
 			return;
 		if (auto as_opt = dom::strict_cast<ast::TpOptional>(type)) {
-			if (isa<ast::TpClass>(*as_opt->wrapped) && maybe_own_parent) {
+			if (isa<ast::TpOwn>(*as_opt->wrapped) && maybe_own_parent) {
 				builder->CreateCall(fn_retain_own, { cast_to(ptr, ptr_type), maybe_own_parent });
 				return;
 			}
@@ -470,9 +471,9 @@ struct Generator : ast::ActionScanner {
 				builder->CreateCall(fn_release_weak, { cast_to(ptr, ptr_type) });
 			} else if (isa<ast::TpDelegate>(*as_opt->wrapped)) {
 				builder->CreateCall(fn_release_weak, { builder->CreateExtractValue(ptr, {0}) });
-			} else if (isa<ast::TpRef>(*as_opt->wrapped) || isa<ast::TpShared>(*as_opt->wrapped) || (isa<ast::TpClass>(*as_opt->wrapped) && is_local)) {
+			} else if (isa<ast::TpRef>(*as_opt->wrapped) || isa<ast::TpShared>(*as_opt->wrapped) || (isa<ast::TpOwn>(*as_opt->wrapped) && is_local)) {
 				builder->CreateCall(fn_release, { cast_to(ptr, ptr_type) });
-			} else if (isa<ast::TpClass>(*as_opt->wrapped)) {
+			} else if (isa<ast::TpOwn>(*as_opt->wrapped)) {
 				builder->CreateCall(fn_release_own, { cast_to(ptr, ptr_type) });
 			}
 		} else {
@@ -480,9 +481,9 @@ struct Generator : ast::ActionScanner {
 				builder->CreateCall(fn_release_weak, { cast_to(ptr, ptr_type) });
 			} else if (isa<ast::TpDelegate>(*type)) {
 				builder->CreateCall(fn_release_weak, { builder->CreateExtractValue(ptr, {0}) });
-			} else if (isa<ast::TpRef>(*type) || isa<ast::TpShared>(*type) || (isa<ast::TpClass>(*type) && is_local)) {
+			} else if (isa<ast::TpRef>(*type) || isa<ast::TpShared>(*type) || (isa<ast::TpOwn>(*type) && is_local)) {
 				build_release_ptr_not_null(ptr);
-			} else if (isa<ast::TpClass>(*type)) {
+			} else if (isa<ast::TpOwn>(*type)) {
 				builder->CreateCall(fn_release_own, { ptr });
 			}
 		}
@@ -573,7 +574,7 @@ struct Generator : ast::ActionScanner {
 			auto type = src.type;
 			if (auto as_opt = dom::strict_cast<ast::TpOptional>(src.type))
 				type = as_opt->wrapped;
-			if (isa<ast::TpClass>(*type))
+			if (isa<ast::TpOwn>(*type))
 				builder->CreateCall(fn_set_parent, { cast_to(src.data, ptr_type), maybe_own_parent });
 			return src;
 		}
@@ -650,7 +651,7 @@ struct Generator : ast::ActionScanner {
 				else if (isa<ast::TpVoid>(*type.wrapped)) result = gen->di_int;
 				else type.wrapped->match(*this);
 			}
-			void on_class(ast::TpClass& type) override { result = gen->di_obj_ptr; }
+			void on_own(ast::TpOwn& type) override { result = gen->di_obj_ptr; }
 			void on_ref(ast::TpRef& type) override { result = gen->di_obj_ptr; }
 			void on_shared(ast::TpShared& type) override { result = gen->di_obj_ptr; }
 			void on_weak(ast::TpWeak& type) override { result = gen->di_weak_ptr; }
@@ -1282,7 +1283,8 @@ struct Generator : ast::ActionScanner {
 		}
 		auto result_type = dom::strict_cast<ast::TpOptional>(node.type());
 		assert(result_type);
-		auto cls = ast->extract_class(result_type->wrapped);
+		auto cls = dom::strict_cast<ast::Class>(ast->extract_class(result_type->wrapped));
+		if (!cls) node.error("internal error, in this iteration cast to inst or param is not supported");
 		assert(cls); 
 		*result = compile(node.p[0]);
 		auto& cls_info = classes[cls];
@@ -1389,7 +1391,7 @@ struct Generator : ast::ActionScanner {
 					void on_cold_lambda(ast::TpColdLambda& type) override { c.compare_scalar(); }
 					void on_void(ast::TpVoid& type) override { c.compare_scalar(); }
 					void on_optional(ast::TpOptional& type) override { assert(false); }
-					void on_class(ast::TpClass& type) override { c.compare_scalar(); }
+					void on_own(ast::TpOwn& type) override { c.compare_scalar(); }
 					void on_ref(ast::TpRef& type) override { c.compare_scalar(); }
 					void on_shared(ast::TpShared& type) override { c.compare_scalar(); }
 					void on_weak(ast::TpWeak& type) override { c.compare_scalar(); }
@@ -1400,7 +1402,7 @@ struct Generator : ast::ActionScanner {
 				OptComparer opt_comparer{ *this };
 				type.wrapped->match(opt_comparer);
 			}
-			void on_class(ast::TpClass& type) override { compare_scalar(); }
+			void on_own(ast::TpOwn& type) override { compare_scalar(); }
 			void on_ref(ast::TpRef& type) override { compare_scalar(); }
 			void on_shared(ast::TpShared& type) override { compare_scalar(); }
 			void on_weak(ast::TpWeak& type) override { compare_scalar(); }
@@ -1524,7 +1526,7 @@ struct Generator : ast::ActionScanner {
 					? val
 					: gen->builder->CreatePtrToInt(val, gen->tp_int_ptr);
 			}
-			void on_class(ast::TpClass& type) override { handle_ptr(); }
+			void on_own(ast::TpOwn& type) override { handle_ptr(); }
 			void on_ref(ast::TpRef& type) override { handle_ptr(); }
 			void on_shared(ast::TpShared& type) override { handle_ptr(); }
 			void on_weak(ast::TpWeak& type) override { handle_ptr(); }
@@ -1568,7 +1570,7 @@ struct Generator : ast::ActionScanner {
 			void on_cold_lambda(ast::TpColdLambda& type) override { val = gen->builder->getInt8(depth ? depth + 1 : 0); }
 			void on_void(ast::TpVoid& type) override { val = depth == 0 ? gen->builder->getInt1(false) : gen->builder->getInt8(depth + 1); }
 			void on_optional(ast::TpOptional& type) override { assert(false); }
-			void on_class(ast::TpClass& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
+			void on_own(ast::TpOwn& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
 			void on_ref(ast::TpRef& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
 			void on_shared(ast::TpShared& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
 			void on_weak(ast::TpWeak& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
@@ -1630,7 +1632,7 @@ struct Generator : ast::ActionScanner {
 					val,
 					llvm::ConstantInt::get(gen->tp_int_ptr, depth));
 			}
-			void on_class(ast::TpClass& type) override { handle_ptr(); }
+			void on_own(ast::TpOwn& type) override { handle_ptr(); }
 			void on_ref(ast::TpRef& type) override { handle_ptr(); }
 			void on_shared(ast::TpShared& type) override { handle_ptr(); }
 			void on_weak(ast::TpWeak& type) override { handle_ptr(); }
@@ -1693,7 +1695,7 @@ struct Generator : ast::ActionScanner {
 					? val
 					: gen->builder->CreateBitOrPointerCast(val, gen->to_llvm_type(type));
 			}
-			void on_class(ast::TpClass& type) override { handle_ptr(type); }
+			void on_own(ast::TpOwn& type) override { handle_ptr(type); }
 			void on_ref(ast::TpRef& type) override { handle_ptr(type); }
 			void on_shared(ast::TpShared& type) override { handle_ptr(type); }
 			void on_weak(ast::TpWeak& type) override { handle_ptr(type); }
@@ -1918,7 +1920,7 @@ struct Generator : ast::ActionScanner {
 					void on_cold_lambda(ast::TpColdLambda& type) override { result = gen->tp_opt_bool; }
 					void on_void(ast::TpVoid&) override { result = depth == 0 ? gen->tp_bool : gen->tp_opt_bool; }
 					void on_optional(ast::TpOptional& type) { assert(false); };
-					void on_class(ast::TpClass& type) override { result = gen->tp_int_ptr; }
+					void on_own(ast::TpOwn& type) override { result = gen->tp_int_ptr; }
 					void on_ref(ast::TpRef& type) override { result = gen->tp_int_ptr; }
 					void on_shared(ast::TpShared& type) override { result = gen->tp_int_ptr; }
 					void on_weak(ast::TpWeak& type) override { result = gen->tp_int_ptr; }
@@ -1930,7 +1932,7 @@ struct Generator : ast::ActionScanner {
 				type.wrapped->match(matcher);
 				result = matcher.result;
 			}
-			void on_class(ast::TpClass& type) override { result = gen->ptr_type; }
+			void on_own(ast::TpOwn& type) override { result = gen->ptr_type; }
 			void on_ref(ast::TpRef& type) override { result = gen->ptr_type; }
 			void on_shared(ast::TpShared& type) override { result = gen->ptr_type; }
 			void on_weak(ast::TpWeak& type) override { result = gen->ptr_type; }
@@ -2017,7 +2019,7 @@ struct Generator : ast::ActionScanner {
 	}
 
 	llvm::orc::ThreadSafeModule build() {
-		std::unordered_set<pin<ast::TpClass>> special_copy_and_dispose = { ast->blob->base_class, ast->blob, ast->own_array, ast->weak_array, ast->string_cls };
+		std::unordered_set<pin<ast::Class>> special_copy_and_dispose = { ast->blob->base_class.cast<ast::Class>(), ast->blob, ast->own_array, ast->weak_array, ast->string_cls};
 		dispatcher_fn_type = llvm::FunctionType::get(ptr_type, { int_type }, false);
 		auto dispos_fn_type = llvm::FunctionType::get(void_type, { ptr_type }, false);
 		auto copier_fn_type = llvm::FunctionType::get(
@@ -2253,7 +2255,7 @@ struct Generator : ast::ActionScanner {
 									delegate_struct,
 									builder.CreateStructGEP(info.fields, src, f->offset),
 									0)) });
-					} else if (isa<ast::TpClass>(*type)) {
+					} else if (isa<ast::TpOwn>(*type)) {
 						builder.CreateStore(
 							builder.CreateCall(fn_copy_object_field, {
 								builder.CreateLoad(
@@ -2364,9 +2366,9 @@ struct Generator : ast::ActionScanner {
 				if (c->is_interface)
 					continue;
 				vector<llvm::Metadata*> cls_di_fields;
-				std::function<size_t(ast::TpClass& cl)> field_builder = [&](ast::TpClass& cl) {
+				std::function<size_t(ast::Class& cl)> field_builder = [&](ast::Class& cl) {
 					size_t offset = cl.base_class
-						? field_builder(*cl.base_class.pinned())
+						? field_builder(*cl.base_class->get_implementation())
 						: 0;
 					for (auto& f : cl.fields) {
 						size_t width = to_llvm_type(*f->initializer->type())

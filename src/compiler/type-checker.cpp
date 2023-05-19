@@ -191,7 +191,7 @@ struct Typer : ast::ActionMatcher {
 				ast.get_wrapped(&type)->match(*this);
 				result = ast::format_str("Opt", result);
 			}
-			void on_class(ast::TpClass& type) override { ptr_type(type); }
+			void on_own(ast::TpOwn& type) override { ptr_type(type); }
 			void on_ref(ast::TpRef& type) override { ptr_type(type); }
 			void on_shared(ast::TpShared& type) override { ptr_type(type); }
 			void on_weak(ast::TpWeak& type) override { error(type); }
@@ -208,7 +208,7 @@ struct Typer : ast::ActionMatcher {
 		} type_name_gen(node, *ast);
 		find_type(node.p[1])->type()->match(type_name_gen);
 		auto methodName = ast::format_str("put", type_name_gen.result);
-		if (auto m = dom::peek(stream_class->this_names, ast::LongName{ methodName, nullptr})) {
+		if (auto m = dom::peek(stream_class->get_implementation()->this_names, ast::LongName { methodName, nullptr })) {
 			if (auto method = dom::strict_cast<ast::Method>(m)) {
 				auto callee = ast::make_at_location<ast::MakeDelegate>(node);
 				callee->base = move(node.p[0]);
@@ -289,13 +289,13 @@ struct Typer : ast::ActionMatcher {
 	void on_ref(ast::RefOp& node) override {
 		auto as_own = dom::strict_cast<ast::TpOwn>(find_type(node.p)->type());
 		if (!as_own)
-			node.p->error("expected class or interface, not ", node.p->type());
+			node.p->error("expected class or interface, not ", node.p->type().pinned());
 		node.type_ = ast->get_ref(as_own->target);
 	}
 	void on_conform(ast::ConformOp& node) override {
 		auto as_own = dom::strict_cast<ast::TpOwn>(find_type(node.p)->type());
 		if (!as_own)
-			node.p->error("expected class or interface, not ", node.p->type());
+			node.p->error("expected class or interface, not ", node.p->type().pinned());
 		node.type_ = ast->get_conform_ref(as_own->target);
 	}
 	void on_freeze(ast::FreezeOp& node) override {
@@ -342,6 +342,9 @@ struct Typer : ast::ActionMatcher {
 	}
 	void on_mk_instance(ast::MkInstance& node) override {
 		check_class_params(node.cls);
+		auto im = node.cls->inst_mode();
+		if (im == ast::AbstractClass::InstMode::off)
+			node.error("Class needs parameters");
 		node.type_ = ast->get_own(node.cls);
 	}
 	void on_make_fn_ptr(ast::MakeFnPtr& node) override {
@@ -415,6 +418,7 @@ struct Typer : ast::ActionMatcher {
 			if (dom::isa<ast::ClassParam>(*as_param->base.pinned()))
 				cls->error("Class parameter cannot be bound to another parameter");
 			cls = as_param->base;
+			return;
 		}
 		if (auto as_cls = dom::strict_cast<ast::Class>(cls)) {
 			if (!as_cls->params.empty())
@@ -435,6 +439,7 @@ struct Typer : ast::ActionMatcher {
 				cls->error("Expected ", as_cls->params[i]->base->get_name(), " not ", as_inst->params[i + 1]);
 		}
 	}
+	// Takes a parameterized class and its instantiation context and returns a class with all substituted parameters from context.
 	static pin<ast::AbstractClass> remove_params(pin<ast::AbstractClass> cls, ast::Ast& ast, const ast::ClassInstance& context) {
 		if (auto as_cls = dom::strict_cast<ast::Class>(cls))
 			return cls;
@@ -448,6 +453,7 @@ struct Typer : ast::ActionMatcher {
 		}
 		cls->error("internal, unexpected AbstractClass while resolving class params");
 	}
+	// Takes a type and returns another type with all associated classes converted with class-bound `remove_params`
 	static pin<ast::Type> remove_params(pin<ast::Type> type, ast::Ast& ast, const ast::ClassInstance& context) {
 		struct ParamRemover : ast::TypeMatcher{
 			pin<ast::Type> r;
