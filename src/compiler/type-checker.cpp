@@ -202,8 +202,8 @@ struct Typer : ast::ActionMatcher {
 			void error(ast::Type& type) {
 				node.error("Expected printable type, not ", ltm::pin<ast::Type>(&type));
 			}
-			void ptr_type(ast::Type& type) {
-				result = &type == ast.string_cls.pinned() ? "Str" : "Obj";
+			void ptr_type(ast::TpOwn& type) {
+				result = type.target == ast.string_cls.pinned() ? "Str" : "Obj";
 			}
 		} type_name_gen(node, *ast);
 		find_type(node.p[1])->type()->match(type_name_gen);
@@ -341,6 +341,8 @@ struct Typer : ast::ActionMatcher {
 			[&] { return ast::format_str("assign to vaiable", node.var_name, node.var.pinned()); });
 	}
 	void on_mk_instance(ast::MkInstance& node) override {
+		if (!node.cls)  // this
+			return;
 		check_class_params(node.cls);
 		auto im = node.cls->inst_mode();
 		if (im == ast::AbstractClass::InstMode::off)

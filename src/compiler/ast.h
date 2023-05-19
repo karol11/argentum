@@ -133,6 +133,10 @@ struct TpOptional : Type {
 	void match(TypeMatcher& matcher) override;
 	DECLARE_DOM_CLASS(TpOptional);
 };
+
+// Classes are owned by Module::classes
+// ClassParams - by Class::params
+// ClassInstance - by Ast::class_insts
 struct AbstractClass : Node {
 	virtual string get_name();
 	virtual pin<Class> get_implementation() {
@@ -524,7 +528,7 @@ struct SpliceField : SetField {
 };
 
 struct MkInstance : Action {
-	weak<AbstractClass> cls; // Class stored in Module::classes, ClassParam soread in Class::params, ClassInstance in Ast::class_insts
+	weak<AbstractClass> cls;  // Null indicates thistype in immediate delegates
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(MkInstance);
 };
