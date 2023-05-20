@@ -320,7 +320,7 @@ struct NameResolver : ast::ActionScanner {
 	void on_call(ast::Call& node) override {
 		ast::ActionScanner::on_call(node);
 		if (auto callee_as_mk_inst = dom::strict_cast<ast::MkInstance>(node.callee)) {
-			vector<weak<ast::AbstractClass>> params{ callee_as_mk_inst };
+			vector<weak<ast::AbstractClass>> params{ callee_as_mk_inst->cls };
 			for (auto& p : node.params) {
 				if (auto p_as_inst = dom::strict_cast<ast::MkInstance>(p))
 					params.push_back(p_as_inst->cls);

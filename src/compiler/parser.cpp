@@ -246,10 +246,12 @@ struct Parser {
 							param->is_out = false;
 						else if (match("<"))
 							param->is_in = false;
-						if (*cur != ',' || *cur != ')') {
+						if (*cur != ',' && *cur != ')') {
 							param->base = parse_class_with_params("base class for type parameter", false);
 							if (dom::strict_cast<ast::ClassParam>(param->base))
 								error("Parameter base must be a real class, not parameter");
+						} else {
+							param->base = ast->object;
 						}
 						cls->params.push_back(param);
 					} while (match(","));

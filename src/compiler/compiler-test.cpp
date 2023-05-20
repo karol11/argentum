@@ -47,6 +47,22 @@ void execute(const char* source_text, bool dump_all = false) {
     generate_and_execute(ast, false, dump_all);
 }
 
+TEST(Parser, Generics) {
+    execute(R"-(
+      using sys { String; log; }
+      class Pair(X) {
+          a = ?X;
+          b = ?X;
+          set(X a, X b) this {
+            this.a := @a;
+            this.b := @b;
+          }
+      }
+      p = Pair(String).set("Hello", "World");
+      log(p.a : "none");
+    )-");
+}
+
 TEST(Parser, Ints) {
     execute("sys_assert(7, (2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1)))");
 }
@@ -56,7 +72,7 @@ TEST(Parser, Doubles) {
 }
 
 TEST(Parser, Block) {
-    execute("sys_assert(3, {1+1}+1)");
+    execute("sys_assert(3, {1+1}+1)"); 
 }
 
 TEST(Parser, Functions) {

@@ -341,12 +341,13 @@ struct Typer : ast::ActionMatcher {
 			[&] { return ast::format_str("assign to vaiable", node.var_name, node.var.pinned()); });
 	}
 	void on_mk_instance(ast::MkInstance& node) override {
-		if (!node.cls)  // this
+		if (!node.cls)  // delegate type declaration this-param has no cls
 			return;
 		check_class_params(node.cls);
-		auto im = node.cls->inst_mode();
-		if (im == ast::AbstractClass::InstMode::off)
-			node.error("Class needs parameters");
+		// // already checked in check_class_params
+		// auto im = node.cls->inst_mode();
+		// if (im == ast::AbstractClass::InstMode::off)
+		//	  node.error("Class needs parameters");
 		node.type_ = ast->get_own(node.cls);
 	}
 	void on_make_fn_ptr(ast::MakeFnPtr& node) override {
@@ -423,7 +424,7 @@ struct Typer : ast::ActionMatcher {
 			return;
 		}
 		if (auto as_cls = dom::strict_cast<ast::Class>(cls)) {
-			if (!as_cls->params.empty())
+			if (as_cls != this_class && !as_cls->params.empty())
 				cls->error("expected class parameters");
 			return;
 		}
@@ -446,7 +447,7 @@ struct Typer : ast::ActionMatcher {
 		if (auto as_cls = dom::strict_cast<ast::Class>(cls))
 			return cls;
 		if (auto as_param = dom::strict_cast<ast::ClassParam>(cls))
-			return context.params[as_param->index];
+			return context.params[as_param->index + 1];
 		if (auto as_instance = dom::strict_cast<ast::ClassInstance>(cls)) {
 			vector<weak<ast::AbstractClass>> params;
 			for (auto& p : as_instance->params)
