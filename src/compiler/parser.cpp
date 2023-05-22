@@ -120,8 +120,8 @@ struct Parser {
 		method->base_module = name.module;
 		add_this_param(*method, cls);
 		parse_fn_def(method);
-		if (is_interface != method->body.empty()) {
-			error(is_interface ? "empty" : "not empty", " body expected");
+		if (is_interface && !method->body.empty()) {
+			error("empty body expected");
 		}
 		return method;
 	}

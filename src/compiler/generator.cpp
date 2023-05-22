@@ -897,16 +897,20 @@ struct Generator : ast::ActionScanner {
 	}
 
 	// `closure_ptr_type` define the type of `this` or `closure` parameter.
-	llvm::Function* compile_function(ast::MkLambda& node, string name, llvm::Type* closure_ptr_type) {
+	llvm::Function* compile_function(ast::MkLambda& node, string name, llvm::Type* closure_ptr_type, bool is_external) {
 		if (auto seen = compiled_functions[&node])
 			return seen;
 		llvm::Function* prev = current_function;
 		current_function = llvm::Function::Create(
 			lambda_to_llvm_fn(node, node.type()),
-			llvm::Function::InternalLinkage,
+			is_external
+				? llvm::Function::ExternalLinkage
+				: llvm::Function::InternalLinkage,
 			name,
 			module.get());
-		compile_fn_body(node, name, closure_ptr_type);
+		if (!is_external) {
+			compile_fn_body(node, name, closure_ptr_type);
+		}
 		swap(prev, current_function);
 		compiled_functions[&node] = prev;
 		return prev;
@@ -918,7 +922,8 @@ struct Generator : ast::ActionScanner {
 			ast::format_str("L_", node.module->name, '_', node.line, '_', node.pos),
 			captures.empty()
 				? nullptr
-				: captures.back().second->getPointerTo());
+				: captures.back().second->getPointerTo(),
+			false);  // is_external
 		auto r = builder->CreateInsertValue(
 			llvm::UndefValue::get(lambda_struct),
 			capture_ptrs.empty()
@@ -2150,8 +2155,6 @@ struct Generator : ast::ActionScanner {
 				globals.insert({ c.second, addr });
 			}
 		}
-		// From this point it is possible to build code that access fleds and methods.
-		// Make llvm functions for standalone ast functions.
 		for (auto& m : ast->modules) {
 			for (auto& fn : m.second->functions) {
 				functions.insert({ fn.second, llvm::Function::Create(
@@ -2162,6 +2165,8 @@ struct Generator : ast::ActionScanner {
 					ast::format_str("ag_fn_", m.first, "_", fn.first), module.get())});
 			}
 		}
+		// From this point it is possible to build code that access fleds and methods.
+		// Make llvm functions for standalone ast functions.
 		// Build class contents - initializer, dispatcher, disposer, copier, methods.
 		for (auto& cls : ast->classes_in_order) {
 			if (cls->is_interface)
@@ -2292,8 +2297,9 @@ struct Generator : ast::ActionScanner {
 			for (auto& m : cls->new_methods) {
 				auto& m_info = methods[m];
 				info.vmt_fields.push_back(compile_function(*m,
-					ast::format_str("M_", cls->get_name(), '_', ast::LongName{ m->name, m->base_module }),
-					info.fields->getPointerTo()));
+					ast::format_str("ag_m_", cls->get_name(), '_', ast::LongName{ m->name, m->base_module }),
+					info.fields->getPointerTo(),
+					m->is_platform));
 			}
 			size_t base_index = info.vmt_fields.size();
 			if (cls->base_class) {
@@ -2303,8 +2309,9 @@ struct Generator : ast::ActionScanner {
 				for (auto& m : cls->overloads[cls->base_class]) { // for overrides
 					auto& m_info = methods[m];
 					info.vmt_fields[base_index + m_info.ordinal] = compile_function(*m,
-						ast::format_str("M_", cls->get_name(), '_', ast::LongName{ m->name, m->base_module }),
-						info.fields->getPointerTo());
+						ast::format_str("ag_m_", cls->get_name(), '_', ast::LongName{ m->name, m->base_module }),
+						info.fields->getPointerTo(),
+						m->is_platform);
 				}
 			}
 			info.vmt_fields.push_back(llvm::ConstantStruct::get(obj_vmt_struct, {
@@ -2324,8 +2331,9 @@ struct Generator : ast::ActionScanner {
 					methods.push_back(llvm::ConstantExpr::getBitCast(
 						compile_function(
 							*m.pinned(),
-							ast::format_str("IM_", cls->get_name(), '_', i.first->get_name(), '_', m->name),
-							info.fields->getPointerTo()),
+							ast::format_str("ag_m_", cls->get_name(), '_', i.first->get_name(), '_', ast::LongName{ m->name, m->base_module }),
+							info.fields->getPointerTo(),
+							m->is_platform),
 						ptr_type));
 				}
 				vmts.insert({
