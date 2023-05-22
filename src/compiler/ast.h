@@ -138,13 +138,15 @@ struct TpOptional : Type {
 // ClassParams - by Class::params
 // ClassInstance - by Ast::class_insts
 struct AbstractClass : Node {
+	// bool is_instantiated = false;
+	// bool is_casted_to = false;
 	virtual string get_name();
 	virtual pin<Class> get_implementation() {
 		error("internal error abstract class has no implementation");
 	}
 	enum struct InstMode {
 		direct,      // this is a well-defined class that can be instantiated with no lookups
-		in_context,  // class param or parameterized instance. requires this pointer and lookup in vmt
+		in_context,  // class param or parameterized instance. requires `this` pointer and lookup in vmt
 		off,         // parameterized class with no params provided, cannot be instantiated
 	};
 	virtual InstMode inst_mode() { return InstMode::off; }
@@ -351,7 +353,7 @@ struct Ast: dom::DomItem {
 	weak<Class> weak_array;
 	weak<Class> string_cls;
 	weak<Module> sys;
-	vector<weak<Class>> classes_in_order; // all classes from all modules in the base-first order
+	vector<weak<Class>> classes_in_order; // all classes from all modules in the base-first and class-before-class-instance order
 
 	unordered_map<string, own<Module>> modules;
 	vector<weak<Module>> modules_in_order; // imports of module M placed before M

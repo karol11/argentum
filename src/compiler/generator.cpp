@@ -128,6 +128,16 @@ struct ClassInfo {
 	llvm::ArrayType* ivmt = nullptr;       // only for interface i8*[methods_count+1], ivmt[0]=inteface_id
 };
 
+template<typename T>
+struct vec_ptr_hasher {
+	size_t operator() (const vector<T*>& v) const {
+		size_t r = 0;
+		for (const auto& p : v)
+			r += std::hash<void*>()(p);
+		return r;
+	}
+};
+
 struct Generator : ast::ActionScanner {
 	ltm::pin<ast::Ast> ast;
 	std::unique_ptr<llvm::LLVMContext> context;
@@ -202,6 +212,10 @@ struct Generator : ast::ActionScanner {
 	llvm::Constant* const_0 = nullptr;
 	llvm::Constant* const_1 = nullptr;
 	llvm::Constant* const_256 = nullptr;
+	unordered_map<
+		vector<llvm::Constant*>,
+		llvm::Constant*,
+		vec_ptr_hasher<llvm::Constant>> table_cache;
 
 	Generator(ltm::pin<ast::Ast> ast, bool debug_info_mode)
 		: ast(ast)
@@ -1175,7 +1189,7 @@ struct Generator : ast::ActionScanner {
 	}
 	void on_get_field(ast::GetField& node) override {
 		auto base = compile(node.base);
-		auto class_fields = classes[ast->extract_class(base.type)].fields;
+		auto class_fields = classes[ast->extract_class(base.type)->get_implementation()].fields;
 		result->data = builder->CreateLoad(
 			class_fields->getElementType(node.field->offset),
 			builder->CreateStructGEP(class_fields, base.data, node.field->offset));
@@ -1192,7 +1206,7 @@ struct Generator : ast::ActionScanner {
 		}
 	}
 	void on_set_field(ast::SetField& node) override {
-		auto class_fields = classes[ast->extract_class(node.base->type())].fields;
+		auto class_fields = classes[ast->extract_class(node.base->type())->get_implementation()].fields;
 		if (is_ptr(node.type())) {
 			auto base = comp_to_persistent(node.base);
 			*result = make_retained_or_non_ptr(compile(node.val), base.data);
@@ -1223,7 +1237,7 @@ struct Generator : ast::ActionScanner {
 		}
 	}
 	void on_splice_field(ast::SpliceField& node) override {
-		auto class_fields = classes[ast->extract_class(node.base->type())].fields;
+		auto class_fields = classes[ast->extract_class(node.base->type())->get_implementation()].fields;
 		auto base = comp_to_persistent(node.base);
 		auto val = compile(node.val);
 		auto bb_ok = llvm::BasicBlock::Create(*context, "", current_function);
@@ -1245,7 +1259,7 @@ struct Generator : ast::ActionScanner {
 		dispose_val(move(base));
 	}
 	void on_mk_instance(ast::MkInstance& node) override {
-		result->data = builder->CreateCall(classes[node.cls].constructor, {});
+		result->data = builder->CreateCall(classes[node.cls->get_implementation()].constructor, {});
 		result->lifetime = Val::Retained{};
 	}
 	void on_to_int(ast::ToIntOp& node) override {
@@ -2419,13 +2433,16 @@ struct Generator : ast::ActionScanner {
 	}
 
 	llvm::Constant* make_const_array(string name, vector<llvm::Constant*> content) {
+		auto& cached = table_cache[content];
+		if (cached)
+			return cached;
 		auto type = llvm::ArrayType::get(ptr_type, content.size());
 		module->getOrInsertGlobal(name, type);
 		auto result = module->getGlobalVariable(name);
 		result->setInitializer(llvm::ConstantArray::get(type, move(content)));
 		result->setConstant(true);
 		result->setLinkage(llvm::GlobalValue::InternalLinkage);
-		return result;
+		return cached = result;
 	}
 };
 
