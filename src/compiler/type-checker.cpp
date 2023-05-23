@@ -251,13 +251,13 @@ struct Typer : ast::ActionMatcher {
 		if (base_as_inst)
 			node.type_ = remove_params(node.type_.pinned(), *ast, *base_as_inst);
 		if (dom::isa<ast::TpConformRef>(*node.base->type())) {
-			if (node.method->mut != 0)
+			if (node.method->mut != ast::Mut::ANY)
 				node.error("cannot call mutating or shared methods on maybe-frozen object");
 		} else if (dom::isa<ast::TpShared>(*node.base->type())) {
-			if (node.method->mut == 1)
+			if (node.method->mut == ast::Mut::MUTATING)
 				node.error("cannot call a mutating method on a shared object");
 		} else {
-			if (node.method->mut == -1)
+			if (node.method->mut == ast::Mut::FROZEN)
 				node.error("cannot call a *method on a non-shared object");
 		}
 	}
@@ -390,7 +390,7 @@ struct Typer : ast::ActionMatcher {
 					*fix_result = move(r);
 				},
 				[&] { node.error("field/method name is ambigiuous, use cast"); }))
-				node.error("class ", base_cls, " doesn't have field/method ", ast::LongName{ node.field_name, node.field_module });
+				node.error("class ", base_cls->get_name(), " doesn't have field/method ", ast::LongName{node.field_name, node.field_module});
 		}
 		if (&node != fix_result->pinned())
 			return;
@@ -671,6 +671,8 @@ struct Typer : ast::ActionMatcher {
 		auto exp_as_inst = dom::strict_cast<ast::ClassInstance>(expected);
 		if (!act_as_inst)
 			return !act_as_inst;
+		if (!exp_as_inst)
+			return true;
 		if (exp_as_inst->params.size() != act_as_inst->params.size())
 			return false;
 		for (size_t i = 0; i < act_as_inst->params.size(); i++) {
@@ -795,9 +797,9 @@ struct Typer : ast::ActionMatcher {
 
 	void process_method(own<ast::Method>& m) {
 		m->names[0]->type = find_type(m->names[0]->initializer)->type();
-		if (m->mut == -1) {
+		if (m->mut == ast::Mut::FROZEN) {
 			m->names[0]->type = ast->get_shared(ast->extract_class(m->names[0]->type));
-		} else if (m->mut == 0) {
+		} else if (m->mut == ast::Mut::ANY) {
 			m->names[0]->type = ast->get_conform_ref(ast->extract_class(m->names[0]->type));
 		}
 		for (auto& a : m->body)

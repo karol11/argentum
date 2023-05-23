@@ -106,19 +106,11 @@ struct Parser {
 		}
 		expect("}");
 	}
-	void add_this_param(ast::Function& fn, pin<ast::Class> cls) {
-		auto this_param = make<ast::Var>();
-		fn.names.push_back(this_param);
-		this_param->name = "this";
-		auto this_init = make<ast::MkInstance>();
-		this_init->cls = cls;
-		this_param->initializer = this_init;
-	}
 	pin<ast::Method> make_method(const ast::LongName& name, pin<ast::Class> cls, bool is_interface) {
 		auto method = make<ast::Method>();
 		method->name = name.name;
 		method->base_module = name.module;
-		add_this_param(*method, cls);
+		ast->add_this_param(*method, cls);
 		parse_fn_def(method);
 		if (is_interface && !method->body.empty()) {
 			error("empty body expected");
@@ -271,11 +263,13 @@ struct Parser {
 							expect(";");
 						}
 					} else {
-						int is_mut = match("*") ? -1 :
-							match("-") ? 0 : 1;
+						ast::Mut is_mut =
+							match("*") ? ast::Mut::FROZEN :
+							match("-") ? ast::Mut::ANY :
+							ast::Mut::MUTATING;
 						auto member_name = expect_id("method or field name");
 						if (match("=")) {
-							if (is_mut != 1)
+							if (is_mut != ast::Mut::MUTATING)
 								error("field can't have '-' or '*' markers");
 							cls->fields.push_back(make<ast::Field>());
 							cls->fields.back()->name = member_name;
@@ -391,7 +385,7 @@ struct Parser {
 			}
 			if (match("(")) {
 				auto fn = make<ast::ImmediateDelegate>();
-				add_this_param(*fn, nullptr);  // to be set at type resolution pass
+				ast->add_this_param(*fn, nullptr);  // to be set at type resolution pass
 				parse_params(fn);
 				fn->type_expression = parse_type();
 				return fn;
@@ -605,7 +599,7 @@ struct Parser {
 					if (d_ref)
 						error("duplicated delegate name, ", d->name, " see ", *d_ref);
 					d_ref = d;
-					add_this_param(*d, nullptr);  // this type to be patched at the type resolver pass
+					ast->add_this_param(*d, nullptr);  // this type to be patched at the type resolver pass
 					parse_fn_def(d);
 					r = d;
 				} else {
