@@ -47,22 +47,6 @@ void execute(const char* source_text, bool dump_all = false) {
     generate_and_execute(ast, false, dump_all);
 }
 
-TEST(Parser, Generics) {
-    execute(R"-(
-      using sys { String; log; }
-      class Pair(X) {
-          a = ?X;
-          b = ?X;
-          set(X a, X b) this {
-            this.a := @a;
-            this.b := @b;
-          }
-      }
-      p = Pair(String).set("Hello", "World");
-      log(p.a : "none");
-    )-");
-}
-
 TEST(Parser, Ints) {
     execute("sys_assert(7, (2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1)))");
 }
@@ -418,15 +402,14 @@ TEST(Parser, BlobsAndIndexes) {
     execute(R"(
         using sys {
             Blob;
-            insertItems;
             assert;
         }
         class sys_Blob {
-            getAt(int i) int { sys_get64At(this, i) }
-            setAt(int i, int v) { sys_set64At(this, i, v) }
+            getAt(int i) int { get64At(i) }
+            setAt(int i, int v) { set64At(i, v) }
         }
         b = Blob;
-        insertItems(b, 0, 3);
+        b.insertItems(0, 3);
         b[1] := 42;
         c = @b;
         assert(42, c[1])
@@ -454,17 +437,17 @@ TEST(Parser, Arrays) {
             x = 1;
             y = 0;
         }
-        a = sys_Array;
-        sys_insertItems(a, 0, 10);
+        a = sys_Array(Node);
+        a.insertItems(0, 10);
         a[0] := Node;
         a[1] := Node;
-        a[1] && _~Node ? {
+        a[1] ? {
             _.x := 42;
             _.y := 33;
         };
         c = @a;
-        sys_deleteItems(c, 0, 1);
-        sys_assert(42, c[0] && _~Node ? _.x : -1)
+        c.delete(0, 1);
+        sys_assert(42, c[0] ? _.x : -1)
     )");
 }
 
@@ -475,12 +458,12 @@ TEST(Parser, WeakArrays) {
             y = 0;
         }
         n = Node;
-        a = sys_WeakArray;
-        sys_insertItems(a, 0, 10);
+        a = sys_WeakArray(Node);
+        a.insertItems(0, 10);
         a[0] := &n;
         a[1] := &n;
         c = @a;
-        sys_deleteWeaks(c, 0, 1);
+        c.delete(0, 1);
         sys_assert(1, c[0] && _==n ? 1:0)
     )");
 }
@@ -497,10 +480,10 @@ TEST(Parser, RetOwnPtr) {
             r.y := y;
             r
         }
-        a = sys_Array;
-        sys_insertItems(a, 0, 1);
+        a = sys_Array(Node);
+        a.insertItems(0, 1);
         a[0] := nodeAt(42, 33);  // no copy here!
-        sys_assert(42, a[0] && _~Node ? _.x : -1)
+        sys_assert(42, a[0] ? _.x : -1)
     )");
 }
 
@@ -538,46 +521,14 @@ TEST(Parser, InitializerMethods) {
     )");
 }
 
-TEST(Parser, TypedArrays) {
-    execute(R"(
-        class sys_Array {
-            add(()@sys_Object n) {               // `add` accepts lambda and calss it to get @object placed exactly where, when and how much objects needed.
-                at = sys_getSize(this);
-                sys_insertItems(this, at, 1);
-                sys_setAtArray(this, at, n());
-            }
-            size() int { sys_getSize(this) }
-        }
-        class Node {
-            x = 1;
-            y = 0;
-            xy(int x, int y) this {
-                this.x:=x;
-                this.y:=y;
-            }
-        }
-        class NodeArray {
-            +sys_Array;
-            def = Node.xy(0, 0);   // `def` - default object to be returned on errors
-            getAt(int i) Node {
-                sys_getAtArray(this, i) && _~Node ? _ : def  // get element, check it for out of bounds or unitialized, cast it to Node and check, on success return it otherwise return default.
-            }
-        }
-        a = NodeArray;
-        a.add((){ Node.xy(2, 3) });
-        a.add(Node.xy(20, 30));                    // @T to ()@T conversion
-        sys_assert(34, a[0].x + a[1].y + a.size())
-    )");
-}
-
 TEST(Parser, StringOperations) {
     execute(R"(
         class sys_String{
-            get() int { sys_getCh(this) }
+            get() int { getCh() }
             length() int {
                 r = 0;
                 loop {
-                    c = sys_getCh(this);
+                    c = getCh();
                     c != 0 ? r := r + 1;
                     c == 0 ? r
                 }
@@ -587,22 +538,22 @@ TEST(Parser, StringOperations) {
             +sys_Blob;
             pos = 0;
             put(int codePoint) this {
-                size = sys_getSize(this);
+                size = size();
                 growStep = 100;
                 pos + 5 >= size ?
-                    sys_insertItems(this, size, growStep);
-                pos := sys_putCh(this, pos, codePoint)
+                    insertItems(size, growStep);
+                pos := putCh(pos, codePoint)
             }
             append(sys_String s) this {
                 loop{
-                    c = sys_getCh(s);
+                    c = s.getCh();
                     c != 0 ? put(c);
                     c == 0
                 }
             }
             str() @sys_String {
                 r = sys_String;
-                sys_stringFromBlob(r, this, 0, pos);
+                r.fromBlob(this, 0, pos);
                 pos := 0;
                 r
             }
@@ -615,29 +566,26 @@ TEST(Parser, StringOperations) {
 TEST(Parser, LiteralStrings) {
     execute(R"(
         a = "Hi";
-        sys_getCh(a); // a="i"
+        a.getCh(); // a="i"
         b = @a;
-        sys_getCh(a); // a=""   b"i"
-        sys_assert(1, sys_getCh(b) == 'i' && sys_getCh(a) == 0 ? 1:0)
+        a.getCh(); // a=""   b"i"
+        sys_assert(1, b.getCh() == 'i' && a.getCh() == 0 ? 1:0)
     )");
 }
 
 TEST(Parser, StringEscapes) {
     execute(R"-(
-        using sys {
-            assert;
-            getCh;
-        }
+        using sys { assert; }
         s = "\n\t\r\"\\\1090e\\65\!";
-        assert(0x0a, getCh(s));
-        assert(9, getCh(s));
-        assert(0x0d, getCh(s));
-        assert('"', getCh(s));
-        assert('\', getCh(s));
-        assert(0x1090e, getCh(s));
-        assert(0x65, getCh(s));
-        assert('!', getCh(s));
-        assert(0, getCh(s));
+        assert(0x0a, s.getCh());
+        assert(9, s.getCh());
+        assert(0x0d, s.getCh());
+        assert('"', s.getCh());
+        assert('\', s.getCh());
+        assert(0x1090e, s.getCh());
+        assert(0x65, s.getCh());
+        assert('!', s.getCh());
+        assert(0, s.getCh());
     )-");
 }
 
@@ -690,22 +638,20 @@ TEST(Parser, GetParentArray) {
             Array;
             Object;
             assert;
-            ins = insertItems;
-            del = deleteItems;
             par = getParent;
             getParent;
         }
-        a = Array;
-        ins(a, 0, 10);
+        a = Array(Object);
+        a.insertItems(0, 10);
         a[0] := Object;
         assert(a[0] && par(_) && _==a ? 1:0, 1);
         v = a[0];
-        del(a, 0, 1);
+        a.delete(0, 1);
         assert(v && !par(_) ? 1 : 0, 1);
         a[0] := Object;
         assert(a[0] && par(_) && _==a ? 1:0, 1);
         v := a[0];
-        sys_setOptAt(a, 0, ?Object);
+        a.setOptAt(0, ?Object);
         assert(v && !getParent(_) ? 1 : 0, 1);
         assert(!getParent(a) ? 1 : 0, 1)
     )");
@@ -774,29 +720,30 @@ TEST(Parser, Multiline) {
 TEST(Parser, StringInterpolation) {
     execute(R"-(
       using sys {
-            getCh;
+            String;
+            StrBuilder;
       }
-      class sys_StrBuilder{
+      class StrBuilder{
             pos = 0;
             put(int codePoint) this {
-                size = sys_getSize(this);
+                size = size();
                 growStep = 100;
                 pos + 5 >= size ?
-                    sys_insertItems(this, size, growStep);
-                pos := sys_putCh(this, pos, codePoint)
+                    insertItems(size, growStep);
+                pos := putCh(pos, codePoint)
             }
-            putStr(sys_String s) this {
+            putStr(String s) this {
                 loop !{
-                    c = sys_getCh(s);
+                    c = s.getCh();
                     c != 0 ? put(c)
                 }
             }
             putInt(int v) this {
                 put(v % 10 + '0')
             }
-            toStr() @sys_String {
-                r = sys_String;
-                sys_stringFromBlob(r, this, 0, pos);
+            toStr() @String {
+                r = String;
+                r.fromBlob(this, 0, pos);
                 pos := 0;
                 r
             }
@@ -808,6 +755,22 @@ TEST(Parser, StringInterpolation) {
                 : "zxcv"}
          Age={2 * 2}
       ");
+    )-");
+}
+
+TEST(Parser, Generics) {
+    execute(R"-(
+      using sys { String; log; }
+      class Pair(X) {
+          a = ?X;
+          b = ?X;
+          set(X a, X b) this {
+            this.a := @a;
+            this.b := @b;
+          }
+      }
+      p = Pair(String).set("Hello", "World");
+      log(p.a : "none");
     )-");
 }
 
