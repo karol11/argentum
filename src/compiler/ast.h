@@ -56,6 +56,12 @@ namespace ast {
 template<typename... T>
 string format_str(const T&... t) { return (std::stringstream() << ... << t).str(); }
 
+enum struct Mut {
+	MUTATING = 1,
+	FROZEN = -1,
+	ANY = 0
+};
+
 struct Module : dom::DomItem {
 	weak<Ast> ast;
 	string name;
@@ -364,7 +370,9 @@ struct Ast: dom::DomItem {
 	// Used by platform modules, always populate sys module
 	pin<Field> mk_field(string name, pin<Action> initializer);
 	pin<Class> mk_class(string name, std::initializer_list<pin<Field>> fields = {});
-	pin<ast::Function> mk_fn(string name, void(*entry_point)(), pin<Action> result_type, std::initializer_list<pin<Type>> params);
+	pin<Function> mk_fn(string name, void(*entry_point)(), pin<Action> result_type, std::initializer_list<pin<Type>> params);
+	pin<Function> mk_method(Mut mut, pin<Class> cls, string m_name, void(*entry_point)(), pin<Action> result_type, std::initializer_list<pin<Type>> params);
+	void add_this_param(ast::Function& fn, pin<ast::Class> cls);
 
 	pin<TpInt64> tp_int64();
 	pin<TpDouble> tp_double();
@@ -452,7 +460,7 @@ struct Method : Function {  // Cannot be in the tree of ops. Resides in TpClass:
 	weak<Module> base_module; // along with `name` defines the name of the method as it is declared, null if name is short
 	int ordinal = 0; // index int cls->new_methods.
 	bool is_factory = false; // @-method
-	int mut = 1;  // 1=mutable, -1=frozen(*), 0=any(-)
+	Mut mut = Mut::MUTATING;
 	DECLARE_DOM_CLASS(Method);
 };
 
