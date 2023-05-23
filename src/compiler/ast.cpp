@@ -485,6 +485,43 @@ pin<Class> Ast::mk_class(string name, std::initializer_list<pin<Field>> fields) 
 	return r;
 };
 
+void Ast::add_this_param(ast::Function& fn, pin<ast::Class> cls) {
+	auto this_param = make_at_location<ast::Var>(fn);
+	fn.names.push_back(this_param);
+	this_param->name = "this";
+	auto this_init = make_at_location<ast::MkInstance>(fn);
+	this_init->cls = cls;
+	this_param->initializer = this_init;
+}
+
+pin<ast::Function> Ast::mk_method(
+	ast::Mut mut,
+	pin<Class> cls,
+	string m_name,
+	void(*entry_point)(),
+	pin<Action> result_type,
+	std::initializer_list<pin<Type>> params)
+{
+	auto m = pin<ast::Method>::make();
+	m->mut = mut;
+	m->name = m_name;
+	m->cls = cls;
+	m->ovr = m->base = m;
+	m->is_platform = true;
+	m->type_expression = result_type;
+	cls->new_methods.push_back(m);
+	int numerator = 0;
+	add_this_param(*m, cls);
+	for (auto& p : params) {
+		m->names.push_back(new Var);
+		m->names.back()->type = p;
+		m->names.back()->name = ast::format_str("p", numerator++);
+	}
+	if (entry_point)
+		platform_exports.insert({ ast::format_str("ag_m_", cls->get_name(), "_", m_name), entry_point});
+	return m;
+};
+
 pin<ast::Function> Ast::mk_fn(string name, void(*entry_point)(), pin<Action> result_type, std::initializer_list<pin<Type>> params) {
 	auto fn = pin<ast::Function>::make();
 	sys->functions.insert({ name, fn });

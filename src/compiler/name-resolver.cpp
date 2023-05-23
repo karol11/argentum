@@ -184,7 +184,7 @@ struct NameResolver : ast::ActionScanner {
 			? fn->names.front().pinned()
 			: nullptr;
 		if (auto as_method = dom::strict_cast<ast::Method>(fn)) {
-			if (as_method->mut == -1) {
+			if (as_method->mut == ast::Mut::FROZEN) {
 				auto freeze = ast::make_at_location<ast::FreezeOp>(*this_var->initializer);
 				freeze->p = move(this_var->initializer);
 				this_var->initializer = freeze;

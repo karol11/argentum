@@ -76,64 +76,64 @@ AgObject* ag_fn_sys_getParent   (AgObject* obj);   // obj not null
 // AgWeak support
 //
 void      ag_copy_weak_field (void** dst, AgWeak* src);
+void      ag_release_weak(AgWeak* obj);
 AgWeak*   ag_mk_weak         (AgObject* obj);
 AgObject* ag_deref_weak      (AgWeak* w);
-void      ag_release_weak    (AgWeak* obj);
 
 //
 // AgString support
 //
-int32_t   ag_fn_sys_getCh           (AgString* s);
-void      ag_copy_sys_String        (AgString* dst, AgString* src);
-void      ag_dtor_sys_String        (AgString* str);
-bool      ag_fn_sys_stringFromBlob  (AgString* s, AgBlob* b, int at, int count);
-int64_t   ag_fn_sys_putCh           (AgBlob* b, int at, int codepoint);
+void      ag_copy_sys_String(AgString* dst, AgString* src);
+void      ag_dtor_sys_String(AgString* str);
+int32_t   ag_m_sys_String_getCh     (AgString* s);
+bool      ag_m_sys_String_fromBlob  (AgString* s, AgBlob* b, int at, int count);
+int64_t   ag_m_sys_Blob_putCh       (AgBlob* b, int at, int codepoint);
 
 //
 // AgContainer support (both Blobs and Arrays)
 //
-int64_t ag_fn_sys_getSize          (AgBlob* b);
-void    ag_fn_sys_insertItems      (AgBlob* b, uint64_t index, uint64_t count);
-bool    ag_fn_sys_moveItems        (AgBlob* blob, uint64_t a, uint64_t b, uint64_t c);
+int64_t ag_m_sys_Container_size        (AgBlob* b);
+void    ag_m_sys_Container_insertItems (AgBlob* b, uint64_t index, uint64_t count);
+bool    ag_m_sys_Container_moveItems   (AgBlob* blob, uint64_t a, uint64_t b, uint64_t c);
 
 //
 // AgBlob support
 //
-int64_t ag_fn_sys_get8At         (AgBlob* b, uint64_t index);
-void    ag_fn_sys_set8At         (AgBlob* b, uint64_t index, int64_t val);
-int64_t ag_fn_sys_get16At        (AgBlob* b, uint64_t index);
-void    ag_fn_sys_set16At        (AgBlob* b, uint64_t index, int64_t val);
-int64_t ag_fn_sys_get32At        (AgBlob* b, uint64_t index);
-void    ag_fn_sys_set32At        (AgBlob* b, uint64_t index, int64_t val);
-int64_t ag_fn_sys_get64At        (AgBlob* b, uint64_t index);
-void    ag_fn_sys_set64At        (AgBlob* b, uint64_t index, int64_t val);
-bool    ag_fn_sys_copyBytes      (AgBlob* dst, uint64_t dst_index, AgBlob* src, uint64_t src_index, uint64_t bytes);
 void    ag_copy_sys_Container    (AgBlob* dst, AgBlob* src);
-void    ag_copy_sys_Blob         (AgBlob* dst, AgBlob* src);
-void    ag_fn_sys_deleteBytes    (AgBlob* b, uint64_t index, uint64_t count);
 void    ag_dtor_sys_Container    (AgBlob* ptr);
+void    ag_copy_sys_Blob         (AgBlob* dst, AgBlob* src);
 void    ag_dtor_sys_Blob         (AgBlob* ptr);
+int64_t ag_m_sys_Blob_get8At     (AgBlob* b, uint64_t index);
+void    ag_m_sys_Blob_set8At     (AgBlob* b, uint64_t index, int64_t val);
+int64_t ag_m_sys_Blob_get16At    (AgBlob* b, uint64_t index);
+void    ag_m_sys_Blob_set16At    (AgBlob* b, uint64_t index, int64_t val);
+int64_t ag_m_sys_Blob_get32At    (AgBlob* b, uint64_t index);
+void    ag_m_sys_Blob_set32At    (AgBlob* b, uint64_t index, int64_t val);
+int64_t ag_m_sys_Blob_get64At    (AgBlob* b, uint64_t index);
+void    ag_m_sys_Blob_set64At    (AgBlob* b, uint64_t index, int64_t val);
+bool    ag_m_sys_Blob_copyBytesTo(AgBlob* dst, uint64_t dst_index, AgBlob* src, uint64_t src_index, uint64_t bytes);
+void    ag_m_sys_Blob_deleteBytes(AgBlob* b, uint64_t index, uint64_t count);
 void    ag_make_blob_fit         (AgBlob* b, size_t required_size);
 
 //
 // AgArray support
 //
-AgObject* ag_fn_sys_getAtArray    (AgBlob* b, uint64_t index);
-AgObject* ag_fn_sys_setAtArray    (AgBlob* b, uint64_t index, AgObject* val);
-void      ag_fn_sys_setOptAt      (AgBlob* b, uint64_t index, AgObject* val);
-bool      ag_fn_sys_spliceAt      (AgBlob* b, uint64_t index, AgObject* val);
 void	  ag_copy_sys_Array       (AgBlob* dst, AgBlob* src);
 void      ag_dtor_sys_Array       (AgBlob* ptr);
-void      ag_fn_sys_deleteItems   (AgBlob* b, uint64_t index, uint64_t count);
+AgObject* ag_m_sys_Array_getAt    (AgBlob* b, uint64_t index);
+AgObject* ag_m_sys_Array_setAt    (AgBlob* b, uint64_t index, AgObject* val);
+void      ag_m_sys_Array_setOptAt (AgBlob* b, uint64_t index, AgObject* val);
+bool      ag_m_sys_Array_spliceAt (AgBlob* b, uint64_t index, AgObject* val);
+void      ag_m_sys_Array_delete   (AgBlob* b, uint64_t index, uint64_t count);
 
 //
 // AgWeakArray support
 //
-AgWeak*   ag_fn_sys_getAtWeakArray (AgBlob* b, uint64_t index);
-void      ag_fn_sys_setAtWeakArray (AgBlob* b, uint64_t index, AgWeak* val);
 void      ag_copy_sys_WeakArray    (AgBlob* dst, AgBlob* src);
 void      ag_dtor_sys_WeakArray    (AgBlob* ptr);
-void      ag_fn_sys_deleteWeaks    (AgBlob* b, uint64_t index, uint64_t count);
+AgWeak*   ag_m_sys_WeakArray_getAt (AgBlob* b, uint64_t index);
+void      ag_m_sys_WeakArray_setAt (AgBlob* b, uint64_t index, AgWeak* val);
+void      ag_m_sys_WeakArray_delete(AgBlob* b, uint64_t index, uint64_t count);
 
 void      ag_fn_sys_terminate (int);
 void      ag_fn_sys_log       (AgString* s);
