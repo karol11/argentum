@@ -538,11 +538,11 @@ TEST(Parser, StringOperations) {
             +sys_Blob;
             pos = 0;
             put(int codePoint) this {
-                size = size();
+                size = capacity();
                 growStep = 100;
                 pos + 5 >= size ?
                     insertItems(size, growStep);
-                pos := putCh(pos, codePoint)
+                pos := putChAt(pos, codePoint)
             }
             append(sys_String s) this {
                 loop{
@@ -726,11 +726,11 @@ TEST(Parser, StringInterpolation) {
       class StrBuilder{
             pos = 0;
             put(int codePoint) this {
-                size = size();
+                size = capacity();
                 growStep = 100;
                 pos + 5 >= size ?
                     insertItems(size, growStep);
-                pos := putCh(pos, codePoint)
+                pos := putChAt(pos, codePoint)
             }
             putStr(String s) this {
                 loop !{
@@ -771,6 +771,43 @@ TEST(Parser, Generics) {
       }
       p = Pair(String).set("Hello", "World");
       log(p.a : "none");
+    )-");
+}
+
+TEST(Parser, ReopenGenerics) {
+    execute(R"-(
+        class sys_WeakArray{
+            append(T item) T {
+                insertItems(capacity(), 1);
+                this[capacity() - 1] := &item;
+                item
+            }
+        }
+        a = sys_WeakArray(sys_Object);
+        {
+          x = sys_Object;
+          a.append(x);
+          sys_assert(1, a[0] && x == _ ? 1:0);
+        };
+        sys_assert(1, a[0] ? 0:1);
+    )-");
+}
+
+TEST(Parser, GenericFromGeneric) {
+    execute(R"-(
+        using sys { Array; String; Blob; }
+        class Pair(A, B) {
+            a = ?A;
+            b = ?B;
+        }
+        class Map(K, V) {
+            +Array(Pair(K, V));
+        }
+        class Dict(X) {
+            +Map(String, X);
+        }
+        d = Dict(Blob);
+        d[0] ? _.b ? _.capacity();
     )-");
 }
 
