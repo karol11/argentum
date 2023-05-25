@@ -244,12 +244,23 @@ struct Typer : ast::ActionMatcher {
 		}
 		return fn;
 	}
-	void on_make_delegate(ast::MakeDelegate& node) override {
-		auto base_cls = class_from_action(node.base);
-		node.type_ = type_fn(node.method)->type_;
+	pin<ast::Type> remove_member_type_params(pin<ast::AbstractClass> base_cls, pin<ast::Class> member_cls, pin<ast::Type> type_to_convert) {
+		if (member_cls->params.empty())
+			return type_to_convert;
 		auto base_as_inst = dom::strict_cast<ast::ClassInstance>(base_cls);
-		if (base_as_inst)
-			node.type_ = remove_params(node.type_.pinned(), *ast, *base_as_inst);
+		auto base_cls_ctx = dom::peek(base_cls->get_implementation()->base_contexts, member_cls);
+		auto ctx = base_cls_ctx
+			? dom::strict_cast<ast::ClassInstance>(ast->resolve_params(base_cls_ctx, base_as_inst))
+			: base_as_inst;
+		if (!ctx)
+			return type_to_convert;
+		return remove_params(type_to_convert, *ast, ctx);
+	}
+	void on_make_delegate(ast::MakeDelegate& node) override {
+		node.type_ = remove_member_type_params(
+			class_from_action(node.base),
+			node.method->cls,
+			type_fn(node.method)->type_);
 		if (dom::isa<ast::TpConformRef>(*node.base->type())) {
 			if (node.method->mut != ast::Mut::ANY)
 				node.error("cannot call mutating or shared methods on maybe-frozen object");
@@ -344,10 +355,6 @@ struct Typer : ast::ActionMatcher {
 		if (!node.cls)  // delegate type declaration this-param has no cls
 			return;
 		check_class_params(node.cls);
-		// // already checked in check_class_params
-		// auto im = node.cls->inst_mode();
-		// if (im == ast::AbstractClass::InstMode::off)
-		//	  node.error("Class needs parameters");
 		node.type_ = ast->get_own(node.cls);
 	}
 	void on_make_fn_ptr(ast::MakeFnPtr& node) override {
@@ -394,10 +401,10 @@ struct Typer : ast::ActionMatcher {
 		}
 		if (&node != fix_result->pinned())
 			return;
-		node.type_ = find_type(node.field->initializer)->type();
-		auto base_as_inst = dom::strict_cast<ast::ClassInstance>(base_cls);
-		if (base_as_inst)
-			node.type_ = remove_params(node.type_.pinned(), *ast, *base_as_inst);
+		node.type_ = remove_member_type_params(
+			base_cls,
+			node.field->cls,
+			find_type(node.field->initializer)->type());
 		if (dom::isa<ast::TpConformRef>(*node.base->type())) {
 			if (auto as_own = dom::strict_cast<ast::TpOwn>(node.type())) {
 				node.type_ = ast->get_conform_ref(as_own->target);
@@ -417,6 +424,8 @@ struct Typer : ast::ActionMatcher {
 		}
 	}
 	void check_class_params(pin<ast::AbstractClass> cls) {
+		if (cls->inst_mode() == ast::AbstractClass::InstMode::direct)
+			return;
 		if (auto as_param = dom::strict_cast<ast::ClassParam>(cls)) {
 			if (dom::isa<ast::ClassParam>(*as_param->base.pinned()))
 				cls->error("Class parameter cannot be bound to another parameter");
@@ -442,27 +451,13 @@ struct Typer : ast::ActionMatcher {
 				cls->error("Expected ", as_cls->params[i]->base->get_name(), " not ", as_inst->params[i + 1]);
 		}
 	}
-	// Takes a parameterized class and its instantiation context and returns a class with all substituted parameters from context.
-	static pin<ast::AbstractClass> remove_params(pin<ast::AbstractClass> cls, ast::Ast& ast, const ast::ClassInstance& context) {
-		if (auto as_cls = dom::strict_cast<ast::Class>(cls))
-			return cls;
-		if (auto as_param = dom::strict_cast<ast::ClassParam>(cls))
-			return context.params[as_param->index + 1];
-		if (auto as_instance = dom::strict_cast<ast::ClassInstance>(cls)) {
-			vector<weak<ast::AbstractClass>> params;
-			for (auto& p : as_instance->params)
-				params.push_back(remove_params(p, ast, context));
-			return ast.get_class_instance(move(params));
-		}
-		cls->error("internal, unexpected AbstractClass while resolving class params");
-	}
 	// Takes a type and returns another type with all associated classes converted with class-bound `remove_params`
-	static pin<ast::Type> remove_params(pin<ast::Type> type, ast::Ast& ast, const ast::ClassInstance& context) {
+	static pin<ast::Type> remove_params(pin<ast::Type> type, ast::Ast& ast, pin<ast::ClassInstance> context) {
 		struct ParamRemover : ast::TypeMatcher{
 			pin<ast::Type> r;
-			const ast::ClassInstance& ctx;
+			pin<ast::ClassInstance> ctx;
 			ast::Ast& ast;
-			ParamRemover(const ast::ClassInstance& ctx, ast::Ast& ast) : ctx(ctx), ast(ast) {}
+			ParamRemover(pin<ast::ClassInstance> ctx, ast::Ast& ast) : ctx(move(ctx)), ast(ast) {}
 			vector<own<Type>> convert_params(vector<own<ast::Type>>& params) {
 				vector<own<Type>> r;
 				for (auto& p : params)
@@ -474,33 +469,41 @@ struct Typer : ast::ActionMatcher {
 			void on_function(ast::TpFunction& type) override { r = ast.tp_function(convert_params(type.params)); }
 			void on_lambda(ast::TpLambda& type) override { r = ast.tp_lambda(convert_params(type.params)); }
 			void on_delegate(ast::TpDelegate& type) override { r = ast.tp_delegate(convert_params(type.params)); }
-			void on_cold_lambda(ast::TpColdLambda& type) override { r = &type; }
+			void on_cold_lambda(ast::TpColdLambda& type) override {
+				if (!type.resolved)
+					r = &type;
+				else
+					type.resolved->match(*this);
+			}
 			void on_void(ast::TpVoid& type) override { r = &type; }
 			void on_optional(ast::TpOptional& type) override { r = ast.tp_optional(remove_params(ast.get_wrapped(&type), ast, ctx)); }
-			void on_own(ast::TpOwn& type) override { r = ast.get_own(remove_params(type.target, ast, ctx)); }
-			void on_ref(ast::TpRef& type) override { r = ast.get_ref(remove_params(type.target, ast, ctx)); }
-			void on_shared(ast::TpShared& type) override { r = ast.get_shared(remove_params(type.target, ast, ctx)); }
-			void on_weak(ast::TpWeak& type) override { r = ast.get_weak(remove_params(type.target, ast, ctx)); }
-			void on_frozen_weak(ast::TpFrozenWeak& type) override { r = ast.get_frozen_weak(remove_params(type.target, ast, ctx)); }
-			void on_conform_ref(ast::TpConformRef& type) override { r = ast.get_conform_weak(remove_params(type.target, ast, ctx)); }
-			void on_conform_weak(ast::TpConformWeak& type) override { r = ast.get_conform_weak(remove_params(type.target, ast, ctx)); }
+			void on_own(ast::TpOwn& type) override { r = ast.get_own(ast.resolve_params(type.target, ctx)); }
+			void on_ref(ast::TpRef& type) override { r = ast.get_ref(ast.resolve_params(type.target, ctx)); }
+			void on_shared(ast::TpShared& type) override { r = ast.get_shared(ast.resolve_params(type.target, ctx)); }
+			void on_weak(ast::TpWeak& type) override { r = ast.get_weak(ast.resolve_params(type.target, ctx)); }
+			void on_frozen_weak(ast::TpFrozenWeak& type) override { r = ast.get_frozen_weak(ast.resolve_params(type.target, ctx)); }
+			void on_conform_ref(ast::TpConformRef& type) override { r = ast.get_conform_weak(ast.resolve_params(type.target, ctx)); }
+			void on_conform_weak(ast::TpConformWeak& type) override { r = ast.get_conform_weak(ast.resolve_params(type.target, ctx)); }
 		};
-		ParamRemover pr(context, ast);
+		ParamRemover pr(move(context), ast);
 		type->match(pr);
 		return pr.r;
 	}
 	void resolve_set_field(ast::SetField& node) {
-		auto cls = class_from_action(node.base);
+		auto base_cls = class_from_action(node.base);
 		if (!node.field) {
-			if (!cls->get_implementation()->handle_member(node, ast::LongName{node.field_name, node.field_module},
+			if (!base_cls->get_implementation()->handle_member(node, ast::LongName{node.field_name, node.field_module},
 				[&](auto field) { node.field = field; },
 				[&](auto method) { node.error("Cannot assign to method"); },
 				[&] { node.error("field name is ambiguous, use cast"); }))
-				node.error("class ", cls->get_name(), " doesn't have field/method ", ast::LongName{node.field_name, node.field_module});
+				node.error("class ", base_cls->get_name(), " doesn't have field/method ", ast::LongName{node.field_name, node.field_module});
 		}
 		if (dom::isa<ast::TpShared>(*node.base->type()))
 			node.error("Cannot assign to a shared object field ", ast::LongName{ node.field_name, node.field_module });
-		node.type_ = find_type(node.field->initializer)->type();
+		node.type_ = remove_member_type_params(
+			base_cls,
+			node.field->cls,
+			find_type(node.field->initializer)->type());
 		if (auto as_own = dom::strict_cast<ast::TpOwn>(node.type())) {
 			node.type_ = ast->get_ref(as_own->target);
 		}
@@ -813,6 +816,9 @@ struct Typer : ast::ActionMatcher {
 	void process() {
 		for (auto& c : ast->classes_in_order) {
 			this_class = c;
+			for (auto& b : c->base_contexts) {
+
+			}
 			for (auto& m : c->new_methods)
 				type_fn(m);
 			for (auto& b : c->overloads)

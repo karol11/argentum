@@ -480,8 +480,10 @@ pin<Class> Ast::mk_class(string name, std::initializer_list<pin<Field>> fields) 
 	r->module = sys;
 	r->line = 1;
 	r->name = move(name);
-	for (auto& f : fields)
+	for (auto& f : fields) {
 		r->fields.push_back(f);
+		f->cls = r;
+	}
 	return r;
 };
 
@@ -678,6 +680,22 @@ pin<TpConformWeak> Ast::get_conform_weak(pin<AbstractClass> target) {
 		w->target = target;
 	}
 	return w;
+}
+
+pin<ast::AbstractClass> Ast::resolve_params(pin<ast::AbstractClass> cls, pin<ast::ClassInstance> context) {
+	if (!context || cls->inst_mode() == ast::AbstractClass::InstMode::direct)
+		return cls;
+	if (auto as_cls = dom::strict_cast<ast::Class>(cls))
+		return cls;
+	if (auto as_param = dom::strict_cast<ast::ClassParam>(cls))
+		return context->params[as_param->index + 1];
+	if (auto as_instance = dom::strict_cast<ast::ClassInstance>(cls)) {
+		vector<weak<ast::AbstractClass>> params;
+		for (auto& p : as_instance->params)
+			params.push_back(resolve_params(p, context));
+		return get_class_instance(move(params));
+	}
+	cls->error("internal error: unexpected AbstractClass while resolving class params");
 }
 
 pin<Class> Module::get_class(const string& name) {

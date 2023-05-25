@@ -245,6 +245,7 @@ struct Parser {
 						} else {
 							param->base = ast->object;
 						}
+						param->index = cls->params.size();
 						cls->params.push_back(param);
 					} while (match(","));
 					expect(")");
@@ -273,6 +274,7 @@ struct Parser {
 								error("field can't have '-' or '*' markers");
 							cls->fields.push_back(make<ast::Field>());
 							cls->fields.back()->name = member_name;
+							cls->fields.back()->cls = cls;
 							cls->fields.back()->initializer = parse_expression();
 							expect(";");
 						} else {

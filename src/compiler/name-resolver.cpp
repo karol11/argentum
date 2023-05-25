@@ -47,11 +47,12 @@ struct NameResolver : ast::ActionScanner {
 				c->error("there might be only one base class in ", c->get_name());
 			} else if (c->is_interface) {
 				c->error("interface ", c->get_name(), " cannot extend class ", abstract_base.first->get_name());
-			} else
-				c->base_class = abstract_base.first;
+			} else {
+				c->base_class = abstract_base.first->get_implementation();
+			}
 			order_class(base);
 			for (auto& i : base->overloads)
-				indirect_bases_to_add.insert(i.first);
+				indirect_bases_to_add.insert(i.first.pinned());
 		}
 		if (!c->base_class && c != ast->object) {
 			c->base_class = ast->object;
@@ -60,7 +61,7 @@ struct NameResolver : ast::ActionScanner {
 		}
 		active_base_list.erase(c);
 		for (auto& i : indirect_bases_to_add)
-			c->overloads[i]; // insert one if it's not there yet.
+			c->overloads[i->get_implementation()]; // insert one if it's not there yet.
 		ordered_classes.insert(c);
 		ast->classes_in_order.push_back(c);
 	}
@@ -73,10 +74,27 @@ struct NameResolver : ast::ActionScanner {
 				order_class(c.second);
 			}
 		}
-		// Now classes are ordered in base first order, and cls.overloads contains all base classes and interfeces - direct and indirect.
+		// Now classes are ordered in base-first order, and cls.overloads contains all base classes and interfeces - direct and indirect.
 		assert(cls_cnt == ast->classes_in_order.size());
 		for (auto& cw : ast->classes_in_order) {
 			auto c = cw.pinned();
+			// resolve generics contexts
+			for (auto& i_base : c->overloads) {
+				if (auto b_as_inst = dom::strict_cast<ast::ClassInstance>(i_base.first.pinned())) {
+					auto base_class = b_as_inst->get_implementation();
+					c->base_contexts.insert({ base_class, b_as_inst });
+					for (auto i_base_ctx : base_class->base_contexts) {
+						auto& c_ctx = c->base_contexts[i_base_ctx.first];
+						auto c_ctx_inst = ast->resolve_params(i_base_ctx.second, b_as_inst).cast<ast::ClassInstance>();
+						if (c_ctx) {
+							if (c_ctx != c_ctx_inst)
+								c->error("class has conflicting bases ", c_ctx->get_name(), " and ", c_ctx_inst->get_name());
+						} else {
+							c_ctx = c_ctx_inst;
+						}
+					}
+				}
+			}
 			// fill own methods
 			uint32_t ordinal = 0;
 			for (auto& m : c->new_methods) {

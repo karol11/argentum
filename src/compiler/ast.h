@@ -175,6 +175,7 @@ struct Field : Node {
 	string name;
 	own<Action> initializer;
 	int offset = 0;
+	weak<Class> cls;
 	DECLARE_DOM_CLASS(Field);
 };
 struct Class : AbstractClass {
@@ -187,7 +188,8 @@ struct Class : AbstractClass {
 	unordered_map<LongName, weak<Node>> this_names;  // memoized this names - defined and inhrited. ambiguous and absent - stored as null nodes.
 	vector<own<struct Method>> new_methods;  // new methods ordered by source order
 	unordered_map<weak<AbstractClass>, vector<own<struct Method>>> overloads;  // overloads for interfaces and the base class, ordered by source order
-	unordered_map<           
+	unordered_map<weak<Class>, weak<struct ClassInstance>> base_contexts;  // all generic base interfaces and classes with instantiation parameters key == val.params[0].
+	unordered_map<
 		weak<Class>,                                   // base interface with stripped parameters, used only in codegen phase
 		vector<weak<struct Method>>> interface_vmts;   // inherited and overloaded methods in the order of new_methods in that interface
 	string get_name() override;
@@ -391,6 +393,10 @@ struct Ast: dom::DomItem {
 	pin<TpConformWeak> get_conform_weak(pin<AbstractClass> target);
 	pin<AbstractClass> extract_class(pin<Type> pointer); // extracts class from pointer types
 	pin<ClassInstance> get_class_instance(vector<weak<AbstractClass>>&& params);
+
+	// Takes a parameterized class and its instantiation context and returns a class with all substituted parameters from context.
+	pin<ast::AbstractClass> resolve_params(pin<ast::AbstractClass> cls, pin<ast::ClassInstance> context);
+
 	DECLARE_DOM_CLASS(Ast);
 };
 
