@@ -19,7 +19,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 	auto container = ast.mk_class("Container", {
 		ast.mk_field("_size", new ast::ConstInt64),
 		ast.mk_field("_data", new ast::ConstInt64) });
-	ast.mk_method(mut::ANY, container, "size", FN(ag_m_sys_Container_size), new ast::ConstInt64, {});
+	ast.mk_method(mut::ANY, container, "capacity", FN(ag_m_sys_Container_capacity), new ast::ConstInt64, {});
 	ast.mk_method(mut::MUTATING, container, "insertItems", FN(&ag_m_sys_Container_insertItems), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
 	ast.mk_method(mut::MUTATING, container, "moveItems", FN(&ag_m_sys_Container_moveItems), new ast::ConstBool, { ast.tp_int64(), ast.tp_int64(), ast.tp_int64() });
 
@@ -35,7 +35,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 	ast.mk_method(mut::MUTATING, ast.blob, "set64At", FN(ag_m_sys_Blob_set64At), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
 	ast.mk_method(mut::MUTATING, ast.blob, "deleteBytes", FN(ag_m_sys_Blob_deleteBytes), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
 	ast.mk_method(mut::MUTATING, ast.blob, "copyBytesTo", FN(ag_m_sys_Blob_copyBytesTo), new ast::ConstBool, { ast.tp_int64(), ast.get_conform_ref(ast.blob), ast.tp_int64(), ast.tp_int64() });
-	ast.mk_method(mut::MUTATING, ast.blob, "putCh", FN(ag_m_sys_Blob_putCh), new ast::ConstInt64, { ast.tp_int64(), ast.tp_int64() });
+	ast.mk_method(mut::MUTATING, ast.blob, "putChAt", FN(ag_m_sys_Blob_putChAt), new ast::ConstInt64, { ast.tp_int64(), ast.tp_int64() });
 
 	ast.str_builder = ast.mk_class("StrBuilder");
 	ast.str_builder->overloads[ast.blob];
@@ -49,12 +49,11 @@ void register_runtime_content(struct ast::Ast& ast) {
 	opt_ref_to_object->p[1] = ref_to_object;
 	auto weak_to_object = new ast::MkWeakOp;
 	weak_to_object->p = inst;
-	ast.own_array = ast.mk_class("Array");
-	ast.own_array->overloads[container];
 	auto add_class_param = [&](ltm::pin<ast::Class> cls) {
 		auto param = ltm::pin<ast::ClassParam>::make();
 		cls->params.push_back(param);
 		param->base = ast.object;
+		param->name = "T";
 		return param;
 	};
 	auto make_ptr_result = [&](ltm::pin<ast::UnaryOp> typer, ltm::pin<ast::AbstractClass> cls) {
@@ -69,6 +68,8 @@ void register_runtime_content(struct ast::Ast& ast) {
 		opt_ref_to_t->p[1] = ref;
 		return opt_ref_to_t;
 	};
+	ast.own_array = ast.mk_class("Array");
+	ast.own_array->overloads[container];
 	{
 		auto t_cls = add_class_param(ast.own_array);
 		auto ref_to_t_res = make_ptr_result(new ast::RefOp, t_cls);

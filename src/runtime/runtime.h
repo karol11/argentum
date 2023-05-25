@@ -87,12 +87,12 @@ void      ag_copy_sys_String(AgString* dst, AgString* src);
 void      ag_dtor_sys_String(AgString* str);
 int32_t   ag_m_sys_String_getCh     (AgString* s);
 bool      ag_m_sys_String_fromBlob  (AgString* s, AgBlob* b, int at, int count);
-int64_t   ag_m_sys_Blob_putCh       (AgBlob* b, int at, int codepoint);
+int64_t   ag_m_sys_Blob_putChAt     (AgBlob* b, int at, int codepoint);
 
 //
 // AgContainer support (both Blobs and Arrays)
 //
-int64_t ag_m_sys_Container_size        (AgBlob* b);
+int64_t ag_m_sys_Container_capacity    (AgBlob* b);
 void    ag_m_sys_Container_insertItems (AgBlob* b, uint64_t index, uint64_t count);
 bool    ag_m_sys_Container_moveItems   (AgBlob* blob, uint64_t a, uint64_t b, uint64_t c);
 

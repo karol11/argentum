@@ -362,7 +362,7 @@ void ag_dtor_sys_String(AgString* s) {
 		ag_free(s->buffer);
 }
 
-int64_t ag_m_sys_Container_size(AgBlob* b) {
+int64_t ag_m_sys_Container_capacity(AgBlob* b) {
 	return b->size;
 }
 
@@ -614,7 +614,7 @@ static int ag_put_fn(void* ctx, int b) {
 	return 1;
 }
 
-int64_t ag_m_sys_Blob_putCh(AgBlob* b, int at, int codepoint) {
+int64_t ag_m_sys_Blob_putChAt(AgBlob* b, int at, int codepoint) {
 	char* cursor = ((char*)(b->data)) + at;
 	if (at + 5 > b->size * sizeof(uint64_t))
 		return 0;
