@@ -48,9 +48,19 @@ struct Typer : ast::ActionMatcher {
 	void on_const_void(ast::ConstVoid& node) override { node.type_ = ast->tp_void(); }
 	void on_const_bool (ast::ConstBool& node) override { node.type_ = tp_bool; }
 	void on_mk_lambda(ast::MkLambda& node) override {
-		auto r = pin<ast::TpColdLambda>::make();
-		r->callees.push_back(weak<ast::MkLambda>(&node));
-		node.type_ = r;
+		for (auto& p : node.names) {
+			if (!p->initializer) {
+				auto r = pin<ast::TpColdLambda>::make();
+				r->callees.push_back(weak<ast::MkLambda>(&node));
+				node.type_ = r;
+				return;
+			}
+		}
+		vector<own<ast::Type>> params;
+		for (auto& p : node.names)
+			params.push_back(find_type(p->initializer)->type());
+		params.push_back(find_type(node.body.back())->type());
+		node.type_ = ast->tp_lambda(move(params));
 	}
 	void on_const_string(ast::ConstString& node) override {
 		node.type_ = ast->get_own(ast->string_cls.pinned());
@@ -816,9 +826,6 @@ struct Typer : ast::ActionMatcher {
 	void process() {
 		for (auto& c : ast->classes_in_order) {
 			this_class = c;
-			for (auto& b : c->base_contexts) {
-
-			}
 			for (auto& m : c->new_methods)
 				type_fn(m);
 			for (auto& b : c->overloads)
