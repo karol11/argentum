@@ -198,8 +198,8 @@ struct Parser {
 						module->aliases.insert({ my_id, it->second });
 					else
 						error("unknown name ", their_id, " in module ", using_name);
-					expect(";");
-				} while (!match("}"));
+				} while (match(","));
+				expect("}");
 			} else {
 				expect(";");
 			}

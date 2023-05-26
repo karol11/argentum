@@ -114,7 +114,7 @@ TEST(Parser, IntNotEqual) {
 
 TEST(Parser, Loop) {
     execute(R"(
-      using sys { assert; }
+      using sys { assert }
       a = 0;
       r = 1;
       assert(39916800, loop {
@@ -401,8 +401,8 @@ TEST(Parser, Raii) {
 TEST(Parser, BlobsAndIndexes) {
     execute(R"(
         using sys {
-            Blob;
-            assert;
+            Blob,
+            assert
         }
         class sys_Blob {
             getAt(i int) int { get64At(i) }
@@ -575,7 +575,7 @@ TEST(Parser, LiteralStrings) {
 
 TEST(Parser, StringEscapes) {
     execute(R"-(
-        using sys { assert; }
+        using sys { assert }
         s = "\n\t\r\"\\\1090e\\65\!";
         assert(0x0a, s.getCh());
         assert(9, s.getCh());
@@ -612,7 +612,7 @@ TEST(Parser, SetOps) {
 
 TEST(Parser, GetParent) {
     execute(R"(
-        using sys{ assert; }
+        using sys{ assert }
         class Cl{
             x = 0;
             inner = ?Cl;
@@ -635,11 +635,11 @@ TEST(Parser, GetParent) {
 TEST(Parser, GetParentArray) {
     execute(R"(
         using sys{
-            Array;
-            Object;
-            assert;
-            par = getParent;
-            getParent;
+            Array,
+            Object,
+            assert,
+            par = getParent,
+            getParent
         }
         a = Array(Object);
         a.insertItems(0, 10);
@@ -659,7 +659,7 @@ TEST(Parser, GetParentArray) {
 
 TEST(Parser, Splice) {
     execute(R"(
-        using sys{assert;}
+        using sys{assert}
         class C{ inner = ?C; }
         a = C;
         a.inner := C;
@@ -673,7 +673,7 @@ TEST(Parser, Splice) {
 
 TEST(Parser, Shared) {
     execute(R"-(
-      using sys{assert;}
+      using sys{assert}
       class Point {
          x = 0;
          y = 0;
@@ -693,7 +693,7 @@ TEST(Parser, Shared) {
 
 TEST(Parser, Consts) {
     execute(R"-(
-      using sys{assert;}
+      using sys{assert}
       const xDefPoint = *Point;
       const xCount = 4;
       const xHello = *"Hello world";
@@ -720,8 +720,8 @@ TEST(Parser, Multiline) {
 TEST(Parser, StringInterpolation) {
     execute(R"-(
       using sys {
-            String;
-            StrBuilder;
+            String,
+            StrBuilder
       }
       class StrBuilder{
             pos = 0;
@@ -760,7 +760,7 @@ TEST(Parser, StringInterpolation) {
 
 TEST(Parser, Generics) {
     execute(R"-(
-      using sys { String; log; }
+      using sys { String, log }
       class Pair(X) {
           a = ?X;
           b = ?X;
@@ -795,7 +795,7 @@ TEST(Parser, ReopenGenerics) {
 
 TEST(Parser, GenericFromGeneric) {
     execute(R"-(
-        using sys { Array; String; Blob; }
+        using sys { Array, String, Blob }
         class Pair(A, B) {
             a = ?A;
             b = ?B;
@@ -813,7 +813,7 @@ TEST(Parser, GenericFromGeneric) {
 
 TEST(Parser, GenericInstAsType) {
     execute(R"-(
-        using sys { Array; String; log; }
+        using sys { Array, String, log }
         fn myFn(s Array(String)) {
            s[0] ? log(_)
         }
