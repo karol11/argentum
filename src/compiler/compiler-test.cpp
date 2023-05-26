@@ -61,7 +61,7 @@ TEST(Parser, Block) {
 
 TEST(Parser, Functions) {
     execute(R"-(
-      fn plus1(int a) int {
+      fn plus1(a int) int {
             a + 1
       }
       sys_assert(9, plus1(4) + plus1(3))
@@ -174,7 +174,7 @@ TEST(Parser, ClassMethods) {
 TEST(Parser, Interfaces) {
     execute(R"(
         interface Movable {
-          move(int x, int y);
+          move(x int, y int);
         }
         class Point {
           x = 1;
@@ -186,7 +186,7 @@ TEST(Parser, Interfaces) {
             m() int { x+y+z } 
           }
           +Movable {
-            move(int dx, int dy) {
+            move(dx int, dy int) {
               x := x + dx;
               y := y + dy
             }
@@ -204,10 +204,10 @@ TEST(Parser, Interfaces) {
 TEST(Parser, TwoInterfaces) {
     execute(R"(
         interface Movable {
-          moveTo(int x, int y);
+          moveTo(x int, y int);
         }
         interface Sizeable {
-          resize(int width, int height);
+          resize(width int, height int);
         }
         class Point {
           x = 0;
@@ -216,13 +216,13 @@ TEST(Parser, TwoInterfaces) {
         class Widget {
           +Point;
           +Movable {
-            moveTo(int x, int y) {
+            moveTo(x int, y int) {
               this.x := x;
               this.y := y;
             }
           }
           +Sizeable {
-            resize(int width, int height) {
+            resize(width int, height int) {
               size.x := width;
               size.y := height;
             }
@@ -239,11 +239,11 @@ TEST(Parser, TwoInterfaces) {
 TEST(Parser, PromisedCast) {
     execute(R"(
         interface Movable {
-          moveTo(int x, int y);
+          moveTo(x int, y int);
         }
         class Point {
           +Movable {
-            moveTo(int x, int y) {
+            moveTo(x int, y int) {
               this.x := x;
               this.y := y;
             }
@@ -253,7 +253,7 @@ TEST(Parser, PromisedCast) {
         }
         class Widget {
           +Movable {
-            moveTo(int x, int y) {
+            moveTo(x int, y int) {
               pos.moveTo(x, y);
             }
           }
@@ -325,7 +325,7 @@ TEST(Parser, TopoCopy) {
           left = ?Node;    // Optional(own(Node)) = null
           right = ?Node;
 
-          scan(&Node expectedParent) int {
+          scan(expectedParent &Node) int {
             lcount = left?_.scan(&this) : 0;
             rcount = right?_.scan(&this) : 0;
             this.parent == expectedParent
@@ -350,7 +350,7 @@ TEST(Parser, TopoCopy) {
 
 TEST(Parser, ForeignFunctionCall) {
     execute(R"(
-        fn foreignTestFunction(int x) int;
+        fn foreignTestFunction(x int) int;
         foreignTestFunction(4*10);
         sys_assert(42, foreignTestFunction(2))
     )");
@@ -374,19 +374,19 @@ TEST(Parser, Raii) {
     execute(R"(
         class Font {
             ttfHandle = 0;
-            setId(int id) {
+            setId(id int) {
                 ttfHandle != 0 ? foreignTestFunction(-ttfHandle);
                 ttfHandle := id;
                 id != 0 ? foreignTestFunction(id);
             }
         }
-        fn disposeFont(Font f) {
+        fn disposeFont(f Font) {
             f.ttfHandle != 0 ? foreignTestFunction(-f.ttfHandle);
         }
-        fn afterCopyFont(Font f) {
+        fn afterCopyFont(f Font) {
             f.ttfHandle != 0 ? foreignTestFunction(f.ttfHandle);
         }
-        fn foreignTestFunction(int x) int;
+        fn foreignTestFunction(x int) int;
 
         {
             foreignTestFunction(2);
@@ -405,8 +405,8 @@ TEST(Parser, BlobsAndIndexes) {
             assert;
         }
         class sys_Blob {
-            getAt(int i) int { get64At(i) }
-            setAt(int i, int v) { set64At(i, v) }
+            getAt(i int) int { get64At(i) }
+            setAt(i int, v int) { set64At(i, v) }
         }
         b = Blob;
         b.insertItems(0, 3);
@@ -420,14 +420,14 @@ TEST(Parser, Delegates) {
     execute(R"(
         class Cl{
             x = 11;
-            m(int i) int { x + i }
+            m(i int) int { x + i }
         }
-        fn f(&(int)int handler) int {
+        fn f(handler &(int)int) int {
             handler(42) : 0
         }
         c = Cl;
         sys_assert(53, f(c.m));
-        sys_assert(31, f(c.&diff(int i) int { i - x }))
+        sys_assert(31, f(c.&diff(i int) int { i - x }))
     )");
 }
 
@@ -474,7 +474,7 @@ TEST(Parser, RetOwnPtr) {
             x = 1;
             y = 0;
         }
-        fn nodeAt(int x, int y) @Node {  // Callables can return newly created/copied object
+        fn nodeAt(x int, y int) @Node {  // Callables can return newly created/copied object
             r = Node;
             r.x := x;
             r.y := y;
@@ -493,7 +493,7 @@ TEST(Parser, InitializerMethods) {
             x = 1;
             y = 0;
             flags = 0;
-            initPos(int x, int y) this {  // Functions marked with this when called on @pointer return @pointer, and with correct derived type!
+            initPos(x int, y int) this {  // Functions marked with this when called on @pointer return @pointer, and with correct derived type!
                 this.x := x;
                 this.y := y;
             }
@@ -502,10 +502,10 @@ TEST(Parser, InitializerMethods) {
                 this.x := this.y;
                 this.y := t;
             }
-            addFlags(int f) this {
+            addFlags(f int) this {
                 this.flags := this.flags | f;
             }
-            removeFlags(int f) this {
+            removeFlags(f int) this {
                 this.flags := this.flags & ~f;
             }
         }
@@ -537,14 +537,14 @@ TEST(Parser, StringOperations) {
         class OString {
             +sys_Blob;
             pos = 0;
-            put(int codePoint) this {
+            put(codePoint int) this {
                 size = capacity();
                 growStep = 100;
                 pos + 5 >= size ?
                     insertItems(size, growStep);
                 pos := putChAt(pos, codePoint)
             }
-            append(sys_String s) this {
+            append(s sys_String) this {
                 loop{
                     c = s.getCh();
                     c != 0 ? put(c);
@@ -593,8 +593,8 @@ TEST(Parser, SetOps) {
     execute(R"(
         class Cl{
             x = 0xc;
-            getAt(int i) int { x }
-            setAt(int i, int v) { x := v }
+            getAt(i int) int { x }
+            setAt(i int, v int) { x := v }
             inc() {
                 x += 1
             }
@@ -616,7 +616,7 @@ TEST(Parser, GetParent) {
         class Cl{
             x = 0;
             inner = ?Cl;
-            new(int x) this { this.x := x }
+            new(x int) this { this.x := x }
         }
         a = Cl.new(11);
         a.inner := Cl.new(22);
@@ -678,7 +678,7 @@ TEST(Parser, Shared) {
          x = 0;
          y = 0;
          z = *"";
-         at(int x, int y) this {
+         at(x int, y int) this {
             this.x := x;
             this.y := y
          }
@@ -725,20 +725,20 @@ TEST(Parser, StringInterpolation) {
       }
       class StrBuilder{
             pos = 0;
-            put(int codePoint) this {
+            put(codePoint int) this {
                 size = capacity();
                 growStep = 100;
                 pos + 5 >= size ?
                     insertItems(size, growStep);
                 pos := putChAt(pos, codePoint)
             }
-            putStr(String s) this {
+            putStr(s String) this {
                 loop !{
                     c = s.getCh();
                     c != 0 ? put(c)
                 }
             }
-            putInt(int v) this {
+            putInt(v int) this {
                 put(v % 10 + '0')
             }
             toStr() @String {
@@ -764,7 +764,7 @@ TEST(Parser, Generics) {
       class Pair(X) {
           a = ?X;
           b = ?X;
-          set(X a, X b) this {
+          set(a X, b X) this {
             this.a := @a;
             this.b := @b;
           }
@@ -777,7 +777,7 @@ TEST(Parser, Generics) {
 TEST(Parser, ReopenGenerics) {
     execute(R"-(
         class sys_WeakArray{
-            append(T item) T {
+            append(item T) T {
                 insertItems(capacity(), 1);
                 this[capacity() - 1] := &item;
                 item
@@ -814,7 +814,7 @@ TEST(Parser, GenericFromGeneric) {
 TEST(Parser, GenericInstAsType) {
     execute(R"-(
         using sys { Array; String; log; }
-        fn myFn(Array(String) s) {
+        fn myFn(s Array(String)) {
            s[0] ? log(_)
         }
         myFn({

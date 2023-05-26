@@ -67,8 +67,8 @@ struct Parser {
 		while (!match(")")) {
 			auto param = make<ast::Var>();
 			fn->names.push_back(param);
-			param->initializer = parse_type();
 			param->name = expect_id("parameter name");
+			param->initializer = parse_type();
 			if (match(")"))
 				break;
 			expect(",");
