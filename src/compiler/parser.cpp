@@ -151,6 +151,8 @@ struct Parser {
 			error("Class parameter is not allowed as root name: ", r->get_name());
 		if (!match("("))
 			return r;
+		if (dom::isa<ast::ClassParam>(*r))
+			error("Class parameter cannot be parameterized: ", r->get_name());
 		vector<weak<ast::AbstractClass>> params{ r };
 		do
 			params.push_back(parse_class_with_params("class parameter", true));
@@ -370,38 +372,41 @@ struct Parser {
 			}
 			return fn;
 		};
+		auto parse_pointer = [&]() {
+			auto inst = make<ast::MkInstance>();
+			inst->cls = parse_class_with_params(
+				"class or interface name",
+				true);  // allow class param
+			return inst;
+		};
 		if (match("&")) {
 			if (match("*")) {
 				return fill(
 					make<ast::MkWeakOp>(),
-					fill(
-						make<ast::ConformOp>(),
-						mk_get("class or interface name")));
+					fill(make<ast::ConformOp>(), parse_pointer()));
 			}
 			if (match("+")) {
 				return fill(
 					make<ast::MkWeakOp>(),
-					fill(
-						make<ast::FreezeOp>(),
-						mk_get("class or interface name")));
+					fill(make<ast::FreezeOp>(), parse_pointer()));
 			}
 			if (match("(")) {
 				auto fn = make<ast::ImmediateDelegate>();
-				ast->add_this_param(*fn, nullptr);  // to be set at type resolution pass
+				ast->add_this_param(*fn, nullptr);  // type to be set at the type resolution pass
 				parse_params(fn);
 				fn->type_expression = parse_type();
 				return fn;
 			}
-			return fill(make<ast::MkWeakOp>(), mk_get("class or interface name"));
+			return fill(make<ast::MkWeakOp>(), parse_pointer());
 		}
 		if (match("+")) {
-			return fill(make<ast::ConformOp>(), mk_get("class or interface name"));
+			return fill(make<ast::ConformOp>(), parse_pointer());
 		}
 		if (match("*")) {
-			return fill(make<ast::FreezeOp>(), mk_get("class or interface name"));
+			return fill(make<ast::FreezeOp>(), parse_pointer());
 		}
 		if (match("@")) {
-			return mk_get("class or interface name");
+			return parse_pointer();
 		}
 		if (match("fn")) {
 			expect("(");
@@ -416,7 +421,7 @@ struct Parser {
 			return fn;
 		}
 		if (is_id_head(*cur)) {
-			return fill(make<ast::RefOp>(), mk_get("class or interface name"));
+			return fill(make<ast::RefOp>(), parse_pointer());
 		}
 		error("Expected type name");
 	}

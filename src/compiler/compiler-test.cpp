@@ -811,4 +811,19 @@ TEST(Parser, GenericFromGeneric) {
     )-");
 }
 
+TEST(Parser, GenericInstAsType) {
+    execute(R"-(
+        using sys { Array; String; log; }
+        fn myFn(Array(String) s) {
+           s[0] ? log(_)
+        }
+        myFn({
+           a = Array(String);
+           a.insertItems(0, 1);
+           a[0] := "Aloha";
+           a
+        })
+    )-");
+}
+
 }  // namespace
