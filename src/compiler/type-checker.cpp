@@ -59,7 +59,9 @@ struct Typer : ast::ActionMatcher {
 		vector<own<ast::Type>> params;
 		for (auto& p : node.names)
 			params.push_back(find_type(p->initializer)->type());
-		params.push_back(find_type(node.body.back())->type());
+		for (auto& a : node.body)
+			find_type(a);
+		params.push_back(node.body.back()->type());
 		node.type_ = ast->tp_lambda(move(params));
 	}
 	void on_const_string(ast::ConstString& node) override {
@@ -863,7 +865,7 @@ struct Typer : ast::ActionMatcher {
 				for (auto& a : fn.second->body)
 					find_type(a);
 				if (!fn.second->is_platform)
-					expect_type(fn.second->body.back(), fn.second->type_expression->type(), [] { return "checking actual result tupe against fn declaration"; });
+					expect_type(fn.second->body.back(), fn.second->type_expression->type(), [] { return "checking actual result type against fn declaration"; });
 			}
 		}
 		expect_type(find_type(ast->starting_module->entry_point), ast->tp_lambda({ ast->tp_void() }), []{ return "main fn return value"; });
