@@ -964,7 +964,7 @@ struct Generator : ast::ActionScanner {
 			if (di_builder && !l->captured) {
 				if (l->is_mutable) {
 					insert_di_var(l, locals[l]);
-				} else {
+				} else if (l->type && l->type != ast->tp_void()) {
 					auto addr = builder->CreateAlloca(to_llvm_type(*l->type));
 					builder->CreateStore(initializer.data, addr);
 					insert_di_var(l, addr);
