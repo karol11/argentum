@@ -47,6 +47,21 @@ void execute(const char* source_text, bool dump_all = false) {
     generate_and_execute(ast, false, dump_all);
 }
 
+TEST(Parser, GenericInstAsType) {
+    execute(R"-(
+        using sys { Array, String, log }
+        fn myFn(s Array(String)) {
+           s[0] ? log(_)
+        }
+        myFn({
+           a = Array(String);
+           a.insertItems(0, 1);
+           a[0] := "Aloha";
+           a
+        })
+    )-");
+}
+
 TEST(Parser, Ints) {
     execute("sys_assert(7, (2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1)))");
 }
@@ -808,21 +823,6 @@ TEST(Parser, GenericFromGeneric) {
         }
         d = Dict(Blob);
         d[0] ? _.b ? _.capacity();
-    )-");
-}
-
-TEST(Parser, GenericInstAsType) {
-    execute(R"-(
-        using sys { Array, String, log }
-        fn myFn(s Array(String)) {
-           s[0] ? log(_)
-        }
-        myFn({
-           a = Array(String);
-           a.insertItems(0, 1);
-           a[0] := "Aloha";
-           a
-        })
     )-");
 }
 
