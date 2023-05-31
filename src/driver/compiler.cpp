@@ -148,6 +148,8 @@ int main(int argc, char* argv[]) {
                     "",         // features
                     llvm::TargetOptions(),
                     std::optional<llvm::Reloc::Model>());
+                if (add_debug_info)
+                    target_machine->setOptLevel(llvm::CodeGenOpt::Level::None);
                 module.setDataLayout(target_machine->createDataLayout());
                 llvm::legacy::PassManager pass_manager;
                 if (target_machine->addPassesToEmitFile(pass_manager, out_file, nullptr, output_asm
