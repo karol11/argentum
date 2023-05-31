@@ -73,7 +73,7 @@ struct Module : dom::DomItem {
 	unordered_map<string, own<Function>> functions;
 	own<Function> entry_point;
 
-	pin<Class> get_class(const string& name); // gets or creates class
+	pin<Class> get_class(const string& name, int32_t line, int32_t pos); // gets or creates class
 	pin<Class> peek_class(const string& name); // gets class or null
 	DECLARE_DOM_CLASS(Module);
 };
@@ -182,6 +182,7 @@ struct Class : AbstractClass {
 	string name;
 	bool is_interface = false;
 	bool is_test = false;
+	bool is_defined = false;
 	weak<AbstractClass> base_class; // Class or ClassInstance
 	vector<own<ClassParam>> params;
 	vector<own<Field>> fields;

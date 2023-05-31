@@ -143,7 +143,7 @@ struct Parser {
 			}
 			m = module;
 		}
-		return m->get_class(c_name);
+		return m->get_class(c_name, line, pos);
 	}
 	pin<ast::AbstractClass> parse_class_with_params(const char* message, bool allow_class_param) {
 		auto r = get_class_by_name(message);
@@ -224,9 +224,10 @@ struct Parser {
 				if (!cls)
 					error("interrnal error, class params from outer class");
 				current_class = cls;
-				bool is_first_time_seen = cls->line == 0;
+				bool is_first_time_seen = !cls->is_defined;
 				cls->line = line;
 				cls->pos = pos;
+				cls->is_defined = true;
 				// TODO match attributes if existed
 				cls->is_interface = is_interface;
 				cls->is_test = is_test;
@@ -247,7 +248,7 @@ struct Parser {
 						} else {
 							param->base = ast->object;
 						}
-						param->index = cls->params.size();
+						param->index = (int) cls->params.size();
 						cls->params.push_back(param);
 					} while (match(","));
 					expect(")");

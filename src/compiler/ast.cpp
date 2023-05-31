@@ -698,12 +698,14 @@ pin<ast::AbstractClass> Ast::resolve_params(pin<ast::AbstractClass> cls, pin<ast
 	cls->error("internal error: unexpected AbstractClass while resolving class params");
 }
 
-pin<Class> Module::get_class(const string& name) {
+pin<Class> Module::get_class(const string& name, int32_t line, int32_t pos) {
 	if (auto r = peek_class(name))
 		return r;
 	auto r = pin<Class>::make();
 	r->name = name;
 	r->module = this;
+	r->line = line;
+	r->pos = pos;
 	classes.insert({ string(name), r });
 	return r;
 }
