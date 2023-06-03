@@ -126,6 +126,8 @@ struct ClassInfo {
 	vector<llvm::Constant*> vmt_fields;    // pointers to methods. size <= 2^16, at index 0 - inteface id for dynamic cast
 	uint64_t interface_ordinal = 0;        // 48_bit_random << 16
 	llvm::ArrayType* ivmt = nullptr;       // only for interface i8*[methods_count+1], ivmt[0]=inteface_id
+	llvm::DICompositeType* di_cls = 0;
+	llvm::DIType* di_ptr = 0;
 };
 
 template<typename T>
@@ -162,11 +164,12 @@ struct Generator : ast::ActionScanner {
 	std::unique_ptr<llvm::DIBuilder> di_builder;
 	llvm::DIType* di_double = nullptr;
 	llvm::DIType* di_int = nullptr;
+	llvm::DIType* di_byte = nullptr;
 	llvm::DIType* di_obj_ptr = nullptr;
 	llvm::DIType* di_weak_ptr = nullptr;
 	llvm::DIType* di_opt_int = nullptr;
 	llvm::DIType* di_delegate = nullptr;
-	llvm::DICompositeType* di_obj_variants = nullptr;
+	llvm::DICompositeType* di_obj_struct = nullptr;
 
 	llvm::Function* current_function = nullptr;
 	unordered_map<weak<ast::Var>, llvm::Value*> locals;
@@ -333,25 +336,20 @@ struct Generator : ast::ActionScanner {
 			true, "", 0);
 		di_double = di_builder->createBasicType("double", 64, llvm::dwarf::DW_ATE_float);
 		di_int = di_builder->createBasicType("int", 64, llvm::dwarf::DW_ATE_signed);
-		auto obj_struct = di_builder->createStructType(
+		di_byte = di_builder->createBasicType("byte", 8, llvm::dwarf::DW_ATE_signed);
+		auto di_ptr = di_builder->createPointerType(di_int, 64);
+		di_obj_struct = di_builder->createStructType(
 			di_cu, "_obj", di_cu->getFile(),
-			0, 2 * 64, 0,
+			0, 3 * 64, 0,
 			llvm::DINode::DIFlags::FlagZero, nullptr,
 			di_builder->getOrCreateArray({
-				di_builder->createMemberType(nullptr, "disp", nullptr,    0, 64, 0, 0, llvm::DINode::DIFlags::FlagZero, di_int),
+				di_builder->createMemberType(nullptr, "disp", nullptr,    0, 64, 0, 0, llvm::DINode::DIFlags::FlagZero, di_ptr),
 				di_builder->createMemberType(nullptr, "counter", nullptr, 0, 64, 0, 64, llvm::DINode::DIFlags::FlagZero, di_int),
-				di_builder->createMemberType(nullptr, "wb_p", nullptr, 0, 64, 0, 64, llvm::DINode::DIFlags::FlagZero, di_int),
-				di_obj_variants = di_builder->createVariantPart(
-					nullptr, "_obj_fields", nullptr,
-					0, 0, 0,
-					llvm::DINode::DIFlags::FlagZero,
-					di_builder->createMemberType(nullptr, "_cls_id", nullptr, 0, 64, 0, 0, llvm::DINode::DIFlags::FlagZero, di_int),
-					di_builder->getOrCreateArray({})
-				)
-			})
-		);
+				di_builder->createMemberType(nullptr, "wb_p", nullptr, 0, 64, 0, 2 * 64, llvm::DINode::DIFlags::FlagZero, di_int),
+				})
+				);
 		di_obj_ptr = di_builder->createPointerType(
-			obj_struct,
+			di_obj_struct,
 			64);
 		di_weak_ptr = di_builder->createPointerType(
 			di_builder->createStructType(
@@ -361,15 +359,15 @@ struct Generator : ast::ActionScanner {
 				di_builder->getOrCreateArray({
 					di_builder->createMemberType(di_cu, "target", di_cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagZero, di_obj_ptr),
 					di_builder->createMemberType(di_cu, "counter", di_cu->getFile(), 0, 64, 0, 64, llvm::DINode::DIFlags::FlagZero, di_int),
-					di_builder->createMemberType(di_cu, "org_parent", di_cu->getFile(), 0, 64, 0, 64*2, llvm::DINode::DIFlags::FlagZero, di_int) })),
-			64);
+					di_builder->createMemberType(di_cu, "org_parent", di_cu->getFile(), 0, 64, 0, 2 * 64, llvm::DINode::DIFlags::FlagZero, di_int) })),
+					64);
 		di_opt_int = di_builder->createStructType(
-				di_cu, "_opt_int", di_cu->getFile(),
-				0, 2 * 64, 0,
-				llvm::DINode::DIFlags::FlagZero, nullptr,
-				di_builder->getOrCreateArray({
-					di_builder->createMemberType(di_cu, "opt", di_cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagZero, di_int),
-					di_builder->createMemberType(di_cu, "val", di_cu->getFile(), 0, 64, 0, 64, llvm::DINode::DIFlags::FlagZero, di_int)}));
+			di_cu, "_opt_int", di_cu->getFile(),
+			0, 2 * 64, 0,
+			llvm::DINode::DIFlags::FlagZero, nullptr,
+			di_builder->getOrCreateArray({
+				di_builder->createMemberType(di_cu, "opt", di_cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagZero, di_int),
+				di_builder->createMemberType(di_cu, "val", di_cu->getFile(), 0, 64, 0, 64, llvm::DINode::DIFlags::FlagZero, di_int) }));
 		di_delegate = di_builder->createStructType(
 			di_cu, "_delegate", di_cu->getFile(),
 			0, 2 * 64, 0,
@@ -377,6 +375,77 @@ struct Generator : ast::ActionScanner {
 			di_builder->getOrCreateArray({
 				di_builder->createMemberType(di_cu, "weak", di_cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagZero, di_weak_ptr),
 				di_builder->createMemberType(di_cu, "fn", di_cu->getFile(), 0, 64, 0, 64, llvm::DINode::DIFlags::FlagZero, di_int) }));
+	}
+	void make_di_clases() {
+		if (!di_builder)
+			return;
+		for (auto& c : ast->classes_in_order) {
+			if (c->is_interface)
+				continue;
+			auto& ci = classes[c];
+			ci.di_cls = di_builder->createClassType(
+				nullptr,
+				ast::format_str("ag_cls_", c->get_name()),
+				di_cu->getFile(),
+				0,  // line
+				layout.getTypeAllocSize(ci.fields) * 8,
+				0,  // align: layout.getABITypeAlign(field_type).value() * 8,
+				0,  // offset
+				llvm::DINode::DIFlags::FlagNonTrivial,
+				c->base_class ? classes[c->base_class].di_cls : di_obj_struct,
+				nullptr,  // fields
+				di_obj_struct);
+			ci.di_ptr = di_builder->createPointerType(ci.di_cls, 64);
+		}
+		for (auto& c : ast->classes_in_order) {
+			if (c->is_interface)
+				continue;
+			auto& ci = classes[c];
+			vector<llvm::Metadata*> di_fields;
+			auto base_fields = c->base_class ? classes[c->base_class].fields : obj_struct;
+			size_t base_size = layout.getTypeAllocSize(base_fields) * 8;
+			auto struct_layout = layout.getStructLayout(ci.fields);
+			size_t i = 0;
+			while (i < ci.fields->getNumElements() && struct_layout->getElementOffsetInBits(i) < base_size)
+				i++; // skip base fields
+			di_fields.push_back(di_builder->createInheritance(
+				ci.di_cls,
+				c->base_class ? classes[c->base_class].di_cls : di_obj_struct,
+				0,  // base offset
+				0,  // vptr offset
+				llvm::DINode::DIFlags::FlagZero));
+			if (c == ast->string_cls) {
+				di_fields.push_back(di_builder->createMemberType(
+					di_cu,
+					"text",
+					di_cu->getFile(),
+					0,  // line
+					layout.getPointerSizeInBits(),
+					0,  // align: layout.getABITypeAlign(field_type).value() * 8,
+					struct_layout->getElementOffsetInBits(i),
+					llvm::DINode::DIFlags::FlagZero,
+					di_builder->createPointerType(
+						di_builder->createBasicType("asciiz", 8, llvm::dwarf::DW_ATE_UTF),
+						layout.getPointerSizeInBits())));
+				i++;
+			} else {
+				for (auto& f : c->fields) {
+					auto field_type = ci.fields->getElementType(i);
+					di_fields.push_back(di_builder->createMemberType(
+						di_cu,
+						f->name,
+						di_cu->getFile(),
+						0,  // line
+						layout.getTypeSizeInBits(field_type),
+						0,  // align: layout.getABITypeAlign(field_type).value() * 8,
+						struct_layout->getElementOffsetInBits(i),
+						llvm::DINode::DIFlags::FlagZero,
+						to_di_type(*f->initializer->type())));
+					i++;
+				}
+			}
+			di_builder->replaceArrays(ci.di_cls, di_builder->getOrCreateArray(move(di_fields)));
+		}
 	}
 	[[noreturn]] void internal_error(ast::Node& n, const char* message) {
 		n.error("internal error: ", message);
@@ -662,15 +731,15 @@ struct Generator : ast::ActionScanner {
 			void on_void(ast::TpVoid&) override { result = gen->di_builder->createBasicType("void", 64, llvm::dwarf::DW_ATE_unsigned); }
 			void on_optional(ast::TpOptional& type) {
 				if (isa<ast::TpInt64>(*type.wrapped)) result = gen->di_opt_int;
-				else if (isa<ast::TpVoid>(*type.wrapped)) result = gen->di_int;
+				else if (isa<ast::TpVoid>(*type.wrapped)) result = gen->di_byte;
 				else type.wrapped->match(*this);
 			}
-			void on_own(ast::TpOwn& type) override { result = gen->di_obj_ptr; }
-			void on_ref(ast::TpRef& type) override { result = gen->di_obj_ptr; }
-			void on_shared(ast::TpShared& type) override { result = gen->di_obj_ptr; }
+			void on_own(ast::TpOwn& type) override { result = gen->classes[type.target->get_implementation()].di_ptr; }
+			void on_ref(ast::TpRef& type) override { result = gen->classes[type.target->get_implementation()].di_ptr; }
+			void on_shared(ast::TpShared& type) override { result = gen->classes[type.target->get_implementation()].di_ptr; }
 			void on_weak(ast::TpWeak& type) override { result = gen->di_weak_ptr; }
 			void on_frozen_weak(ast::TpFrozenWeak& type) override { result = gen->di_weak_ptr; }
-			void on_conform_ref(ast::TpConformRef& type) override { result = gen->di_obj_ptr; }
+			void on_conform_ref(ast::TpConformRef& type) override { result = gen->classes[type.target->get_implementation()].di_ptr;; }
 			void on_conform_weak(ast::TpConformWeak& type) override { result = gen->di_weak_ptr; }
 			void on_delegate(ast::TpDelegate& type) override { result = gen->di_delegate; }
 		};
@@ -2068,7 +2137,7 @@ struct Generator : ast::ActionScanner {
 		}
 		// Make LLVM types for classes
 		for (auto& cls : ast->classes_in_order) {
-			auto c_name = ast::format_str("ag_cls_", cls->module->name, "_", cls->name);
+			auto c_name = ast::format_str("ag_cls_", cls->get_name());
 			auto& info = classes[cls];
 			if (cls->is_interface) {
 				uint64_t id = 0;
@@ -2091,28 +2160,33 @@ struct Generator : ast::ActionScanner {
 				c_name + "_init",
 				module.get());
 		}
-		// Make llvm types for methods and fields.
+		// Make llvm types for fields.
 		// Fill llvm structs for classes with fields.
+		for (auto& cls : ast->classes_in_order) {
+			auto& info = classes[cls];
+			if (cls->is_interface)
+				continue;
+			vector<llvm::Type*> fields;
+			if (cls->base_class) {
+				auto& base_fields = classes[cls->base_class].fields->elements();
+				for (auto& f : base_fields)
+					fields.push_back(f);
+			} else {
+				fields.push_back(ptr_type);    // disp
+				fields.push_back(tp_int_ptr);  // counter
+				fields.push_back(tp_int_ptr);  // weak/parent
+			}
+			for (auto& field : cls->fields) {
+				field->offset = fields.size();
+				fields.push_back(to_llvm_type(*field->initializer->type()));
+			}
+			info.fields->setBody(fields);
+		}
+		make_di_clases();
+		// Make llvm types for methods.
 		// Define llvm types for vmts.
 		for (auto& cls : ast->classes_in_order) {
 			auto& info = classes[cls];
-			if (!cls->is_interface) {  // handle fields
-				vector<llvm::Type*> fields;
-				if (cls->base_class) {
-					auto& base_fields = classes[cls->base_class].fields->elements();
-					for (auto& f : base_fields)
-						fields.push_back(f);
-				} else {
-					fields.push_back(ptr_type);    // disp
-					fields.push_back(tp_int_ptr);  // counter
-					fields.push_back(tp_int_ptr);  // weak/parent
-				}
-				for (auto& field : cls->fields) {
-					field->offset = fields.size();
-					fields.push_back(to_llvm_type(*field->initializer->type()));
-				}
-				info.fields->setBody(fields);
-			}
 			vector<llvm::Type*> vmt_content{ dispatcher_fn_type->getPointerTo()};  // interface/class id for casts
 			for (auto& m : cls->new_methods) {
 				vector<llvm::Type*> params;
@@ -2179,8 +2253,19 @@ struct Generator : ast::ActionScanner {
 					? llvm::Function::InternalLinkage
 					: llvm::Function::ExternalLinkage,
 				ast::format_str("ag_dtor_", cls->module->name, "_", cls->name), module.get());
+			auto disp_name = ast::format_str("??_7ag_cls_", cls->get_name(), "@@6B@");
 			info.dispatcher = llvm::Function::Create(dispatcher_fn_type, llvm::Function::InternalLinkage,
-				ast::format_str("ag_disp_", cls->module->name, "_", cls->name), module.get());
+				disp_name, module.get());
+			if (di_builder) {
+				di_builder->createGlobalVariableExpression(
+					di_cu,
+					disp_name,
+					disp_name,
+					di_files[cls->module->name],
+					cls->line,
+					di_int,
+					false); // is_local
+			}
 			// Initializer
 			llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "", info.initializer));
 			current_function = info.initializer;
@@ -2381,57 +2466,6 @@ struct Generator : ast::ActionScanner {
 				current_function = fn;
 				compile_fn_body(*test.second, ast::format_str("test_", m.first, "_", test.first));
 			}
-		}
-		if (di_builder) {
-			vector<llvm::Metadata*> cls_di_parts;
-			for (auto& c : ast->classes_in_order) {
-				if (c->is_interface)
-					continue;
-				vector<llvm::Metadata*> cls_di_fields;
-				std::function<size_t(ast::Class& cl)> field_builder = [&](ast::Class& cl) {
-					size_t offset = cl.base_class
-						? field_builder(*cl.base_class->get_implementation())
-						: 0;
-					for (auto& f : cl.fields) {
-						size_t width = to_llvm_type(*f->initializer->type())
-							->getScalarSizeInBits();
-						cls_di_fields.push_back(di_builder->createMemberType(
-							di_cu,
-							f->name,
-							di_cu->getFile(),
-							0,  // line
-							width,
-							0,  // align
-							offset,
-							llvm::DINode::DIFlags::FlagZero,
-							to_di_type(*f->initializer->type())));
-						offset += width;
-					}
-					return offset;
-				};
-				size_t size = field_builder(*c.pinned());
-				cls_di_parts.push_back(di_builder->createVariantMemberType(
-					di_obj_variants,
-					ast::format_str("tag_", c->get_name()),
-					di_cu->getFile(),
-					0,  // line
-					size,
-					0,  // align
-					0,  // offset
-					classes[c].dispatcher,
-					llvm::DINode::DIFlags::FlagZero,
-					di_builder->createStructType(
-						nullptr,
-						c->get_name(),
-						nullptr,
-						0,  // line
-						size,
-						0, // align
-						llvm::DINode::DIFlags::FlagZero,
-						nullptr,  // base
-						di_builder->getOrCreateArray(move(cls_di_fields)))));
-			}
-			di_builder->replaceArrays(di_obj_variants, di_builder->getOrCreateArray(move(cls_di_parts)));
 		}
 		if (di_builder)
 			di_builder->finalize();
