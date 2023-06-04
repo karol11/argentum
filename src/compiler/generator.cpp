@@ -348,9 +348,7 @@ struct Generator : ast::ActionScanner {
 				di_builder->createMemberType(nullptr, "wb_p", nullptr, 0, 64, 0, 2 * 64, llvm::DINode::DIFlags::FlagZero, di_int),
 				})
 				);
-		di_obj_ptr = di_builder->createPointerType(
-			di_obj_struct,
-			64);
+		di_obj_ptr = di_builder->createObjectPointerType(di_obj_struct);
 		di_weak_ptr = di_builder->createPointerType(
 			di_builder->createStructType(
 				di_cu, "_weak", di_cu->getFile(),
@@ -421,13 +419,50 @@ struct Generator : ast::ActionScanner {
 					di_cu->getFile(),
 					0,  // line
 					layout.getPointerSizeInBits(),
-					0,  // align: layout.getABITypeAlign(field_type).value() * 8,
+					0,  // align
 					struct_layout->getElementOffsetInBits(i),
 					llvm::DINode::DIFlags::FlagZero,
 					di_builder->createPointerType(
 						di_builder->createBasicType("asciiz", 8, llvm::dwarf::DW_ATE_UTF),
 						layout.getPointerSizeInBits())));
-				i++;
+			} else if (c == ast->own_array->base_class) { // container, add no fields
+			} else if (c == ast->own_array || c == ast->weak_array || c == ast->blob) {
+				di_fields.push_back(di_builder->createMemberType(
+					di_cu,
+					"count",
+					di_cu->getFile(),
+					0,  // line
+					layout.getPointerSizeInBits(),
+					0,  // align
+					struct_layout->getElementOffsetInBits(i - 2),
+					llvm::DINode::DIFlags::FlagZero,
+					di_int));
+				// llvm::SmallVector<uint64_t, 4> ops;
+				// ops.push_back(llvm::dwarf::DW_OP_push_object_address);
+				// llvm::DIExpression::appendOffset(ops, struct_layout->getElementOffset(i));
+				// ops.push_back(llvm::dwarf::DW_OP_deref);
+				di_fields.push_back(di_builder->createMemberType(
+					di_cu,
+					"items",
+					di_cu->getFile(),
+					0,  // line
+					layout.getPointerSizeInBits(),
+					0,  // align
+					struct_layout->getElementOffsetInBits(i - 1),
+					llvm::DINode::DIFlags::FlagZero,
+					di_builder->createPointerType(
+						di_builder->createArrayType(
+							20 * (c == ast->blob ? 64 : layout.getPointerSizeInBits()), // array size
+							0, // align
+							c == ast->blob ? di_int :
+								ast->weak_array ? di_weak_ptr :
+							    di_obj_ptr, // item type
+							di_builder->getOrCreateArray({
+								di_builder->getOrCreateSubrange(
+									0,
+									20) //di_builder->createExpression(move(ops))
+							})),
+						layout.getPointerSizeInBits())));
 			} else {
 				for (auto& f : c->fields) {
 					auto field_type = ci.fields->getElementType(i);
@@ -751,6 +786,8 @@ struct Generator : ast::ActionScanner {
 	void insert_di_var(ast::Module* module, string name, int line, int pos, llvm::DIType* type, llvm::Value* data_addr) {
 		if (!di_builder)
 			return;
+		if (name == "this")
+			name = "this_";
 		di_builder->insertDeclare(
 			data_addr,
 			di_builder->createAutoVariable(
@@ -823,7 +860,7 @@ struct Generator : ast::ActionScanner {
 				for (auto& p : node.captured_locals) {
 					di_captures.push_back(di_builder->createMemberType(
 						nullptr,
-						p->name,
+						p->name == "this" ? "this_" : p->name,
 						nullptr,
 						0, 64, 0, offset,
 						llvm::DINode::DIFlags::FlagZero,
@@ -855,7 +892,7 @@ struct Generator : ast::ActionScanner {
 				builder->CreateStore(&*current_function->arg_begin(), builder->CreateStructGEP(captures.back().second, capture, 0));
 			}
 			if (di_builder) {
-				insert_di_var(nullptr, "current_closure", node.line, node.pos, current_capture_di_type, capture);
+				insert_di_var(nullptr, "closure", node.line, node.pos, current_capture_di_type, capture);
 			}
 		}
 		for (auto& local : node.mutables) {
