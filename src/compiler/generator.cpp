@@ -169,6 +169,9 @@ struct Generator : ast::ActionScanner {
 	llvm::DIType* di_weak_ptr = nullptr;
 	llvm::DIType* di_opt_int = nullptr;
 	llvm::DIType* di_delegate = nullptr;
+	llvm::DIType* di_fn_ptr = nullptr;
+	llvm::DISubroutineType* di_fn_type = nullptr;
+	llvm::DIType* di_lambda = nullptr;
 	llvm::DICompositeType* di_obj_struct = nullptr;
 
 	llvm::Function* current_function = nullptr;
@@ -337,17 +340,18 @@ struct Generator : ast::ActionScanner {
 		di_double = di_builder->createBasicType("double", 64, llvm::dwarf::DW_ATE_float);
 		di_int = di_builder->createBasicType("int", 64, llvm::dwarf::DW_ATE_signed);
 		di_byte = di_builder->createBasicType("byte", 8, llvm::dwarf::DW_ATE_signed);
+		di_fn_type = di_builder->createSubroutineType(di_builder->getOrCreateTypeArray({}));
+		di_fn_ptr = di_builder->createPointerType(di_fn_type, 64);
 		auto di_ptr = di_builder->createPointerType(di_int, 64);
 		di_obj_struct = di_builder->createStructType(
 			di_cu, "_obj", di_cu->getFile(),
 			0, 3 * 64, 0,
 			llvm::DINode::DIFlags::FlagZero, nullptr,
 			di_builder->getOrCreateArray({
-				di_builder->createMemberType(nullptr, "disp", nullptr,    0, 64, 0, 0, llvm::DINode::DIFlags::FlagZero, di_ptr),
+				di_builder->createMemberType(nullptr, "disp", nullptr,    0, 64, 0, 0, llvm::DINode::DIFlags::FlagZero, di_fn_ptr),
 				di_builder->createMemberType(nullptr, "counter", nullptr, 0, 64, 0, 64, llvm::DINode::DIFlags::FlagZero, di_int),
 				di_builder->createMemberType(nullptr, "wb_p", nullptr, 0, 64, 0, 2 * 64, llvm::DINode::DIFlags::FlagZero, di_int),
-				})
-				);
+				}));
 		di_obj_ptr = di_builder->createObjectPointerType(di_obj_struct);
 		di_weak_ptr = di_builder->createPointerType(
 			di_builder->createStructType(
@@ -372,7 +376,14 @@ struct Generator : ast::ActionScanner {
 			llvm::DINode::DIFlags::FlagZero, nullptr,
 			di_builder->getOrCreateArray({
 				di_builder->createMemberType(di_cu, "weak", di_cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagZero, di_weak_ptr),
-				di_builder->createMemberType(di_cu, "fn", di_cu->getFile(), 0, 64, 0, 64, llvm::DINode::DIFlags::FlagZero, di_int) }));
+				di_builder->createMemberType(di_cu, "fn", di_cu->getFile(), 0, 64, 0, 64, llvm::DINode::DIFlags::FlagZero, di_fn_ptr) }));
+		di_lambda = di_builder->createStructType(
+			di_cu, "_lambda", di_cu->getFile(),
+			0, 2 * 64, 0,
+			llvm::DINode::DIFlags::FlagZero, nullptr,
+			di_builder->getOrCreateArray({
+				di_builder->createMemberType(di_cu, "context", di_cu->getFile(), 0, 64, 0, 0, llvm::DINode::DIFlags::FlagZero, di_ptr),
+				di_builder->createMemberType(di_cu, "fn", di_cu->getFile(), 0, 64, 0, 64, llvm::DINode::DIFlags::FlagZero, di_fn_ptr) }));
 	}
 	void make_di_clases() {
 		if (!di_builder)
@@ -760,8 +771,8 @@ struct Generator : ast::ActionScanner {
 			DiTypeMatcher(Generator* gen) :gen(gen) {}
 			void on_int64(ast::TpInt64& type) override { result = gen->di_int; }
 			void on_double(ast::TpDouble& type) override { result = gen->di_double; }
-			void on_function(ast::TpFunction& type) override { result = gen->di_int; }   // todo: raw ptr
-			void on_lambda(ast::TpLambda& type) override { result = gen->di_int; }  // todo: ptr to { ptr to capture, raw ptr }
+			void on_function(ast::TpFunction& type) override { result = gen->di_fn_ptr; }   // todo: raw ptr
+			void on_lambda(ast::TpLambda& type) override { result = gen->di_lambda; }  // todo: ptr to { ptr to capture, raw ptr }
 			void on_cold_lambda(ast::TpColdLambda& type) override { result = gen->di_builder->createBasicType("void", 64, llvm::dwarf::DW_ATE_unsigned); }
 			void on_void(ast::TpVoid&) override { result = gen->di_builder->createBasicType("void", 64, llvm::dwarf::DW_ATE_unsigned); }
 			void on_optional(ast::TpOptional& type) {
@@ -813,7 +824,7 @@ struct Generator : ast::ActionScanner {
 			insert_di_var(nullptr, p->name, p->line, p->pos, to_di_type(*p->type), data_addr);
 	}
 
-	void compile_fn_body(ast::MkLambda& node, string di_name, llvm::Type* closure_struct = nullptr) {
+	void compile_fn_body(ast::MkLambda& node, string name, llvm::Type* closure_struct = nullptr) {
 		unordered_map<weak<ast::Var>, llvm::Value*> outer_locals;
 		unordered_map<weak<ast::Var>, int> outer_capture_offsets = capture_offsets;
 		swap(outer_locals, locals);
@@ -827,8 +838,8 @@ struct Generator : ast::ActionScanner {
 			if (auto di_file = di_files[node.module->name]) {
 				auto sub = di_builder->createFunction(
 					di_cu,
-					di_name,
-					"",  // linkage name
+					name,
+					name,  // linkage name
 					di_file,
 					node.line,
 					to_di_fn_type(*node.type()),
@@ -844,38 +855,6 @@ struct Generator : ast::ActionScanner {
 		auto prev_capture_di_type = current_capture_di_type;
 		llvm::AllocaInst* capture = nullptr;
 		if (!node.captured_locals.empty()) {
-			if (di_builder) {
-				vector<llvm::Metadata*> di_captures;
-				size_t offset = 0;
-				if (current_capture_di_type) {
-					di_captures.push_back(di_builder->createMemberType(
-						current_di_scope,
-						"parent",
-						nullptr,
-						0, 64, 0, offset,
-						llvm::DINode::DIFlags::FlagZero,
-						di_builder->createPointerType(current_capture_di_type, 64)));
-					offset += 64;
-				}
-				for (auto& p : node.captured_locals) {
-					di_captures.push_back(di_builder->createMemberType(
-						nullptr,
-						p->name == "this" ? "this_" : p->name,
-						nullptr,
-						0, 64, 0, offset,
-						llvm::DINode::DIFlags::FlagZero,
-						to_di_type(*p->type)));
-					offset += to_llvm_type(*p->type)->getScalarSizeInBits();
-				}
-				current_capture_di_type = di_builder->createStructType(
-					nullptr,
-					ast::format_str("cap_", di_name),
-					nullptr,
-					node.line, offset, 0,
-					llvm::DINode::DIFlags::FlagZero,
-					nullptr,  // parent
-					di_builder->getOrCreateArray(move(di_captures)));
-			}
 			vector<llvm::Type*> captured_local_types;
 			if (has_parent_capture_ptr)
 				captured_local_types.push_back(ptr_type);  // for outer capture
@@ -886,6 +865,48 @@ struct Generator : ast::ActionScanner {
 					: to_llvm_type(*p->type));
 			}
 			captures.push_back({ node.lexical_depth, llvm::StructType::get(*context, captured_local_types) });
+			if (di_builder) {
+				auto capture_struct = captures.back().second;
+				auto capture_layout = layout.getStructLayout(capture_struct);
+				vector<llvm::Metadata*> di_captures;
+				size_t i = 0;
+				if (current_capture_di_type) {
+					di_captures.push_back(di_builder->createMemberType(
+						current_di_scope,
+						"parent",
+						nullptr,
+						0, // line
+						layout.getTypeSizeInBits(capture_struct->getElementType(i)),
+						0, // align
+						capture_layout->getElementOffsetInBits(i),
+						llvm::DINode::DIFlags::FlagZero,
+						di_builder->createPointerType(current_capture_di_type, 64)));
+					i++;
+				}
+				for (auto& p : node.captured_locals) {
+					di_captures.push_back(di_builder->createMemberType(
+						nullptr,
+						p->name == "this" ? "this_" : p->name,
+						nullptr,
+						0, // line
+						layout.getTypeSizeInBits(capture_struct->getElementType(i)),
+						0, // align
+						capture_layout->getElementOffsetInBits(i),
+						llvm::DINode::DIFlags::FlagZero,
+						to_di_type(*p->type)));
+					i++;
+				}
+				current_capture_di_type = di_builder->createStructType(
+					nullptr,
+					ast::format_str("cap_", name),
+					nullptr,
+					node.line,
+					layout.getTypeSizeInBits(capture_struct),
+					0,  // align
+					llvm::DINode::DIFlags::FlagZero,
+					nullptr,  // parent
+					di_builder->getOrCreateArray(move(di_captures)));
+			}
 			capture = builder->CreateAlloca(captures.back().second);
 			capture_ptrs.push_back(capture);
 			if (has_parent_capture_ptr) {
@@ -1138,7 +1159,7 @@ struct Generator : ast::ActionScanner {
 			module.get());
 		auto prev_fn = current_function;
 		current_function = dl_fn;
-		compile_fn_body(node, ast::format_str("dl_", node.module->name, "_", node.name));
+		compile_fn_body(node, ast::format_str("ag_dl_", node.module->name, "_", node.name));
 		current_function = prev_fn;
 		auto base = compile(node.base);
 		result->data = builder->CreateInsertValue(
@@ -2290,10 +2311,22 @@ struct Generator : ast::ActionScanner {
 					? llvm::Function::InternalLinkage
 					: llvm::Function::ExternalLinkage,
 				ast::format_str("ag_dtor_", cls->module->name, "_", cls->name), module.get());
-			auto disp_name = ast::format_str("??_7ag_cls_", cls->get_name(), "@@6B@");
+			auto disp_name = ast::format_str("ag_disp_", cls->get_name());
 			info.dispatcher = llvm::Function::Create(dispatcher_fn_type, llvm::Function::InternalLinkage,
 				disp_name, module.get());
 			if (di_builder) {
+				info.dispatcher->setSubprogram(
+					di_builder->createFunction(
+						di_cu,
+						disp_name,
+						disp_name,  // linkage name
+						nullptr,
+						0,
+						di_fn_type,
+						0,
+						llvm::DINode::FlagPrototyped,
+						llvm::DISubprogram::SPFlagDefinition));
+				/*
 				di_builder->createGlobalVariableExpression(
 					di_cu,
 					disp_name,
@@ -2301,7 +2334,7 @@ struct Generator : ast::ActionScanner {
 					di_files[cls->module->name],
 					cls->line,
 					di_int,
-					false); // is_local
+					false); // is_local  */
 			}
 			// Initializer
 			llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "", info.initializer));
@@ -2483,7 +2516,7 @@ struct Generator : ast::ActionScanner {
 			for (auto& fn : m.second->functions) {
 				if (!fn.second->is_platform) {
 					current_function = functions[fn.second];
-					compile_fn_body(*fn.second, ast::format_str("fn_", m.first, "_", fn.first));
+					compile_fn_body(*fn.second, ast::format_str("ag_fn_", m.first, "_", fn.first));
 				}
 			}
 		}
@@ -2501,7 +2534,7 @@ struct Generator : ast::ActionScanner {
 					ast::format_str("ag_test_", m.first, "_", test.first),
 					module.get());
 				current_function = fn;
-				compile_fn_body(*test.second, ast::format_str("test_", m.first, "_", test.first));
+				compile_fn_body(*test.second, ast::format_str("ag_test_", m.first, "_", test.first));
 			}
 		}
 		if (di_builder)
