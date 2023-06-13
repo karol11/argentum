@@ -3,6 +3,81 @@
 #include <stdio.h> // puts
 #include <assert.h>
 
+#ifdef WIN32
+
+#include <windows.h>
+
+// Thread
+#define thrd_success 0
+#define thrd_error 1
+typedef HANDLE thrd_t;
+typedef int (*thrd_start_t) (void*);
+int thrd_create(thrd_t* thr, thrd_start_t func, void* arg) {
+	HANDLE r = CreateThread(
+		NULL,                   // default security attributes
+		0,                      // use default stack size  
+		func,
+		arg,          // argument to thread function 
+		0,                      // use default creation flags 
+		NULL
+	);
+	if (r == NULL)
+		return thrd_error;
+	*thr = r;
+	return thrd_success;
+}
+#define thrd_exit ExitThread
+int thrd_join(thrd_t thr, int* usused_res) {
+	WaitForSingleObject(thr, INFINITE);
+}
+
+// Mutex
+#define mtx_plain 0
+typedef CRITICAL_SECTION mtx_t;
+int mtx_init(mtx_t* mutex, int type) {
+	return InitializeCriticalSectionAndSpinCount(mutex, 0x00000400)
+		? thrd_success
+		: thrd_error;
+}
+#define mtx_destroy DeleteCriticalSection
+inline int mtx_lock(mtx_t* mutex) {
+	EnterCriticalSection(mutex);
+	return thrd_success;
+}
+inline int mtx_unlock(mtx_t* mutex) {
+	LeaveCriticalSection(mutex);
+	return thrd_success;
+}
+
+// CVar
+typedef CONDITION_VARIABLE cnd_t;
+inline int cnd_init(cnd_t* cond) {
+	InitializeConditionVariable(cond);
+	return thrd_success;
+}
+inline void cnd_destroy(cnd_t* cond) {
+	// do nothing
+}
+inline int cnd_signal(cnd_t* cond) {
+	WakeConditionVariable(cond);
+	return thrd_success;
+}
+inline int cnd_broadcast(cnd_t* cond) {
+	WakeAllConditionVariable(cond);
+	return thrd_success;
+}
+inline int cnd_wait(cnd_t* cond, mtx_t* mutex) {
+	return SleepConditionVariableCS(cond, mutex, INFINITE)
+		? thrd_success
+		: thrd_error;
+}
+
+#else
+
+#include <threads.h>
+
+#endif
+
 #ifdef NO_DEFAULT_LIB
 void ag_zero_mem(void*, size_t);
 void ag_memcpy(void*, void*, size_t);
@@ -666,3 +741,4 @@ bool ag_fn_sys_writeFile(AgString* name, int64_t at, int64_t byte_size, AgBlob* 
 */
 	return false;
 }
+

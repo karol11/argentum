@@ -90,3 +90,4 @@ add_library (ag_runtime STATIC
     src/runtime/sdl-bindings.h
     src/runtime/sdl-bindings.c
 )
+set_property(TARGET ag_runtime PROPERTY C_STANDARD 11)
