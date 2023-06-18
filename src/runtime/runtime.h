@@ -16,6 +16,8 @@ typedef int bool;
 #define AG_IN_STACK 0
 #define AG_SHARED   ((uintptr_t) 2)
 
+typedef struct ag_thread_tag ag_thread;
+
 typedef struct {
 	void   (*copy_ref_fields)  (void* dst, void* src);
 	void   (*dispose)          (void* ptr);
@@ -30,9 +32,10 @@ typedef struct AgObject_tag {
 } AgObject;
 
 typedef struct {
-	AgObject* target;
-	uintptr_t wb_counter;   // number_of_weaks pointing here
-	uintptr_t org_pointer_to_parent;  // copy of obj->parent
+	AgObject*  target;
+	uintptr_t  wb_counter;   // number_of_weaks pointing here
+	uintptr_t  org_pointer_to_parent;  // copy of obj->parent
+	ag_thread* thread;       // pointer to the opaque inner thread object, not to AgThread component
 } AgWeak;
 
 typedef struct {
@@ -135,10 +138,45 @@ AgWeak*   ag_m_sys_WeakArray_getAt (AgBlob* b, uint64_t index);
 void      ag_m_sys_WeakArray_setAt (AgBlob* b, uint64_t index, AgWeak* val);
 void      ag_m_sys_WeakArray_delete(AgBlob* b, uint64_t index, uint64_t count);
 
-void      ag_fn_sys_terminate (int);
-void      ag_fn_sys_log       (AgString* s);
-int64_t   ag_fn_sys_readFile  (AgString* name, AgBlob* content);  // returns bytes read or -1
-bool      ag_fn_sys_writeFile (AgString* name, int64_t at, int64_t byte_size, AgBlob* content);
+//
+// System
+//
+void      ag_fn_sys_terminate     (int);
+bool      ag_fn_sys_setMainObject (AgObject* root); // root must be not owned, returns true on success
+void      ag_fn_sys_log           (AgString* s);
+int64_t   ag_fn_sys_readFile      (AgString* name, AgBlob* content);  // returns bytes read or -1
+bool      ag_fn_sys_writeFile     (AgString* name, int64_t at, int64_t byte_size, AgBlob* content);
+
+//
+// Cross-thread FFI interop
+//
+typedef void (*ag_fn)();
+
+bool ag_fn_sys_postTimer(int64_t at, AgWeak* receiver, ag_fn fn);
+
+typedef void (*ag_trampoline) (AgObject* self, ag_fn entry_point, ag_thread* thread);
+// Trampoline is a function that reads parameters from the request queue and calls the actual function.
+// Trampoline should:
+// 1. call ag_get_thread_param to extract each param,
+// 2. call ag_unlock_thread_queue
+// 3. if (self != null) execute entry_point(self, params)
+// 4. release params
+
+// Foreign function that wants co call the callback from ramdom thread should:
+// 1. call ag_prepare_post_message and check its result for null (null means receiver is no longer exists)
+// 2. call ag_put_thread_param for each 64-bit parameter (some parameters, like optInt, delegate require two ag_put_thread_param calls).
+// 3. call ag_finalize_post_message
+// Foreign function should put (using ag_put_thread_param) the same number of params in the same order
+// as the trampoline function invoked on AG-thread is going to read with ag_get_thread_param.
+ag_thread* ag_prepare_post_message  (AgWeak* receiver, ag_fn fn, ag_trampoline tramp, size_t params_count);
+void       ag_put_thread_param      (ag_thread* th, uint64_t param);
+void       ag_finalize_post_message (ag_thread* th);
+
+//trampoline api
+uint64_t ag_get_thread_param    (ag_thread* th);
+void     ag_unlock_thread_queue (ag_thread* th);
+
+int ag_handle_main_thread();
 
 #ifdef __cplusplus
 }  // extern "C"

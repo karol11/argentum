@@ -2,6 +2,11 @@
 #include <stdint.h> // int32_t
 #include <stdio.h> // puts
 #include <assert.h>
+#include <time.h>  // timespec, timespec_get
+
+inline uint64_t timespec_to_ms(const struct timespec* time) {
+	return time->tv_nsec / 1000000 + time->tv_sec * 1000;
+}
 
 #ifdef WIN32
 
@@ -28,7 +33,9 @@ int thrd_create(thrd_t* thr, thrd_start_t func, void* arg) {
 }
 #define thrd_exit ExitThread
 int thrd_join(thrd_t thr, int* usused_res) {
-	WaitForSingleObject(thr, INFINITE);
+	return WaitForSingleObject(thr, INFINITE)
+		? thrd_error
+		: thrd_success;  // success if 0 (WAIT_OBJECT_0)
 }
 
 // Mutex
@@ -65,6 +72,18 @@ inline int cnd_signal(cnd_t* cond) {
 inline int cnd_broadcast(cnd_t* cond) {
 	WakeAllConditionVariable(cond);
 	return thrd_success;
+}
+inline int cnd_timedwait(cnd_t* cond, mtx_t* mutex, const struct timespec* timeout) {
+	struct timespec now;
+	return SleepConditionVariableCS(
+		cond,
+		mutex, 
+		timespec_get(&now, TIME_UTC)
+			? (DWORD)(timespec_to_ms(timeout) - timespec_to_ms(&now))
+			: INFINITE
+	)
+		? thrd_success
+		: thrd_error;
 }
 inline int cnd_wait(cnd_t* cond, mtx_t* mutex) {
 	return SleepConditionVariableCS(cond, mutex, INFINITE)
@@ -155,6 +174,30 @@ void ag_free(void* data) {
 #define ag_free AG_FREE
 
 #endif
+
+#define AG_THREAD_QUEUE_SIZE 8192
+
+typedef struct ag_thread_tag {
+	int64_t*  queue_start;
+	int64_t*  queue_end;
+	int64_t*  read_pos;  // 0 if free
+	int64_t*  write_pos; // next free if free
+	AgObject* root;
+	uint64_t  timer_ms;  // todo: replace with pyramid-heap
+	ag_fn     timer_proc;
+	AgWeak*   timer_proc_param;
+	mtx_t     mutex;
+	cnd_t     is_not_empty;
+//	thrd_t    thread;
+} ag_thread;
+
+/*
+ag_thread* ag_threads = NULL;
+ag_thread* ag_threads_free = NULL;
+uint64_t   ag_threads_size = 0;
+uint64_t   ag_threads_allocated = 0;
+*/
+ag_thread ag_main_thread = { 0 };
 
 inline void ag_set_parent_nn(AgObject * obj, AgObject* parent) {
 	if (obj->wb_p & AG_F_PARENT)
@@ -321,6 +364,7 @@ AgObject* ag_copy_object_field(AgObject* src, AgObject* parent) {
 		} else {
 			AgWeak* dst_wb = (AgWeak*) ag_alloc(sizeof(AgWeak));
 			dst_wb->org_pointer_to_parent = (uintptr_t) parent;
+			dst_wb->thread = ((AgWeak*)(ag_head(src)->wb_p))->thread;
 			dh->wb_p = (uintptr_t) dst_wb;  // also clears NO_WEAK
 			void* i = ((AgWeak*)(ag_head(src)->wb_p))->target;
 			uintptr_t dst_wb_locks = 1;
@@ -369,6 +413,7 @@ void ag_copy_weak_field(void** dst, AgWeak* src) {
 			AgWeak* cwb;
 			if (ag_head(copy)->wb_p & AG_F_PARENT) {
 				cwb = (AgWeak*) ag_alloc(sizeof(AgWeak));
+				cwb->thread = src->thread;
 				cwb->org_pointer_to_parent = ag_head(copy)->wb_p & ~AG_F_PARENT;
 				cwb->wb_counter = 1;
 				cwb->target = (AgObject*)(ag_head(copy)->counter);
@@ -388,6 +433,7 @@ AgWeak* ag_mk_weak(AgObject* obj) { // obj can't be null
 		w->org_pointer_to_parent = ag_head(obj)->wb_p & ~AG_F_PARENT;
 		w->target = obj;
 		w->wb_counter = 2; // one from obj and one from `mk_weak` result
+		w->thread = &ag_main_thread;
 		ag_head(obj)->wb_p = (uintptr_t) w;
 		return w;
 	}
@@ -742,3 +788,163 @@ bool ag_fn_sys_writeFile(AgString* name, int64_t at, int64_t byte_size, AgBlob* 
 	return false;
 }
 
+bool ag_fn_sys_setMainObject(AgObject* s) {
+	ag_thread* th = &ag_main_thread; // todo reuse this code in Thread.launch
+	if (!th->queue_start) {
+		th->queue_start = AG_ALLOC(sizeof(int64_t) * AG_THREAD_QUEUE_SIZE);
+		th->queue_end = th->queue_start + AG_THREAD_QUEUE_SIZE;
+		mtx_init(&th->mutex, mtx_plain);
+		cnd_init(&th->is_not_empty);
+		th->read_pos = th->write_pos = th->queue_start;
+	}
+	ag_release(th->root);
+	if (s && ag_fn_sys_getParent(s)) {
+		th->root = NULL;
+		return false;
+	}
+	th->root = ag_retain(s);
+	return true;
+}
+
+uint64_t ag_get_thread_param(ag_thread* th) {
+	uint64_t r = *th->read_pos;
+	if (++th->read_pos == th->queue_end)
+		th->read_pos = th->queue_start;
+	return r;
+}
+
+void ag_unlock_thread_queue(ag_thread* th) {
+	mtx_unlock(&th->mutex);
+}
+
+bool ag_fn_sys_postTimer(int64_t at, AgWeak* receiver, ag_fn fn) {
+	ag_thread* th = receiver->thread;
+	if (!th)
+		return false;
+	th->timer_ms = at;
+	th->timer_proc = fn;
+	th->timer_proc_param = receiver;
+	ag_finalize_post_message(th);
+	return true;
+}
+
+static ag_thread* ag_lock_thread(AgWeak* receiver) {
+	ag_thread* th = (ag_thread*)receiver->thread;
+	if (!th)
+		return NULL;
+	mtx_lock(&th->mutex);
+	if (receiver->thread != th) { // thread had died or object moved while we were locking it
+		mtx_unlock(&th->mutex);
+		return NULL;
+	}
+	return th;
+}
+// returns locked thread or NULL if receiver's thread is dead
+ag_thread* ag_prepare_post_message(AgWeak* receiver, ag_fn fn, ag_trampoline tramp, size_t params_count) {
+	ag_thread* th = ag_lock_thread(receiver);
+	if (!th)
+		return NULL;
+	size_t free_space = th->read_pos > th->write_pos
+		? th->write_pos - th->read_pos
+		: (th->queue_end - th->queue_start) - (th->write_pos - th->read_pos);
+	if (free_space < params_count + 3) { // params + trampoline + entry_point + receiver_weak
+		uint64_t new_size = (th->queue_end - th->queue_start) * 2 + params_count + 3;
+		uint64_t* new_buf = AG_ALLOC(sizeof(uint64_t) * new_size);
+		if (th->read_pos > th->write_pos) {
+			size_t r_size = th->queue_end - th->read_pos;
+			size_t w_size = th->write_pos - th->queue_start;
+			memcpy(new_buf + new_size - r_size, th->read_pos, sizeof(uint64_t) * (r_size));
+			memcpy(new_buf, th->queue_start, sizeof(uint64_t) * (w_size));
+			AG_FREE(th->queue_start);
+			th->read_pos = new_buf + new_size - r_size;
+			th->write_pos = new_buf + w_size;
+		} else {
+			size_t size = th->write_pos - th->read_pos;
+			memcpy(new_buf, th->read_pos, sizeof(uint64_t) * size);
+			AG_FREE(th->queue_start);
+			th->read_pos = new_buf;
+			th->write_pos = new_buf + size;
+		}
+		th->queue_start = new_buf;
+		th->queue_end = new_buf + new_size;
+	}
+	ag_put_thread_param(th, (uint64_t) tramp);
+	ag_put_thread_param(th, (uint64_t) ag_retain_weak(receiver));
+	ag_put_thread_param(th, (uint64_t) fn);
+	return th;
+}
+
+void ag_put_thread_param(ag_thread* th, uint64_t param) {
+	*th->write_pos = param;
+	if (++th->write_pos == th->queue_end)
+		th->write_pos = th->queue_start;
+}
+
+void ag_finalize_post_message(ag_thread* th) {
+	mtx_unlock(&th->mutex);
+	cnd_signal(&th->is_not_empty);
+}
+
+void ag_thread_proc(ag_thread* th) {
+	struct timespec now;
+	mtx_lock(&th->mutex);
+	while (th->root) {
+		if (th->read_pos != th->write_pos) {
+			uint64_t tramp = ag_get_thread_param(th);
+			if (!tramp) {
+				mtx_unlock(&th->mutex);
+				AgObject* r = th->root;
+				th->root = NULL;
+				ag_release(r);
+				ag_get_thread_param(th); // skip
+				if (ag_get_thread_param(th)) // hard quit
+					return;
+				if (th->timer_ms) {
+					ag_release_weak(th->timer_proc_param);
+					th->timer_ms = 0;
+				}
+			} else {
+				AgWeak* w_receiver = (AgWeak*)ag_get_thread_param(th);
+				ag_fn entry_point = (ag_fn)ag_get_thread_param(th);
+				AgObject* receiver = ag_deref_weak(w_receiver);
+				((ag_trampoline)tramp)(receiver, entry_point, th); // it unlocks mutex internally
+				ag_release(receiver);
+				ag_release_weak(w_receiver);
+			}
+			mtx_lock(&th->mutex);
+		} else if (th->timer_ms && timespec_get(&now, TIME_UTC) && timespec_to_ms(&now) <= th->timer_ms) {
+			th->timer_ms = 0;
+			AgObject* timer_object = ag_deref_weak(th->timer_proc_param);
+			if (timer_object) {
+				mtx_unlock(&th->mutex);
+				th->timer_proc(timer_object);
+				ag_release(timer_object);
+				mtx_lock(&th->mutex);
+			}
+		} else if (th->timer_ms) {
+			struct timespec timeout;
+			timeout.tv_sec = th->timer_ms / 1000;
+			timeout.tv_nsec = th->timer_ms % 1000 * 1000000;
+			cnd_timedwait(&th->is_not_empty, &th->mutex, &timeout);
+		} else {
+			cnd_wait(&th->is_not_empty, &th->mutex);
+		}
+	}
+	mtx_unlock(&th->mutex);
+}
+
+int ag_handle_main_thread() {
+	if (ag_main_thread.root)
+		ag_thread_proc(&ag_main_thread);
+	return 0;
+}
+
+#ifdef AG_ENTRY_POINT
+
+extern void ag_main();
+
+int main() {
+	ag_main();
+	return ag_handle_main_thread();
+}
+#endif
