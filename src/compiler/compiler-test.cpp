@@ -6,6 +6,7 @@
 #include "compiler/name-resolver.h"
 #include "compiler/type-checker.h"
 #include "compiler/const-capture-pass.h"
+#include "runtime/runtime.h"
 
 int64_t generate_and_execute(ltm::pin<ast::Ast> ast, bool add_debug_info, bool dump_ir);  // defined in `generator.h/cpp`
 
@@ -24,6 +25,20 @@ int64_t foreign_test_function_state = 0;
 int64_t foreign_test_function(int64_t delta) {
     return foreign_test_function_state += delta;
 }
+void void_void_tramp(AgObject* self, ag_fn entry_point, ag_thread* th) {
+    // extract params here
+    ag_unlock_thread_queue(th);
+    if (self)
+        ((void (*)(AgObject*)) entry_point)(self);
+    // release params here
+}
+void callback_invoker(AgWeak* cb_data, ag_fn cb_entry_point) {
+    if (auto th = ag_prepare_post_message(cb_data, cb_entry_point, void_void_tramp, 0)) {
+        // post params here
+        ag_finalize_post_message(th);
+    }
+}
+
 void ag_assert(int64_t expected, int64_t actual) {
     ASSERT_EQ(expected, actual);
 }
@@ -32,6 +47,7 @@ void execute(const char* source_text, bool dump_all = false) {
     ast::initialize();
     auto ast = own<Ast>::make();
     ast->platform_exports.insert({ "ag_fn_akTest_foreignTestFunction", (void(*)())(foreign_test_function) });
+    ast->platform_exports.insert({ "ag_fn_akTest_callbackInvoker", (void(*)())(callback_invoker) });
     ast->mk_fn("assert", (void(*)())(ag_assert), new ast::ConstVoid, { ast->tp_int64(), ast->tp_int64() });
     auto start_module_name = "akTest";
     unordered_map<string, string> texts{ {start_module_name, source_text} };
@@ -45,6 +61,20 @@ void execute(const char* source_text, bool dump_all = false) {
         std::cout << std::make_pair(ast.pinned(), ast->dom.pinned()) << "\n";
     foreign_test_function_state = 0;
     generate_and_execute(ast, false, dump_all);
+}
+
+TEST(Parser, AsyncFfi) {
+    execute(R"-(
+        fn callbackInvoker(callback &()void);
+        class App{
+            onCallback() {
+                sys_setMainObject(?sys_Object);
+            }
+        }
+        app = App;
+        sys_setMainObject(app);
+        callbackInvoker(app.onCallback);
+    )-");
 }
 
 TEST(Parser, GenericInstAsType) {
