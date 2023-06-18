@@ -2523,8 +2523,8 @@ struct Generator : ast::ActionScanner {
 		current_function = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, {}, false),
 			llvm::Function::ExternalLinkage,
-			"main", module.get());
-		compile_fn_body(*ast->starting_module->entry_point, "main");
+			"ag_main", module.get());
+		compile_fn_body(*ast->starting_module->entry_point, "ag_main");
 		// Compile tests
 		for (auto& m : ast->modules) {
 			for (auto& test : m.second->tests) {
@@ -2564,7 +2564,9 @@ llvm::orc::ThreadSafeModule generate_code(ltm::pin<ast::Ast> ast, bool add_debug
 }
 
 int64_t execute(llvm::orc::ThreadSafeModule& module, ast::Ast& ast, bool dump_ir) {
-#ifndef AG_STANDALONE_COMPILER_MODE
+#ifdef AG_STANDALONE_COMPILER_MODE
+	return -1;
+#else
 	if (dump_ir) {
 		module.withModuleDo([](llvm::Module& m) {
 			m.print(llvm::outs(), nullptr);
@@ -2581,7 +2583,7 @@ int64_t execute(llvm::orc::ThreadSafeModule& module, ast::Ast& ast, bool dump_ir
 		runtime_exports.insert({ es.intern(i.first), { llvm::pointerToJITTargetAddress(i.second), llvm::JITSymbolFlags::Callable} });
 	check(lib->define(llvm::orc::absoluteSymbols(move(runtime_exports))));
 	check(jit->addIRModule(std::move(module)));
-	auto f_main = check(jit->lookup("main"));
+	auto f_main = check(jit->lookup("ag_main"));
 	auto main_addr = f_main.toPtr<void()>();
 	for (auto& m : ast.modules) {
 		for (auto& test : m.second->tests) {
@@ -2594,10 +2596,9 @@ int64_t execute(llvm::orc::ThreadSafeModule& module, ast::Ast& ast, bool dump_ir
 		}
 	}
 	main_addr();
+	ag_handle_main_thread();
 	assert(ag_leak_detector_ok());
 	return 0;
-#else
-	return -1;
 #endif
 }
 
