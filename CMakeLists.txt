@@ -57,12 +57,16 @@ set(ag_sources
 add_executable(ag-jit-sdl
     ${ag_sources}
     src/driver/jit-sdl.cpp
+    src/runtime/runtime.h
+    src/runtime/runtime.c
+    src/runtime/sdl-bindings.h
+    src/runtime/sdl-bindings.c
 )
 target_link_libraries(ag-jit-sdl
     ${SDL2_LIBRARIES}
     ${SDL2_IMAGE_LIBRARIES}
     ${llvm_libs}
-    ag_runtime)
+)
 
 add_executable(ag-tests
     ${ag_sources}
@@ -91,3 +95,4 @@ add_library (ag_runtime STATIC
     src/runtime/sdl-bindings.c
 )
 set_property(TARGET ag_runtime PROPERTY C_STANDARD 11)
+target_compile_definitions(ag_runtime PRIVATE AG_ENTRY_POINT)
