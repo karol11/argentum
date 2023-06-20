@@ -121,6 +121,11 @@ void register_runtime_content(struct ast::Ast& ast) {
 		{ "ag_set_parent", FN(ag_set_parent) },
 		{ "ag_splice", FN(ag_splice) },
 		{ "ag_freeze", FN(ag_freeze) },
+		{ "ag_unlock_thread_queue", FN(ag_unlock_thread_queue) }, // used in trampoline
+		{ "ag_get_thread_param", FN(ag_get_thread_param) }, // used in trampoline
+		{ "ag_prepare_post_message", FN(ag_prepare_post_message) }, // used in post~message
+		{ "ag_put_thread_param", FN(ag_put_thread_param) }, // used in post~message
+		{ "ag_finalize_post_message", FN(ag_finalize_post_message) }, // used in post~message
 
 		{ "ag_copy_sys_Container", FN(ag_copy_sys_Container) },
 		{ "ag_dtor_sys_Container", FN(ag_dtor_sys_Container) },
