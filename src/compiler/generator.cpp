@@ -787,9 +787,8 @@ struct Generator : ast::ActionScanner {
 			vector<llvm::Metadata*> params;
 			params.reserve(type->params.size());
 			params.push_back(to_di_type(*type->params.back()));
-			for (auto& p : type->params) {
-				if (p != type->params.back())
-					params.push_back(to_di_type(*p));
+			for (auto pi = type->params.begin(), pit = type->params.end() - 1; pi != pit; ++pi) {
+				params.push_back(to_di_type(**pi));
 			}
 			r = di_builder->createSubroutineType(di_builder->getOrCreateTypeArray(params));
 		}
