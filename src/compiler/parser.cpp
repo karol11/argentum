@@ -546,20 +546,20 @@ struct Parser {
 		}
 		error("expected variable name in front of <set>= operator");
 	}
-
+	pin<Action> parse_call(pin<Action> callee, pin<ast::Call> call) {
+		call->callee = callee;
+		while (!match(")")) {
+			call->params.push_back(parse_expression());
+			if (match(")"))
+				break;
+			expect(",");
+		}
+	}
 	pin<Action> parse_unar() {
 		auto r = parse_unar_head();
 		for (;;) {
 			if (match("(")) {
-				auto call = make<ast::Call>();
-				call->callee = r;
-				r = call;
-				while (!match(")")) {
-					call->params.push_back(parse_expression());
-					if (match(")"))
-						break;
-					expect(",");
-				}
+				r = parse_call(r, make<ast::Call>());
 			} else if (match("[")) {
 				auto gi = make<ast::GetAtIndex>();
 				do
@@ -655,7 +655,10 @@ struct Parser {
 					return op;
 				});
 			} else if (match("~")) {
-				r = fill(make<ast::CastOp>(), r, parse_unar_head());
+				if (match("("))
+					r = parse_call(r, make<ast::AsyncCall>());
+				else
+					r = fill(make<ast::CastOp>(), r, parse_unar_head());
 			} else
 				return r;
 		}
