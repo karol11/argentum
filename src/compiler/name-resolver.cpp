@@ -349,7 +349,9 @@ struct NameResolver : ast::ActionScanner {
 			*fix_result = move(callee_as_mk_inst);
 		}
 	}
-
+	void on_async_call(ast::AsyncCall& node) override {
+		ast::ActionScanner::on_call(node);
+	}
 	void on_block(ast::Block& node) override {
 		fix_with_params(node.names, node.body);
 		if (node.body.size() == 1) {

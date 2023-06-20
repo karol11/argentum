@@ -147,6 +147,15 @@ struct Typer : ast::ActionMatcher {
 				node.type_ = as_mk_delegate->base->type();  // preserve both own/ref and actual this type.
 		}
 	}
+	void on_async_call(ast::AsyncCall& node) override {
+		for (auto& p : node.params)
+			find_type(p);
+		type_call(node, find_type(node.callee), node.params);
+		auto as_mk_delegate = dom::strict_cast<ast::MakeDelegate>(node.callee);
+		if (!as_mk_delegate)
+			node.error("only delegates can be called asynchronously");
+		node.type_ = ast->tp_void();
+	}
 	void handle_index_op(ast::GetAtIndex& node, own<ast::Action> opt_value, const string& name) {
 		auto indexed = ast->extract_class(find_type(node.indexed)->type());
 		if (!indexed)
