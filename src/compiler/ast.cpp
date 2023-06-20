@@ -25,6 +25,7 @@ own<TypeWithFills> ConstVoid::dom_type_;
 own<TypeWithFills> ConstBool::dom_type_;
 own<TypeWithFills> MkLambda::dom_type_;
 own<TypeWithFills> Call::dom_type_;
+own<TypeWithFills> AsyncCall::dom_type_;
 own<TypeWithFills> GetAtIndex::dom_type_;
 own<TypeWithFills> SetAtIndex::dom_type_;
 own<TypeWithFills> MakeDelegate::dom_type_;
@@ -201,6 +202,9 @@ void initialize() {
 	Call::dom_type_ = (new CppClassType<Call>(cpp_dom, { "m0", "Call" }))
 		->field("callee", pin<CField<&Call::callee>>::make(own_type))
 		->field("params", pin<CField<&Call::params>>::make(own_vector_type));
+	AsyncCall::dom_type_ = (new CppClassType<AsyncCall>(cpp_dom, { "m0", "AsyncCall" }))
+		->field("callee", pin<CField<&Call::callee>>::make(own_type))
+		->field("params", pin<CField<&Call::params>>::make(own_vector_type));
 	GetAtIndex::dom_type_ = (new CppClassType<GetAtIndex>(cpp_dom, { "m0", "GetAtIndex" }))
 		->field("indexed", pin<CField<&GetAtIndex::indexed>>::make(own_type))
 		->field("indexes", pin<CField<&GetAtIndex::indexes>>::make(own_vector_type));
@@ -313,6 +317,7 @@ void SpliceField::match(ActionMatcher& matcher) { matcher.on_splice_field(*this)
 void MkInstance::match(ActionMatcher& matcher) { matcher.on_mk_instance(*this); }
 void MkLambda::match(ActionMatcher& matcher) { matcher.on_mk_lambda(*this); }
 void Call::match(ActionMatcher& matcher) { matcher.on_call(*this); }
+void AsyncCall::match(ActionMatcher& matcher) { matcher.on_async_call(*this); }
 void GetAtIndex::match(ActionMatcher& matcher) { matcher.on_get_at_index(*this); }
 void SetAtIndex::match(ActionMatcher& matcher) { matcher.on_set_at_index(*this); }
 void MakeDelegate::match(ActionMatcher& matcher) { matcher.on_make_delegate(*this); }
@@ -365,6 +370,7 @@ void ActionMatcher::on_splice_field(SpliceField& node) { on_unmatched(node); }
 void ActionMatcher::on_mk_lambda(MkLambda& node) { on_unmatched(node); }
 void ActionMatcher::on_mk_instance(MkInstance& node) { on_unmatched(node); }
 void ActionMatcher::on_call(Call& node) { on_unmatched(node); }
+void ActionMatcher::on_async_call(AsyncCall& node) { on_unmatched(node); }
 void ActionMatcher::on_get_at_index(GetAtIndex& node) { on_unmatched(node); }
 void ActionMatcher::on_set_at_index(SetAtIndex& node) { on_unmatched(node); }
 void ActionMatcher::on_make_delegate(MakeDelegate& node) { on_unmatched(node); }
@@ -422,6 +428,7 @@ void ActionScanner::on_call(Call& node) {
 		fix(p);
 	fix(node.callee);
 }
+void ActionScanner::on_async_call(AsyncCall& node) { on_call(node); }
 void ActionScanner::on_get_at_index(GetAtIndex& node) {
 	for (auto& p : node.indexes)
 		fix(p);

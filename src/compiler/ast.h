@@ -477,6 +477,10 @@ struct Call : Action {
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(Call);
 };
+struct AsyncCall : Call {
+	void match(ActionMatcher& matcher) override;
+	DECLARE_DOM_CLASS(AsyncCall);
+};
 struct GetAtIndex : Action {
 	own<Action> indexed;
 	vector<own<Action>> indexes;
@@ -693,6 +697,7 @@ struct ActionMatcher {
 	virtual void on_mk_instance(MkInstance& node);
 	virtual void on_mk_lambda(MkLambda& node);
 	virtual void on_call(Call& node);
+	virtual void on_async_call(AsyncCall& node);
 	virtual void on_get_at_index(GetAtIndex& node);
 	virtual void on_set_at_index(SetAtIndex& node);
 	virtual void on_make_delegate(MakeDelegate& node);
@@ -739,6 +744,7 @@ struct ActionScanner : ActionMatcher {
 	void on_un_op(UnaryOp& node) override;
 	void on_mk_lambda(MkLambda& node) override;
 	void on_call(Call& node) override;
+	void on_async_call(AsyncCall& node) override;
 	void on_get_at_index(GetAtIndex& node) override;
 	void on_set_at_index(SetAtIndex& node) override;
 	void on_make_delegate(MakeDelegate& node) override;
