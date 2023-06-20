@@ -207,7 +207,13 @@ struct Generator : ast::ActionScanner {
 	llvm::Function* fn_copy_object_field = nullptr;   // Obj* (Obj* src, Obj* parent)
 	llvm::Function* fn_copy_weak_field = nullptr;   // void(WB** dst, WB* src)
 	llvm::FunctionType* fn_copy_fixer_fn_type = nullptr;  // void (*)(Obj*)
+	llvm::FunctionType* trampoline_fn_type = nullptr; // void (Obj* self, ag_fn entry_point, ag_thread* th)
 	llvm::Function* fn_reg_copy_fixer = nullptr;      // void (Obj*, fn_fixer_type)
+	llvm::Function* fn_unlock_thread_queue = nullptr;   // void(Thread*)
+	llvm::Function* fn_get_thread_param = nullptr;   // in64 (Thread*)
+	llvm::Function* fn_prepare_post_message = nullptr;   // ?Thread* (weak*, fn tramp, int params)
+	llvm::Function* fn_put_thread_param = nullptr;   // void (Thread*, int64 val)
+	llvm::Function* fn_finalize_post_message = nullptr;   // void (Thread*)
 	std::default_random_engine random_generator;
 	std::uniform_int_distribution<uint64_t> uniform_uint64_distribution;
 	unordered_set<uint64_t> assigned_interface_ids;
@@ -313,6 +319,7 @@ struct Generator : ast::ActionScanner {
 			"ag_copy_weak_field",
 			*module);
 		fn_copy_fixer_fn_type = llvm::FunctionType::get(void_type, { ptr_type }, false);
+		trampoline_fn_type = llvm::FunctionType::get(void_type, { ptr_type, ptr_type, ptr_type }, false);
 		fn_reg_copy_fixer = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { ptr_type, ptr_type }, false),
 			llvm::Function::ExternalLinkage,
@@ -327,6 +334,31 @@ struct Generator : ast::ActionScanner {
 			llvm::FunctionType::get(tp_int_ptr, { ptr_type }, false),
 			llvm::Function::ExternalLinkage,
 			"ag_deref_weak",
+			*module);
+		fn_unlock_thread_queue = llvm::Function::Create(
+			llvm::FunctionType::get(void_type, { ptr_type }, false),
+			llvm::Function::ExternalLinkage,
+			"ag_unlock_thread_queue",
+			*module);
+		fn_get_thread_param = llvm::Function::Create(
+			llvm::FunctionType::get(int_type, { ptr_type }, false),
+			llvm::Function::ExternalLinkage,
+			"ag_get_thread_param",
+			*module);
+		fn_prepare_post_message = llvm::Function::Create(
+			llvm::FunctionType::get(ptr_type, { ptr_type, ptr_type, int_type }, false),
+			llvm::Function::ExternalLinkage,
+			"ag_prepare_post_message",
+			*module);
+		fn_put_thread_param = llvm::Function::Create(
+			llvm::FunctionType::get(void_type, { ptr_type, int_type }, false),
+			llvm::Function::ExternalLinkage,
+			"ag_put_thread_param",
+			*module);
+		fn_finalize_post_message = llvm::Function::Create(
+			llvm::FunctionType::get(void_type, { ptr_type }, false),
+			llvm::Function::ExternalLinkage,
+			"ag_finalize_post_message",
 			*module);
 	}
 
@@ -1278,6 +1310,178 @@ struct Generator : ast::ActionScanner {
 			dispose_val(
 				move(to_dispose.back()),
 				true);
+	}
+	std::unordered_map<own<ast::TpDelegate>, llvm::Function*> trampolines;
+	llvm::Function* build_trampoline(pin<ast::TpDelegate> type) {
+		auto& tramp = trampolines[type];
+		if (tramp)
+			return tramp;
+		tramp = llvm::Function::Create(
+			trampoline_fn_type,
+			llvm::Function::InternalLinkage,
+			ast::format_str("ag_tr_", (void*)type),
+			module.get());
+		llvm::Function* prev = current_function;
+		current_function = tramp;
+		auto prev_builder = builder;
+		llvm::IRBuilder fn_bulder(llvm::BasicBlock::Create(*context, "", current_function));
+		this->builder = &fn_bulder;
+		auto self = tramp->arg_begin();
+		auto entry_point = tramp->arg_begin() + 1;
+		auto thread = tramp->arg_begin() + 2;
+		vector<llvm::Value*> params{ self };
+		for (auto pti = type->params.begin(), ptt = type->params.end() - 1; pti != ptt; ++pti) {
+			struct TypeDeserializer : ast::TypeMatcher {
+				vector<llvm::Value*>& params;
+				Generator& gen;
+				llvm::Value* thread;
+				TypeDeserializer(vector<llvm::Value*>& params, Generator& gen, llvm::Value* thread) : params(params), gen(gen), thread(thread) {}
+				void handle_64_bit(ast::Type& type) {
+					params.push_back(gen.cast_to(
+						gen.builder->CreateCall(gen.fn_get_thread_param, { thread }),
+						gen.to_llvm_type(type)));
+				}
+				void handle_pair(ast::Type& type) {
+					auto result_type = gen.to_llvm_type(type);
+					auto first = gen.cast_to(
+						gen.builder->CreateCall(gen.fn_get_thread_param, { thread }),
+						result_type->getStructElementType(0));
+					auto second = gen.cast_to(
+						gen.builder->CreateCall(gen.fn_get_thread_param, { thread }),
+						result_type->getStructElementType(1));
+					params.push_back(
+						gen.builder->CreateInsertValue(
+							gen.builder->CreateInsertValue(
+								llvm::UndefValue::get(result_type),
+								first,
+								{ 0 }),
+							second,
+							{ 1 }));
+				}
+				void on_int64(ast::TpInt64& type) override { params.push_back(gen.builder->CreateCall(gen.fn_get_thread_param, { thread })); }
+				void on_double(ast::TpDouble& type) override { handle_64_bit(type); }
+				void on_function(ast::TpFunction& type) override { handle_64_bit(type); }
+				void on_lambda(ast::TpLambda& type) override { handle_pair(type); }
+				void on_delegate(ast::TpDelegate& type) override { handle_pair(type); }
+				void on_cold_lambda(ast::TpColdLambda& type) override {}
+				void on_void(ast::TpVoid& type) override { params.push_back(llvm::UndefValue::get(gen.void_type)); }
+				void on_optional(ast::TpOptional& type) override {
+					if (dom::isa<ast::TpInt64>(*type.wrapped)) {
+						handle_pair(type);
+					} else if (dom::isa<ast::TpVoid>(*type.wrapped)) {
+						handle_64_bit(type);
+					} else {
+						type.wrapped->match(*this);
+					}
+				}
+				void on_own(ast::TpOwn& type) override { handle_64_bit(type); }
+				void on_ref(ast::TpRef& type) override { handle_64_bit(type); }
+				void on_shared(ast::TpShared& type) override { handle_64_bit(type); }
+				void on_weak(ast::TpWeak& type) override { handle_64_bit(type); }
+				void on_frozen_weak(ast::TpFrozenWeak& type) override { handle_64_bit(type); }
+				void on_conform_ref(ast::TpConformRef& type) override { handle_64_bit(type); }
+				void on_conform_weak(ast::TpConformWeak& type) override { handle_64_bit(type); }
+			};
+			TypeDeserializer td(params, *this, thread);
+			(*pti)->match(td);
+		}
+		auto bb_not_null = llvm::BasicBlock::Create(*context, "", current_function);
+		auto bb_null = llvm::BasicBlock::Create(*context, "", current_function);
+		builder->CreateCondBr(
+			builder->CreateCmp(llvm::CmpInst::Predicate::ICMP_EQ, self, const_0),
+			bb_null,
+			bb_not_null);
+		builder->SetInsertPoint(bb_not_null);
+		vector<llvm::Type*> param_types;
+		for (auto& p : params)
+			param_types.push_back(p->getType());
+		build_release(
+			builder->CreateCall(
+				llvm::FunctionCallee(
+					llvm::FunctionType::get(
+						to_llvm_type(*type->params.back()),
+						move(param_types),
+						false),  // isVararg
+					entry_point),
+				{ params }),
+			type->params.back());
+		builder->CreateBr(bb_null);
+		builder->SetInsertPoint(bb_null);
+		auto pti = type->params.begin();
+		for (auto p : params)
+			build_release(p, *(pti++));
+		swap(prev, current_function);
+		builder = prev_builder;
+		return tramp;
+	}
+	void on_async_call(ast::AsyncCall& node) {
+		Val callee = comp_to_persistent(node.callee);
+		auto calle_type = dom::strict_cast<ast::TpDelegate>(callee.type);
+		llvm::Value* thread_ptr = builder->CreateCall( fn_prepare_post_message, {
+			builder->CreateExtractValue(callee.data, { 0 }),
+			builder->CreateExtractValue(callee.data, { 1 }),
+			build_trampoline(calle_type),
+			builder->getInt64(calle_type->params.size() - 1) });
+		auto bb_has_thread = llvm::BasicBlock::Create(*context, "", current_function);
+		auto bb_has_no_thread = llvm::BasicBlock::Create(*context, "", current_function);
+		builder->CreateCondBr(
+			builder->CreateCmp(llvm::CmpInst::Predicate::ICMP_EQ, thread_ptr, const_0),
+			bb_has_no_thread,
+			bb_has_thread);
+		builder->SetInsertPoint(bb_has_thread);
+		for (auto& p : node.params) {
+			struct TypeSerializer : ast::TypeMatcher {
+				Generator& gen;
+				llvm::Value* thread;
+				llvm::Value* value;
+				TypeSerializer(Generator& gen, llvm::Value* thread, llvm::Value* value) : gen(gen), thread(thread), value(value) {}
+				void handle_64_bit() {
+					gen.builder->CreateCall(gen.fn_put_thread_param, { thread, gen.cast_to(value, gen.int_type) });
+				}
+				void handle_pair() {
+					gen.builder->CreateCall(gen.fn_put_thread_param, {
+						thread,
+						gen.cast_to(
+							gen.builder->CreateExtractValue(value, { 0 }),
+							gen.int_type)
+					});
+					gen.builder->CreateCall(gen.fn_put_thread_param, {
+						thread,
+						gen.cast_to(
+							gen.builder->CreateExtractValue(value, { 1 }),
+							gen.int_type)
+					});
+				}
+				void on_int64(ast::TpInt64& type) override { handle_64_bit(); }
+				void on_double(ast::TpDouble& type) override { handle_64_bit(); }
+				void on_function(ast::TpFunction& type) override { handle_64_bit(); }
+				void on_lambda(ast::TpLambda& type) override { handle_pair(); }
+				void on_delegate(ast::TpDelegate& type) override { handle_pair(); }
+				void on_cold_lambda(ast::TpColdLambda& type) override {}
+				void on_void(ast::TpVoid& type) override {}
+				void on_optional(ast::TpOptional& type) override {
+					if (dom::isa<ast::TpInt64>(*type.wrapped)) {
+						handle_pair();
+					} else if (dom::isa<ast::TpVoid>(*type.wrapped)) {
+						handle_64_bit();
+					} else {
+						type.wrapped->match(*this);
+					}
+				}
+				void on_own(ast::TpOwn& type) override { handle_64_bit(); }
+				void on_ref(ast::TpRef& type) override { handle_64_bit(); }
+				void on_shared(ast::TpShared& type) override { handle_64_bit(); }
+				void on_weak(ast::TpWeak& type) override { handle_64_bit(); }
+				void on_frozen_weak(ast::TpFrozenWeak& type) override { handle_64_bit(); }
+				void on_conform_ref(ast::TpConformRef& type) override { handle_64_bit(); }
+				void on_conform_weak(ast::TpConformWeak& type) override { handle_64_bit(); }
+			};
+			TypeSerializer ts(*this, thread_ptr, comp_to_persistent(p).data);
+			p->type()->match(ts);
+		}
+		builder->CreateCall(fn_finalize_post_message, { thread_ptr });
+		builder->CreateBr(bb_has_no_thread);
+		builder->SetInsertPoint(bb_has_no_thread);
 	}
 
 	llvm::Value* get_data_ref(const weak<ast::Var>& var) {
