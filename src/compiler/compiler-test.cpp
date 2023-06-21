@@ -63,6 +63,19 @@ void execute(const char* source_text, bool dump_all = false) {
     generate_and_execute(ast, false, dump_all);
 }
 
+TEST(Parser, AsyncInner) {
+    execute(R"-(
+        class App{
+            asyncOp() {
+                sys_setMainObject(?sys_Object);
+            }
+        }
+        app = App;
+        sys_setMainObject(app);
+        app.asyncOp~();
+    )-");
+}
+
 TEST(Parser, AsyncFfi) {
     execute(R"-(
         fn callbackInvoker(callback &()void);
