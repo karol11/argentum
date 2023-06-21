@@ -850,6 +850,8 @@ ag_thread* ag_prepare_post_message(AgWeak* receiver, ag_fn fn, ag_trampoline tra
 	if (free_space < params_count + 3) { // params + trampoline + entry_point + receiver_weak
 		uint64_t new_size = (th->queue_end - th->queue_start) * 2 + params_count + 3;
 		uint64_t* new_buf = AG_ALLOC(sizeof(uint64_t) * new_size);
+		if (!new_buf)
+			exit(-42);
 		if (th->read_pos > th->write_pos) {
 			size_t r_size = th->queue_end - th->read_pos;
 			size_t w_size = th->write_pos - th->queue_start;
@@ -869,7 +871,7 @@ ag_thread* ag_prepare_post_message(AgWeak* receiver, ag_fn fn, ag_trampoline tra
 		th->queue_end = new_buf + new_size;
 	}
 	ag_put_thread_param(th, (uint64_t) tramp);
-	ag_put_thread_param(th, (uint64_t) ag_retain_weak(receiver));
+	ag_put_thread_param(th, (uint64_t) receiver); // It comes prelocked. Caller doesn't release it
 	ag_put_thread_param(th, (uint64_t) fn);
 	return th;
 }
