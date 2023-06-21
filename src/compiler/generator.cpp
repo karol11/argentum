@@ -211,12 +211,13 @@ struct Generator : ast::ActionScanner {
 	llvm::Function* fn_reg_copy_fixer = nullptr;      // void (Obj*, fn_fixer_type)
 	llvm::Function* fn_unlock_thread_queue = nullptr;   // void(Thread*)
 	llvm::Function* fn_get_thread_param = nullptr;   // in64 (Thread*)
-	llvm::Function* fn_prepare_post_message = nullptr;   // ?Thread* (weak*, fn tramp, int params)
+	llvm::Function* fn_prepare_post_message = nullptr;   // ?Thread* (weak*, fn, tramp, int params)
 	llvm::Function* fn_put_thread_param = nullptr;   // void (Thread*, int64 val)
 	llvm::Function* fn_finalize_post_message = nullptr;   // void (Thread*)
 	std::default_random_engine random_generator;
 	std::uniform_int_distribution<uint64_t> uniform_uint64_distribution;
 	unordered_set<uint64_t> assigned_interface_ids;
+	std::unordered_map<own<ast::TpDelegate>, llvm::Function*> trampolines;
 	llvm::FunctionType* dispatcher_fn_type = nullptr;
 	llvm::Constant* empty_mtable = nullptr; // void_ptr[1] = { null }
 	unordered_map<weak<ast::MkLambda>, llvm::Function*> compiled_functions;
@@ -224,6 +225,7 @@ struct Generator : ast::ActionScanner {
 	llvm::Constant* const_0 = nullptr;
 	llvm::Constant* const_1 = nullptr;
 	llvm::Constant* const_256 = nullptr;
+	llvm::Constant* const_null_ptr = nullptr;
 	unordered_map<
 		vector<llvm::Constant*>,
 		llvm::Constant*,
@@ -257,6 +259,7 @@ struct Generator : ast::ActionScanner {
 		const_0 = llvm::ConstantInt::get(tp_int_ptr, 0);
 		const_1 = llvm::ConstantInt::get(tp_int_ptr, 1);
 		const_256 = llvm::ConstantInt::get(tp_int_ptr, 256);
+		const_null_ptr = llvm::ConstantPointerNull::get(ptr_type);
 
 		fn_dispose = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { ptr_type }, false),
@@ -346,7 +349,7 @@ struct Generator : ast::ActionScanner {
 			"ag_get_thread_param",
 			*module);
 		fn_prepare_post_message = llvm::Function::Create(
-			llvm::FunctionType::get(ptr_type, { ptr_type, ptr_type, int_type }, false),
+			llvm::FunctionType::get(ptr_type, { ptr_type, ptr_type, ptr_type, int_type }, false),
 			llvm::Function::ExternalLinkage,
 			"ag_prepare_post_message",
 			*module);
@@ -1310,7 +1313,7 @@ struct Generator : ast::ActionScanner {
 				move(to_dispose.back()),
 				true);
 	}
-	std::unordered_map<own<ast::TpDelegate>, llvm::Function*> trampolines;
+
 	llvm::Function* build_trampoline(pin<ast::TpDelegate> type) {
 		auto& tramp = trampolines[type];
 		if (tramp)
@@ -1384,10 +1387,11 @@ struct Generator : ast::ActionScanner {
 			TypeDeserializer td(params, *this, thread);
 			(*pti)->match(td);
 		}
+		builder->CreateCall(fn_unlock_thread_queue, { thread });
 		auto bb_not_null = llvm::BasicBlock::Create(*context, "", current_function);
 		auto bb_null = llvm::BasicBlock::Create(*context, "", current_function);
 		builder->CreateCondBr(
-			builder->CreateCmp(llvm::CmpInst::Predicate::ICMP_EQ, self, const_0),
+			builder->CreateCmp(llvm::CmpInst::Predicate::ICMP_EQ, self, const_null_ptr),
 			bb_null,
 			bb_not_null);
 		builder->SetInsertPoint(bb_not_null);
@@ -1409,10 +1413,12 @@ struct Generator : ast::ActionScanner {
 		auto pti = type->params.begin();
 		for (auto p : params)
 			build_release(p, *(pti++));
+		builder->CreateRetVoid();
 		swap(prev, current_function);
 		builder = prev_builder;
 		return tramp;
 	}
+
 	void on_async_call(ast::AsyncCall& node) {
 		Val callee = comp_to_persistent(node.callee);
 		auto calle_type = dom::strict_cast<ast::TpDelegate>(callee.type);
@@ -1424,7 +1430,7 @@ struct Generator : ast::ActionScanner {
 		auto bb_has_thread = llvm::BasicBlock::Create(*context, "", current_function);
 		auto bb_has_no_thread = llvm::BasicBlock::Create(*context, "", current_function);
 		builder->CreateCondBr(
-			builder->CreateCmp(llvm::CmpInst::Predicate::ICMP_EQ, thread_ptr, const_0),
+			builder->CreateCmp(llvm::CmpInst::Predicate::ICMP_EQ, thread_ptr, const_null_ptr),
 			bb_has_no_thread,
 			bb_has_thread);
 		builder->SetInsertPoint(bb_has_thread);

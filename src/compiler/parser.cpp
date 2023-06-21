@@ -554,6 +554,7 @@ struct Parser {
 				break;
 			expect(",");
 		}
+		return call;
 	}
 	pin<Action> parse_unar() {
 		auto r = parse_unar_head();
