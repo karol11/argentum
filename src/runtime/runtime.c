@@ -90,10 +90,12 @@ inline int cnd_wait(cnd_t* cond, mtx_t* mutex) {
 		? thrd_success
 		: thrd_error;
 }
+#define AG_THREAD_LOCAL __declspec(thread)
 
 #else
 
 #include <threads.h>
+#define AG_THREAD_LOCAL _Thread_local
 
 #endif
 
@@ -127,7 +129,7 @@ void ag_memmove(void*, void*, size_t);
 // AG_TG_NOWEAK_DST should match AG_F_PARENT
 // AG_TG_WEAK_BLOCK must be 0
 // AG_TG_WEAK_BLOCK - this is object, its wb_p points to next-in-queue wb-item
-// AG_TG_NOWEAK_DST - this is object, its wb_p points to its parent, its counter points to next-in-queue object
+// AG_TG_NOWEAK_DST - this is object, its wb_p points to its parent, its `counter` points to next-in-queue object. Used for dst objects copied before weaks.
 #define AG_TG_WEAK_BLOCK ((uintptr_t) 0)
 #define AG_TG_NOWEAK_DST ((uintptr_t) 1)
 #define AG_TG_OBJECT     ((uintptr_t) 2)
@@ -199,11 +201,26 @@ uint64_t   ag_threads_allocated = 0;
 */
 ag_thread ag_main_thread = { 0 };
 
-inline void ag_set_parent_nn(AgObject * obj, AgObject* parent) {
+#define AG_RETAIN_BUFFER_SIZE 8192
+AG_THREAD_LOCAL ag_thread** ag_current_thread;
+AG_THREAD_LOCAL AgObject** ag_retain_buffer;
+AG_THREAD_LOCAL AgObject** ag_retain_pos;
+AG_THREAD_LOCAL AgObject** ag_release_pos;
+
+inline void ag_set_parent_nn(AgObject* obj, AgObject* parent) {
 	if (obj->wb_p & AG_F_PARENT)
 		obj->wb_p = (uintptr_t)parent | AG_F_PARENT;
 	else
 		((AgWeak*)obj->wb_p)->org_pointer_to_parent = (uintptr_t)parent;
+}
+
+inline bool ag_is_shared_nn(AgObject* obj) {
+	if ((ag_head(obj)->wb_p & AG_F_PARENT) != 0) {
+		return ag_head(obj)->wb_p == (AG_SHARED | AG_F_PARENT);
+	} else {
+		AgWeak* wb = (AgWeak*)(ag_head(obj)->wb_p);
+		return wb->org_pointer_to_parent == AG_SHARED;
+	}
 }
 
 bool ag_splice(AgObject* obj, AgObject* parent) {
@@ -213,7 +230,7 @@ bool ag_splice(AgObject* obj, AgObject* parent) {
 				return false;
 		}
 		ag_set_parent_nn(obj, parent);
-		++ag_head(obj)->counter;
+		ag_head(obj)->ctr_mt += AG_CTR_STEP;
 	}
 	return true;
 }
@@ -224,41 +241,79 @@ void ag_set_parent(AgObject* obj, AgObject* parent) {
 	}
 }
 
-void ag_release(AgObject * obj) {
+void ag_release_pin(AgObject * obj) {
 	if (ag_not_null(obj)) {
-		if (--ag_head(obj)->counter == 0)
+		if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) == 0)
 			ag_dispose_obj(obj);
 	}
 }
-inline AgObject* ag_retain(AgObject* obj) {
+inline AgObject* ag_retain_pin(AgObject* obj) {
 	if (ag_not_null(obj))
-		++ag_head(obj)->counter;
+		ag_head(obj)->ctr_mt += AG_CTR_STEP;
 	return obj;
 }
 inline void ag_release_weak(AgWeak* w) {
-	if (ag_not_null(w)) {
-		if (--w->wb_counter == 0)
-			ag_free(w);
+	if (!ag_not_null(w))
+		return;
+	if (w->wb_ctr_mt & AG_CTR_MT) {
+		*ag_release_pos = (AgObject*)w;
+		if (++ag_release_pos == ag_retain_pos)
+			ag_flush_retain_release();
+	} else if ((w->wb_ctr_mt -= AG_CTR_STEP) == AG_CTR_WEAK) {
+		ag_free(w);
 	}
 }
-inline AgWeak* ag_retain_weak(AgWeak* w) {
-	if (ag_not_null(w)) {
-		++ag_head(w)->counter;
+inline AgWeak* ag_retain_weak_nn(AgWeak* w) {
+	if (w->wb_ctr_mt & AG_CTR_MT) {
+		*ag_retain_pos = (AgObject*)w;
+		if (--ag_retain_pos == ag_release_pos)
+			ag_flush_retain_release();
+	} else {
+		w->wb_ctr_mt += AG_CTR_STEP;
 	}
 	return w;
 }
-inline void ag_release_own(AgObject* obj) {
+AgWeak* ag_retain_weak(AgWeak* w) {
+	return ag_not_null(w)
+		? ag_retain_weak_nn(w)
+		: 0;
+}
+void ag_release_own(AgObject* obj) {
 	if (ag_not_null(obj)) {
-		if (--ag_head(obj)->counter == 0)
+		assert((ag_head(obj)->ctr_mt & AG_CTR_MT) == 0);
+		if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) == 0)
 			ag_dispose_obj(obj);
 		else
 			ag_set_parent_nn(obj, AG_IN_STACK);
 	}
 }
-inline void ag_retain_own(AgObject* obj, AgObject* parent) {
+void ag_retain_own(AgObject* obj, AgObject* parent) {
 	if (ag_not_null(obj)) {
-		++ag_head(obj)->counter;
+		assert((ag_head(obj)->ctr_mt & AG_CTR_MT) == 0);
+		ag_head(obj)->ctr_mt += AG_CTR_STEP;
 		ag_set_parent_nn(obj, parent);
+	}
+}
+void ag_release_shared(AgObject* obj) {
+	if (!ag_not_null(obj))
+		return;
+	if (ag_head(obj)->ctr_mt & AG_CTR_MT) {
+		*ag_release_pos = obj;
+		if (++ag_release_pos == ag_retain_pos)
+			ag_flush_retain_release();
+	} else if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) == 0) {
+		ag_dispose_obj(obj);
+	}
+}
+void ag_retain_shared(AgObject* obj) {
+	if (!ag_not_null(obj))
+		return;
+	if (ag_head(obj)->ctr_mt & AG_CTR_MT) {
+		*ag_retain_pos = obj;
+		if (--ag_retain_pos == ag_release_pos)
+			ag_flush_retain_release();
+	} else {
+		ag_head(obj)->ctr_mt += AG_CTR_STEP;
 	}
 }
 
@@ -296,7 +351,7 @@ AgObject* ag_allocate_obj(size_t size) {
 		exit(-42);
 	}
 	ag_zero_mem(r, size);
-	r->counter = 1;
+	r->ctr_mt = AG_CTR_STEP;
 	r->wb_p = AG_IN_STACK | AG_F_PARENT;
 	return r;
 }
@@ -305,7 +360,7 @@ AgObject* ag_freeze(AgObject* src) {
 		? src->wb_p & ~AG_F_PARENT
 		: ((AgWeak*)src->wb_p)->org_pointer_to_parent))
 	{
-		src->counter++;
+		src->ctr_mt += AG_CTR_STEP;
 		return src;
 	}
 	ag_copy_freeze = true;
@@ -318,8 +373,8 @@ AgObject* ag_copy(AgObject* src) {
 	for (AgObject* obj = ag_copy_head; obj;) {
 		if (AG_PTR_TAG(obj) == AG_TG_NOWEAK_DST) {
 			AgObject* dst = AG_UNTAG_PTR(AgObject, obj);
-			obj = (AgObject*) dst->counter;
-			dst->counter = 1;
+			obj = (AgObject*) dst->ctr_mt;
+			dst->ctr_mt = AG_CTR_STEP;  // it's a copy, so no mt
 		} else {
 			assert(AG_PTR_TAG(obj) == AG_TG_OBJECT);
 			obj = AG_UNTAG_PTR(AgObject, obj);
@@ -329,7 +384,7 @@ AgObject* ag_copy(AgObject* src) {
 			wb->target = obj;
 			while (AG_PTR_TAG(next) == AG_TG_WEAK) {
 				void** w = AG_UNTAG_PTR(void*, next);
-				wb->wb_counter++;
+				ag_retain_weak(wb);
 				next = *w;
 				*w = wb;
 			}
@@ -353,31 +408,37 @@ AgObject* ag_copy_object_field(AgObject* src, AgObject* parent) {
 	AgObject* dh = (AgObject*) ag_alloc(vmt->instance_alloc_size + AG_HEAD_SIZE);
 	if (!dh) { exit(-42); }
 	ag_memcpy(dh, ag_head(src), vmt->instance_alloc_size + AG_HEAD_SIZE);
-	dh->counter = 1;
+	dh->ctr_mt = AG_CTR_STEP;
 	dh->wb_p = (uintptr_t) AG_TAG_PTR(AgObject, parent, AG_F_PARENT);  //NO_WEAK also makes it AG_TG_NOWEAK_DST
 	vmt->copy_ref_fields((AgObject*)(dh + AG_HEAD_SIZE), src);
 	if ((ag_head(src)->wb_p & AG_F_PARENT) == 0) { // has weak block
 		AgWeak* wb = (AgWeak*) ag_head(src)->wb_p;
-		if (wb->target == src) { // no weak copied yet
-			dh->counter = (uintptr_t) ag_copy_head;  // AG_TG_NOWEAK_DST uses counter as link
-			ag_copy_head = AG_TAG_PTR(AgObject, src, AG_TG_OBJECT);
+		if (wb->thread != ag_current_thread) {
+			// TODO: implement hashmap lookup or tree splicing array lookup
+			// So far cross-thread weak pointers to shared objects are not maintain topology.
+			// I'm not sure if this should be a bug or feature.
 		} else {
-			AgWeak* dst_wb = (AgWeak*) ag_alloc(sizeof(AgWeak));
-			dst_wb->org_pointer_to_parent = (uintptr_t) parent;
-			dst_wb->thread = ((AgWeak*)(ag_head(src)->wb_p))->thread;
-			dh->wb_p = (uintptr_t) dst_wb;  // also clears NO_WEAK
-			void* i = ((AgWeak*)(ag_head(src)->wb_p))->target;
-			uintptr_t dst_wb_locks = 1;
-			while (AG_PTR_TAG(i) == AG_TG_WEAK) {
-				AgWeak** w = AG_UNTAG_PTR(AgWeak*, i);
-				i = *w;
-				*w = dst_wb;
-				dst_wb_locks++;
+			if (wb->target == src) { // no weak copied yet
+				dh->ctr_mt = (uintptr_t)ag_copy_head;  // AG_TG_NOWEAK_DST uses counter as link
+				ag_copy_head = AG_TAG_PTR(AgObject, src, AG_TG_OBJECT);
+			} else {
+				AgWeak* dst_wb = (AgWeak*)ag_alloc(sizeof(AgWeak));
+				dst_wb->org_pointer_to_parent = (uintptr_t)parent;
+				dst_wb->thread = ((AgWeak*)(ag_head(src)->wb_p))->thread;
+				dh->wb_p = (uintptr_t)dst_wb;  // also clears NO_WEAK
+				void* i = ((AgWeak*)(ag_head(src)->wb_p))->target;
+				uintptr_t dst_wb_locks = AG_CTR_STEP;
+				while (AG_PTR_TAG(i) == AG_TG_WEAK) {
+					AgWeak** w = AG_UNTAG_PTR(AgWeak*, i);
+					i = *w;
+					*w = dst_wb;
+					dst_wb_locks++;
+				}
+				dst_wb->wb_ctr_mt = dst_wb_locks;
+				dst_wb->target = (AgObject*)i;
 			}
-			dst_wb->wb_counter = dst_wb_locks;
-			dst_wb->target = (AgObject*) i;
+			wb->target = AG_TAG_PTR(AgObject, dh + AG_HEAD_SIZE, AG_TG_OBJECT);
 		}
-		wb->target = AG_TAG_PTR(AgObject, dh + AG_HEAD_SIZE, AG_TG_OBJECT);
 	}
 	return (AgObject*)(dh + AG_HEAD_SIZE);
 }
@@ -394,12 +455,12 @@ void ag_fn_sys_make_shared(AgObject* obj) {  // TODO: implement hierarchy freeze
 void ag_copy_weak_field(void** dst, AgWeak* src) {
 	if (!src || (size_t)src < 256) {
 		*dst = src;
-	} else if (!src->target) {
-		src->wb_counter++;
+	} else if (!src->target || src->thread != ag_current_thread) {
+		ag_retain_weak_nn(src);
 		*dst = src;
 	} else {
 		switch (AG_PTR_TAG(src->target)) {
-		case AG_TG_WEAK_BLOCK: // tagWB == 0, so it is an uncopied object
+		case AG_TG_WEAK_BLOCK: // tagWB == 0, so this object hasn't been copied yet or not copied at all
 			*dst = ag_copy_head;
 			ag_copy_head = AG_TAG_PTR(AgObject, src->target, AG_TG_OBJECT);
 			src->target = AG_TAG_PTR(AgObject, dst, AG_TG_WEAK);
@@ -415,12 +476,12 @@ void ag_copy_weak_field(void** dst, AgWeak* src) {
 				cwb = (AgWeak*) ag_alloc(sizeof(AgWeak));
 				cwb->thread = src->thread;
 				cwb->org_pointer_to_parent = ag_head(copy)->wb_p & ~AG_F_PARENT;
-				cwb->wb_counter = 1;
-				cwb->target = (AgObject*)(ag_head(copy)->counter);
+				cwb->wb_ctr_mt = AG_CTR_STEP | AG_CTR_WEAK;
+				cwb->target = (AgObject*)(ag_head(copy)->ctr_mt);
 				ag_head(copy)->wb_p = (uintptr_t) cwb;
 			} else
 				cwb = AG_UNTAG_PTR(AgWeak, ag_head(copy)->wb_p);
-			cwb->wb_counter++;
+			cwb->wb_ctr_mt += AG_CTR_STEP;  // dst is not shared mt
 			*dst = cwb;
 			break; }
 		}
@@ -432,21 +493,21 @@ AgWeak* ag_mk_weak(AgObject* obj) { // obj can't be null
 		AgWeak* w = (AgWeak*) ag_alloc(sizeof(AgWeak));
 		w->org_pointer_to_parent = ag_head(obj)->wb_p & ~AG_F_PARENT;
 		w->target = obj;
-		w->wb_counter = 2; // one from obj and one from `mk_weak` result
-		w->thread = &ag_main_thread;
+		w->wb_ctr_mt = AG_CTR_STEP * 2; // one from obj and one from `mk_weak` result
+		w->thread = ag_current_thread;
 		ag_head(obj)->wb_p = (uintptr_t) w;
 		return w;
 	}
 	AgWeak* w = (AgWeak*)(ag_head(obj)->wb_p);
-	w->wb_counter++;
+	ag_retain_weak_nn(w);
 	return w;
 }
 
 AgObject* ag_deref_weak(AgWeak* w) {
-	if (!w || (size_t)w < 256 || !w->target) {
+	if (!w || (size_t)w < 256 || !w->target || w->thread != ag_current_thread) {
 		return 0;
 	}
-	++w->target->counter;
+	w->target->ctr_mt += AG_CTR_STEP;
 	return w->target;
 }
 
@@ -614,11 +675,11 @@ void ag_m_sys_Array_setOptAt(AgBlob* b, uint64_t index, AgObject* val) {
 
 AgObject* ag_m_sys_Array_setAt(AgBlob* b, uint64_t index, AgObject* val) {
 	if (index >= b->size) {
-		++ag_head(val)->counter;
+		ag_head(val)->ctr_mt += AG_CTR_STEP;
 		return val;
 	}
 	AgObject** dst = ((AgObject**)(b->data)) + index;
-	ag_head(val)->counter += 2;
+	ag_head(val)->ctr_mt += AG_CTR_STEP * 2;
 	ag_set_parent_nn(val, &b->head);
 	ag_release_own(*dst);
 	*dst = val;
@@ -747,7 +808,7 @@ AgObject* ag_fn_sys_getParent(AgObject* obj) {  // obj not null, result is nulla
 	uintptr_t r = obj->wb_p & AG_F_PARENT
 		? obj->wb_p & ~AG_F_PARENT
 		: ((AgWeak*)obj->wb_p)->org_pointer_to_parent;
-	return r < AG_SHARED
+	return r <= AG_SHARED
 		? 0
 		: ag_retain((AgObject*)(r));
 }

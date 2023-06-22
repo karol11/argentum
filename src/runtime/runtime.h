@@ -15,6 +15,10 @@ typedef int bool;
 #define AG_F_PARENT ((uintptr_t) 1)
 #define AG_IN_STACK 0
 #define AG_SHARED   ((uintptr_t) 2)
+// Tags in `counter` field (only for shared or conform pointers)
+#define AG_CTR_MT ((uintptr_t) 1)
+#define AG_CTR_WEAK ((uintptr_t) 2)
+#define AG_CTR_STEP ((uintptr_t) 4)
 
 typedef struct ag_thread_tag ag_thread;
 
@@ -27,13 +31,13 @@ typedef struct {
 
 typedef struct AgObject_tag {
 	void**    (*dispatcher) (uint64_t interface_and_method_ordinal);
-	uintptr_t counter;      // number_of_owns_and_refs point here
-	uintptr_t wb_p;       // pointer_to_weak_block || (pointer_to_parent|AG_F_PARENT)
+	uintptr_t ctr_mt;      // number_of_owns_and_refs point here | 1 if mt
+	uintptr_t wb_p;        // pointer_to_weak_block || (pointer_to_parent|AG_F_PARENT)
 } AgObject;
 
 typedef struct {
 	AgObject*  target;
-	uintptr_t  wb_counter;   // number_of_weaks pointing here
+	uintptr_t  wb_ctr_mt;    // number_of_weaks pointing here | 1 if mt | 2 to indicate weak
 	uintptr_t  org_pointer_to_parent;  // copy of obj->parent
 	ag_thread* thread;       // pointer to the opaque inner thread object, not to AgThread component
 } AgWeak;
@@ -67,7 +71,10 @@ void      ag_set_parent         (AgObject* obj, AgObject* parent);
 bool      ag_splice             (AgObject* object, AgObject* parent);  // checks if parent is not already in object hierarchy, sets parent, retains
 AgObject* ag_copy               (AgObject* src);
 AgObject* ag_freeze             (AgObject* src);
-void      ag_release            (AgObject* obj);
+void      ag_release_pin        (AgObject* obj);
+// void   ag_retain_pin         (AgObject* obj); // inlined
+void      ag_release_shared     (AgObject* obj);
+void      ag_retain_shared      (AgObject* obj);
 void      ag_dispose_obj        (AgObject* src);
 AgObject* ag_allocate_obj       (size_t size);
 AgObject* ag_copy_object_field  (AgObject* src, AgObject* parent);
@@ -79,7 +86,8 @@ AgObject* ag_fn_sys_getParent   (AgObject* obj);   // obj not null
 // AgWeak support
 //
 void      ag_copy_weak_field (void** dst, AgWeak* src);
-void      ag_release_weak(AgWeak* obj);
+void      ag_release_weak    (AgWeak* obj);
+void      ag_retain_weak     (AgWeak* obj);
 AgWeak*   ag_mk_weak         (AgObject* obj);
 AgObject* ag_deref_weak      (AgWeak* w);
 
