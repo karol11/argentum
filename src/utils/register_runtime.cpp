@@ -104,6 +104,10 @@ void register_runtime_content(struct ast::Ast& ast) {
 		ast.tp_int64(),
 		ast.tp_delegate({ ast.tp_void() })
 	});
+	auto thread = ast.mk_class("Thread", {
+		ast.mk_field("_internal", new ast::ConstInt64) });
+	ast.mk_method(mut::MUTATING, thread, "init", FN(ag_m_sys_Thread_init), new ast::ConstVoid, { ast.get_ref(ast.object) });
+	ast.mk_method(mut::MUTATING, thread, "getRoot", FN(ag_m_sys_Thread_getRoot), make_ptr_result(new ast::MkWeakOp, ast.object), {});
 
 	ast.platform_exports.insert({
 		{ "ag_copy", FN(ag_copy) },
@@ -114,8 +118,11 @@ void register_runtime_content(struct ast::Ast& ast) {
 		{ "ag_deref_weak", FN(ag_deref_weak) },
 		{ "ag_reg_copy_fixer", FN(ag_reg_copy_fixer) },
 		{ "ag_retain_own", FN(ag_retain_own) },
+		{ "ag_retain_shared", FN(ag_retain_shared) },
+		{ "ag_retain_weak", FN(ag_retain_weak) },
 		{ "ag_release_own", FN(ag_release_own) },
-		{ "ag_release", FN(ag_release) },
+		{ "ag_release_shared", FN(ag_release_shared) },
+		{ "ag_release_pin", FN(ag_release_pin) },
 		{ "ag_release_weak", FN(ag_release_weak) },
 		{ "ag_dispose_obj", FN(ag_dispose_obj) },
 		{ "ag_set_parent", FN(ag_set_parent) },
@@ -125,7 +132,10 @@ void register_runtime_content(struct ast::Ast& ast) {
 		{ "ag_get_thread_param", FN(ag_get_thread_param) }, // used in trampoline
 		{ "ag_prepare_post_message", FN(ag_prepare_post_message) }, // used in post~message
 		{ "ag_put_thread_param", FN(ag_put_thread_param) }, // used in post~message
+		{ "ag_put_thread_param_weak_ptr", FN(ag_put_thread_param_weak_ptr) }, // used in post~message
+		{ "ag_put_thread_param_own_ptr", FN(ag_put_thread_param_own_ptr) }, // used in post~message
 		{ "ag_finalize_post_message", FN(ag_finalize_post_message) }, // used in post~message
+		{ "ag_handle_main_thread", FN(ag_handle_main_thread) },
 
 		{ "ag_copy_sys_Container", FN(ag_copy_sys_Container) },
 		{ "ag_dtor_sys_Container", FN(ag_dtor_sys_Container) },
@@ -136,5 +146,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 		{ "ag_copy_sys_WeakArray", FN(ag_copy_sys_WeakArray) },
 		{ "ag_dtor_sys_WeakArray", FN(ag_dtor_sys_WeakArray) },
 		{ "ag_copy_sys_String", FN(ag_copy_sys_String) },
-		{ "ag_dtor_sys_String", FN(ag_dtor_sys_String) }});
+		{ "ag_dtor_sys_String", FN(ag_dtor_sys_String) },
+		{ "ag_copy_sys_Thread", FN(ag_copy_sys_Thread) },
+		{ "ag_dtor_sys_Thread", FN(ag_dtor_sys_Thread) }});
 }

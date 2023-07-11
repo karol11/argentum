@@ -1,0 +1,58 @@
+# https://sketchviz.com/new
+# How a copy list is formed in LTM
+
+digraph A {
+        node[ shape=record];
+    penwidth=0;
+    rankdir=LR;
+    head -> src:h [label="#obj"];
+    prev_list->nullptr;
+    subgraph cluster_A {
+        label = "*When Object copied before weaks*";
+        src[label="<h>src|<wb>wb"; color="red"];
+        src_wb[label="<h>src wb|<t>target"; color="red"];
+        dst[label="<h>dst|<wb>ctr"; color="red"];
+        src:wb->src_wb:h [label="#wb(0)"];
+        src_wb:t-> dst:h [label="#noweakdst"];
+        dst:wb->prev_list;
+    } 
+    subgraph cluster_B {
+        label = "*First weak copied before obj*";
+        head -> src1:h [label="#obj"];
+        src1[label="<h>src|<wb>wb"; color="red"];
+        src_wb1[label="<h>src wb|<t>target"; color="red"];
+        weak1[label="weakptr"; color="red"];
+        src1:wb->src_wb1:h [label="#wb(0)"];
+        src_wb1:t-> weak1 [label="#weak"];
+        weak1->prev_list;
+    } 
+    subgraph cluster_C {
+        label = "*Other weaks copied before obj*";
+        head -> dummy2:h;
+        dummy2[label="..."];
+        src2[label="<h>src|<wb>wb"];
+        src_wb2[label="<h>src wb|<t>target"];
+        weak2[label="weakptr"; color="red"];
+        post2[label="existing\nweaks"];
+        dummy2->src2:h [label="#obj"];
+        src2:wb->src_wb2:h [label="#wb(0)"];
+        src_wb2:t-> weak2 [label="#weak"];
+        weak2->post2;
+        post2->prev_list;
+    } 
+    subgraph cluster_D {
+        label = "*First weak copied after  obj*";
+        head -> dummy3:h;
+        dummy3[label="..."];
+        dummy3->src3[label="#obj"];
+        src3[label="<h>src|<wb>wb"];
+        src3:wb->src_wb3:h[label="#wb(0)"];
+        src_wb3[label="<h>src wb|<t>target"];
+        src_wb3:t->dst3:h[label="#noweakdst"];
+        dst3[label="<h>dst|<ctr>ctr|<wb>wb_p"];
+        dst3:ctr->prev_list;
+        dst3:wb->dst_wb3:h;
+        dst_wb3[label="<h>dst wb|<t>target"; color="red"];
+        dst_wb3:t->dst3:h;
+    }
+}

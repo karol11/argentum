@@ -95,4 +95,3 @@ add_library (ag_runtime STATIC
     src/runtime/sdl-bindings.c
 )
 set_property(TARGET ag_runtime PROPERTY C_STANDARD 11)
-target_compile_definitions(ag_runtime PRIVATE AG_ENTRY_POINT)

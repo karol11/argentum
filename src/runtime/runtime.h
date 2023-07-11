@@ -22,28 +22,44 @@ typedef int bool;
 
 typedef struct ag_thread_tag ag_thread;
 
+#define AG_VISIT_OWN    0
+#define AG_VISIT_WEAK   1
+#define AG_VISIT_STRING_BUF   2
+
+#define AG_VMT_FIELD_COPY      0 
+#define AG_VMT_FIELD_DISPOSE   1 
+#define AG_VMT_FIELD_VISIT     2
+#define AG_VMT_FIELD_INST_SIZE 3
+#define AG_VMT_FIELD_VMT_SIZE  4
+
 typedef struct {
 	void   (*copy_ref_fields)  (void* dst, void* src);
 	void   (*dispose)          (void* ptr);
+	void   (*visit)            (void* ptr,
+								void(* visitor)(
+									void*,  // field_ptr*
+									int,    // type AG_VISIT_*
+									void*), // ctx
+								void* ctx);
 	size_t instance_alloc_size;
 	size_t vmt_size;
 } AgVmt;
 
-typedef struct AgObject_tag {
+typedef struct {
 	void**    (*dispatcher) (uint64_t interface_and_method_ordinal);
-	uintptr_t ctr_mt;      // number_of_owns_and_refs point here | 1 if mt
+	uintptr_t ctr_mt;      // number_of_owns_and_refs point here << 2 | 1 if mt
 	uintptr_t wb_p;        // pointer_to_weak_block || (pointer_to_parent|AG_F_PARENT)
 } AgObject;
 
 typedef struct {
 	AgObject*  target;
-	uintptr_t  wb_ctr_mt;    // number_of_weaks pointing here | 1 if mt | 2 to indicate weak
+	uintptr_t  wb_ctr_mt;    // number_of_weaks pointing here << 2 | 1 if mt | 2 to indicate weak
 	uintptr_t  org_pointer_to_parent;  // copy of obj->parent
-	ag_thread* thread;       // pointer to the opaque inner thread object, not to AgThread component
+	ag_thread* thread;       // pointer to ag_thread struct
 } AgWeak;
 
 typedef struct {
-	size_t counter;
+	size_t counter_mt; // number_of_strings pointing here << 1 | 1 if mt
 	char   data[1];
 } AgStringBuffer;
 
@@ -58,6 +74,11 @@ typedef struct {
 	uint64_t size;
 	int64_t* data;
 } AgBlob;
+
+typedef struct {
+	AgObject              head;
+	struct ag_thread_tag* thread;
+} AgThread;
 
 bool ag_leak_detector_ok();
 uintptr_t ag_max_mem();
@@ -152,8 +173,14 @@ void      ag_m_sys_WeakArray_delete(AgBlob* b, uint64_t index, uint64_t count);
 void      ag_fn_sys_terminate     (int);
 bool      ag_fn_sys_setMainObject (AgObject* root); // root must be not owned, returns true on success
 void      ag_fn_sys_log           (AgString* s);
-int64_t   ag_fn_sys_readFile      (AgString* name, AgBlob* content);  // returns bytes read or -1
-bool      ag_fn_sys_writeFile     (AgString* name, int64_t at, int64_t byte_size, AgBlob* content);
+
+//
+// Thread
+//
+void    ag_copy_sys_Thread      (AgThread* dst, AgThread* src);
+void    ag_dtor_sys_Thread      (AgThread* ptr);
+void    ag_m_sys_Thread_init    (AgThread* th, AgObject* root);
+AgWeak* ag_m_sys_Thread_getRoot (AgThread* th);
 
 //
 // Cross-thread FFI interop
@@ -170,14 +197,16 @@ typedef void (*ag_trampoline) (AgObject* self, ag_fn entry_point, ag_thread* thr
 // 3. if (self != null) execute entry_point(self, params)
 // 4. release params
 
-// Foreign function that wants co call the callback from ramdom thread should:
+// Foreign function that wants to call a callback from a random thread should:
 // 1. call ag_prepare_post_message and check its result for null (null means receiver is no longer exists)
-// 2. call ag_put_thread_param for each 64-bit parameter (some parameters, like optInt, delegate require two ag_put_thread_param calls).
+// 2. call ag_put_thread_param for each 64-bit parameter (some parameters, like optInt and delegate require two ag_put_thread_param calls).
 // 3. call ag_finalize_post_message
 // Foreign function should put (using ag_put_thread_param) the same number of params in the same order
 // as the trampoline function invoked on AG-thread is going to read with ag_get_thread_param.
-ag_thread* ag_prepare_post_message  (AgWeak* receiver, ag_fn fn, ag_trampoline tramp, size_t params_count);
-void       ag_put_thread_param      (ag_thread* th, uint64_t param);
+ag_thread* ag_prepare_post_message      (AgWeak* receiver, ag_fn fn, ag_trampoline tramp, size_t params_count);
+void       ag_put_thread_param          (ag_thread* th, uint64_t param);
+void       ag_put_thread_param_weak_ptr (ag_thread* th, AgWeak* param);
+void       ag_put_thread_param_own_ptr  (ag_thread* th, AgWeak* param);
 void       ag_finalize_post_message (ag_thread* th);
 
 //trampoline api

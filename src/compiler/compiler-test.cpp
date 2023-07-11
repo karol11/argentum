@@ -63,6 +63,25 @@ void execute(const char* source_text, bool dump_all = false) {
     generate_and_execute(ast, false, dump_all);
 }
 
+TEST(Parser, Mt) {
+    execute(R"-(
+        class App{
+            worker = sys_Thread(sys_Object).start(sys_Object);
+            endEverything() {
+                sys_Log("shutdown from main thread");
+                sys_setMainObject(?sys_Object);
+            }
+        }
+        app = App;
+        sys_setMainObject(app);
+        sys_Log("activate from main thread");
+        app.worker.getRoot().&workerCode(app &App){
+            sys_Log("hi from worker thread");
+            app.endEverything~();
+        }~(&app);
+    )-");
+}
+
 TEST(Parser, AsyncInner) {
     execute(R"-(
         class App{

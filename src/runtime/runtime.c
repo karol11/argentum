@@ -22,7 +22,7 @@ int thrd_create(thrd_t* thr, thrd_start_t func, void* arg) {
 		NULL,                   // default security attributes
 		0,                      // use default stack size  
 		func,
-		arg,          // argument to thread function 
+		arg,                    // argument to thread function 
 		0,                      // use default creation flags 
 		NULL
 	);
@@ -190,37 +190,69 @@ typedef struct ag_thread_tag {
 	AgWeak*   timer_proc_param;
 	mtx_t     mutex;
 	cnd_t     is_not_empty;
-//	thrd_t    thread;
+	thrd_t    thread;
 } ag_thread;
 
-/*
-ag_thread* ag_threads = NULL;
-ag_thread* ag_threads_free = NULL;
-uint64_t   ag_threads_size = 0;
-uint64_t   ag_threads_allocated = 0;
-*/
+// Ag_threads never deallocated.
+// We allocate ag_threads by pages, we hold deallocated pages in a list using write_pos field
+ag_thread*  ag_alloc_thread = NULL;    // next free ag_thread in page
+uint64_t    ag_alloc_threads_left = 0; // number of free ag_threads left in page
+ag_thread*  ag_thread_free = NULL;     // head of freed ag_thread chain
+
 ag_thread ag_main_thread = { 0 };
 
 #define AG_RETAIN_BUFFER_SIZE 8192
-AG_THREAD_LOCAL ag_thread** ag_current_thread;
-AG_THREAD_LOCAL AgObject** ag_retain_buffer;
-AG_THREAD_LOCAL AgObject** ag_retain_pos;
-AG_THREAD_LOCAL AgObject** ag_release_pos;
+AG_THREAD_LOCAL ag_thread* ag_current_thread;
+AG_THREAD_LOCAL uintptr_t* ag_retain_buffer;
+AG_THREAD_LOCAL uintptr_t* ag_retain_pos;
+AG_THREAD_LOCAL uintptr_t* ag_release_pos;
+mtx_t retain_release_mutex;
+
+void ag_flush_retain_release() {
+	mtx_lock(&retain_release_mutex);
+	uintptr_t* i = ag_retain_buffer;
+	uintptr_t* term = ag_retain_pos;
+	for (; i != term; ++i) {
+		if (*i & 1)
+			((AgStringBuffer*)(*i & ~1))->counter_mt += 2;
+		else
+			((AgObject*)*i)->ctr_mt += AG_CTR_STEP;
+	}
+	i = ag_release_pos;
+	term = ag_retain_buffer + AG_RETAIN_BUFFER_SIZE;
+	AgObject* root = NULL;
+	for (; i != term; ++i) {
+		if (*i & 1) {
+			AgStringBuffer* str = (AgStringBuffer*)(*i & ~1);
+			if ((str->counter_mt -= 2) < 2)
+				ag_free(str);
+
+		} else {
+			AgObject* obj = (AgObject*)*i;
+			if ((obj->ctr_mt -= AG_CTR_STEP) < AG_CTR_STEP) {
+				obj->ctr_mt = (obj->ctr_mt & AG_CTR_WEAK) | ((intptr_t)root);
+				root = *i;
+			}
+		}
+	}
+	ag_retain_pos = ag_retain_buffer;
+	ag_release_pos = ag_retain_buffer + AG_RETAIN_BUFFER_SIZE;
+	mtx_unlock(&retain_release_mutex);
+	while (root) {
+		AgObject* n = AG_UNTAG_PTR(AgObject, root->ctr_mt);
+		if (root->ctr_mt & AG_CTR_WEAK)
+			ag_free(root);
+		else
+			ag_dispose_obj(AG_UNTAG_PTR(AgObject, root));
+		root = n;
+	}
+}
 
 inline void ag_set_parent_nn(AgObject* obj, AgObject* parent) {
 	if (obj->wb_p & AG_F_PARENT)
 		obj->wb_p = (uintptr_t)parent | AG_F_PARENT;
 	else
 		((AgWeak*)obj->wb_p)->org_pointer_to_parent = (uintptr_t)parent;
-}
-
-inline bool ag_is_shared_nn(AgObject* obj) {
-	if ((ag_head(obj)->wb_p & AG_F_PARENT) != 0) {
-		return ag_head(obj)->wb_p == (AG_SHARED | AG_F_PARENT);
-	} else {
-		AgWeak* wb = (AgWeak*)(ag_head(obj)->wb_p);
-		return wb->org_pointer_to_parent == AG_SHARED;
-	}
 }
 
 bool ag_splice(AgObject* obj, AgObject* parent) {
@@ -243,45 +275,57 @@ void ag_set_parent(AgObject* obj, AgObject* parent) {
 
 void ag_release_pin(AgObject * obj) {
 	if (ag_not_null(obj)) {
+		assert((ag_head(obj)->ctr_mt & AG_CTR_MT) == 0);  // pin cannot be shared and as such mt
 		if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) == 0)
 			ag_dispose_obj(obj);
 	}
 }
 inline AgObject* ag_retain_pin(AgObject* obj) {
-	if (ag_not_null(obj))
+	if (ag_not_null(obj)) {
+		assert((ag_head(obj)->ctr_mt & AG_CTR_MT) == 0);  // pin cannot be shared and as such mt
 		ag_head(obj)->ctr_mt += AG_CTR_STEP;
+	}
 	return obj;
+}
+inline void ag_reg_mt_release(uintptr_t p) {
+	if (--ag_release_pos == ag_retain_pos)
+		ag_flush_retain_release();
+	*ag_release_pos = p;
+}
+inline void ag_reg_mt_retain(uintptr_t p) {
+	*ag_retain_pos = p;
+	if (++ag_retain_pos == ag_release_pos)
+		ag_flush_retain_release();
 }
 inline void ag_release_weak(AgWeak* w) {
 	if (!ag_not_null(w))
 		return;
 	if (w->wb_ctr_mt & AG_CTR_MT) {
-		*ag_release_pos = (AgObject*)w;
-		if (++ag_release_pos == ag_retain_pos)
-			ag_flush_retain_release();
+		ag_reg_mt_release((uintptr_t)w);
 	} else if ((w->wb_ctr_mt -= AG_CTR_STEP) == AG_CTR_WEAK) {
 		ag_free(w);
 	}
 }
 inline AgWeak* ag_retain_weak_nn(AgWeak* w) {
 	if (w->wb_ctr_mt & AG_CTR_MT) {
-		*ag_retain_pos = (AgObject*)w;
-		if (--ag_retain_pos == ag_release_pos)
-			ag_flush_retain_release();
+		ag_reg_mt_retain((uintptr_t)w);
 	} else {
 		w->wb_ctr_mt += AG_CTR_STEP;
 	}
 	return w;
 }
-AgWeak* ag_retain_weak(AgWeak* w) {
-	return ag_not_null(w)
-		? ag_retain_weak_nn(w)
-		: 0;
+void ag_retain_weak(AgWeak* w) {
+	if (ag_not_null(w))
+		ag_retain_weak_nn(w);
 }
+// TODO: separate into
+// - `assign_own`, that handles previous val, and parent ptr, but doesn't handle mt
+// - `dispose_own` that handles mt but not parent ptr
 void ag_release_own(AgObject* obj) {
 	if (ag_not_null(obj)) {
-		assert((ag_head(obj)->ctr_mt & AG_CTR_MT) == 0);
-		if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) == 0)
+		if (ag_head(obj)->ctr_mt & AG_CTR_MT)  // when in field it can point to a frozen shared mt.
+			ag_reg_mt_release((uintptr_t) obj);
+		else if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) < AG_CTR_STEP)
 			ag_dispose_obj(obj);
 		else
 			ag_set_parent_nn(obj, AG_IN_STACK);
@@ -289,31 +333,28 @@ void ag_release_own(AgObject* obj) {
 }
 void ag_retain_own(AgObject* obj, AgObject* parent) {
 	if (ag_not_null(obj)) {
-		assert((ag_head(obj)->ctr_mt & AG_CTR_MT) == 0);
-		ag_head(obj)->ctr_mt += AG_CTR_STEP;
-		ag_set_parent_nn(obj, parent);
+		if (ag_head(obj)->ctr_mt & AG_CTR_MT) {  // when in field it can point to a frozen shared mt
+			ag_reg_mt_retain((uintptr_t)obj);
+		} else {
+			ag_head(obj)->ctr_mt += AG_CTR_STEP;
+			ag_set_parent_nn(obj, parent);
+		}
 	}
 }
 void ag_release_shared(AgObject* obj) {
-	if (!ag_not_null(obj))
-		return;
-	if (ag_head(obj)->ctr_mt & AG_CTR_MT) {
-		*ag_release_pos = obj;
-		if (++ag_release_pos == ag_retain_pos)
-			ag_flush_retain_release();
-	} else if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) == 0) {
-		ag_dispose_obj(obj);
+	if (ag_not_null(obj)) {
+		if (ag_head(obj)->ctr_mt & AG_CTR_MT)
+			ag_reg_mt_release((uintptr_t)obj);
+		else if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) == 0)
+			ag_dispose_obj(obj);
 	}
 }
 void ag_retain_shared(AgObject* obj) {
-	if (!ag_not_null(obj))
-		return;
-	if (ag_head(obj)->ctr_mt & AG_CTR_MT) {
-		*ag_retain_pos = obj;
-		if (--ag_retain_pos == ag_release_pos)
-			ag_flush_retain_release();
-	} else {
-		ag_head(obj)->ctr_mt += AG_CTR_STEP;
+	if (ag_not_null(obj)) {
+		if (ag_head(obj)->ctr_mt & AG_CTR_MT)
+			ag_reg_mt_retain((uintptr_t)obj);
+		else
+			ag_head(obj)->ctr_mt += AG_CTR_STEP;
 	}
 }
 
@@ -329,11 +370,11 @@ typedef struct {
 	void (*fixer)(AgObject*);
 } AgCopyFixer;
 
-AgObject*    ag_copy_head = 0;          // must be threadlocal
-size_t       ag_copy_fixers_count = 0;
-size_t       ag_copy_fixers_alloc = 0;
-AgCopyFixer* ag_copy_fixers;            // Used only for objects with manual afterCopy operators.
-bool         ag_copy_freeze = false;
+AG_THREAD_LOCAL AgObject*    ag_copy_head = 0;
+AG_THREAD_LOCAL size_t       ag_copy_fixers_count = 0;
+AG_THREAD_LOCAL size_t       ag_copy_fixers_alloc = 0;
+AG_THREAD_LOCAL AgCopyFixer* ag_copy_fixers = 0;        // Used only for objects with manual afterCopy operators.
+AG_THREAD_LOCAL bool         ag_copy_freeze = false;
 
 void ag_dispose_obj(AgObject* obj) {
 	((AgVmt*)(ag_head(obj)->dispatcher))[-1].dispose(obj);
@@ -515,6 +556,8 @@ void ag_reg_copy_fixer(AgObject* object, void (*fixer)(AgObject*)) {
 	if (ag_copy_fixers_count == ag_copy_fixers_alloc) {  // TODO retain objects in copy_fixers vector.
 		ag_copy_fixers_alloc = ag_copy_fixers_alloc * 2 + 16;
 		AgCopyFixer* new_dt = (AgCopyFixer*) AG_ALLOC(sizeof(AgCopyFixer) * ag_copy_fixers_alloc);
+		if (!new_dt)
+			exit(-42);
 		if (ag_copy_fixers) {
 			ag_memcpy(new_dt, ag_copy_fixers, sizeof(AgCopyFixer) * ag_copy_fixers_count);
 			AG_FREE(ag_copy_fixers);
@@ -535,13 +578,30 @@ int32_t ag_m_sys_String_getCh(AgString* s) {
 void ag_copy_sys_String(AgString* d, AgString* s) {
 	d->ptr = s->ptr;
 	d->buffer = s->buffer;
-	if (d->buffer)
-		d->buffer->counter++;
+	if (d->buffer) {
+		if (d->buffer->counter_mt & 1)
+			ag_reg_mt_retain(d);
+		else
+			d->buffer->counter_mt += 2;
+	}
+}
+
+void ag_visit_sys_String(
+	AgString* s,
+	void(*visitor)(void*, int, void*),
+	void* ctx)
+{
+	if (ag_not_null(s) && s->buffer)
+		visitor(s->buffer, AG_VISIT_STRING_BUF, ctx);
 }
 
 void ag_dtor_sys_String(AgString* s) {
-	if (s->buffer && --s->buffer->counter == 0)
-		ag_free(s->buffer);
+	if (s->buffer) {
+		if (s->buffer->counter_mt & 1)
+			ag_reg_mt_release(s);
+		else if ((s->buffer->counter_mt -= 2) < 2)
+			ag_free(s->buffer);
+	}
 }
 
 int64_t ag_m_sys_Container_capacity(AgBlob* b) {
@@ -654,14 +714,16 @@ bool ag_m_sys_Blob_copyBytesTo(AgBlob* dst, uint64_t dst_index, AgBlob* src, uin
 
 AgObject* ag_m_sys_Array_getAt(AgBlob* b, uint64_t index) {
 	return index < b->size
-		? ag_retain(((AgObject*)(b->data)[index]))
+		? ag_retain_pin(((AgObject*)(b->data)[index]))
 		: 0;
 }
 
 AgWeak* ag_m_sys_WeakArray_getAt(AgBlob* b, uint64_t index) {
-	return index < b->size
-		? ag_retain_weak((AgWeak*)(b->data[index]))
-		: 0;
+	if (index >= b->size)
+		return 0;
+	AgWeak* r = (AgWeak*)(b->data[index]);
+	ag_retain_weak(r);
+	return r;
 }
 
 void ag_m_sys_Array_setOptAt(AgBlob* b, uint64_t index, AgObject* val) {
@@ -713,9 +775,21 @@ void ag_copy_sys_Blob(AgBlob* d, AgBlob* s) {
 	ag_memcpy(d->data, s->data, sizeof(int64_t) * d->size);
 }
 
+void ag_visit_sys_Blob(
+	void* ptr,
+	void(*visitor)(void*, int, void*),
+	void* ctx)
+{}
+
 void ag_copy_sys_Container(AgBlob* d, AgBlob* s) {
 	ag_copy_sys_Blob(d, s);
 }
+
+void ag_visit_sys_Container(
+	void* ptr,
+	void(*visitor)(void*, int, void*),
+	void* ctx)
+{}
 
 void ag_copy_sys_Array(AgBlob* d, AgBlob* s) {
 	d->size = s->size;
@@ -731,6 +805,24 @@ void ag_copy_sys_Array(AgBlob* d, AgBlob* s) {
 	}
 }
 
+void ag_visit_sys_Array(
+	AgBlob* arr,
+	void(*visitor)(void*, int, void*),
+	void* ctx)
+{
+	if (ag_not_null(arr)) {
+		for (AgObject
+				** from = (AgObject**)(arr->data),
+				** to = (AgObject**)(arr->data),
+				** term = from + arr->size;
+			from < term;
+			from++, to++)
+		{
+			visitor(from, AG_VISIT_OWN, ctx);
+		}
+	}
+}
+
 void ag_copy_sys_WeakArray(AgBlob* d, AgBlob* s) {
 	d->size = s->size;
 	d->data = (int64_t*) ag_alloc(sizeof(int64_t) * d->size);
@@ -742,6 +834,22 @@ void ag_copy_sys_WeakArray(AgBlob* d, AgBlob* s) {
 		from++, to++)
 	{
 		ag_copy_weak_field(to, *from);
+	}
+}
+
+void ag_visit_sys_WeakArray(
+	AgBlob* arr,
+	void(*visitor)(void*, int, void*),
+	void* ctx) {
+	if (ag_not_null(arr)) {
+		for (AgObject
+			** from = (AgObject**)(arr->data),
+			**to = (AgObject**)(arr->data),
+			**term = from + arr->size;
+			from < term;
+			from++, to++) {
+			visitor(from, AG_VISIT_WEAK, ctx);
+		}
 	}
 }
 
@@ -776,13 +884,21 @@ void ag_dtor_sys_WeakArray(AgBlob* p) {
 	ag_free(p->data);
 }
 
+void ag_release_str(AgString* s) {
+	if (!s->buffer)
+		return;
+	if (s->buffer->counter_mt & 1)
+		ag_reg_mt_release((uintptr_t)s);
+	else if ((s->buffer->counter_mt -= 2) < 2)
+		ag_free(s->buffer);
+}
+
 bool ag_m_sys_String_fromBlob(AgString* s, AgBlob* b, int at, int count) {
 	if ((at + count) / sizeof(uint64_t) >= b->size)
 		return false;
-	if (s->buffer && --s->buffer->counter == 0)
-		ag_free(s->buffer);
+	ag_release_str(s);
 	s->buffer = (AgStringBuffer*) ag_alloc(sizeof(AgStringBuffer) + count);
-	s->buffer->counter = 1;
+	s->buffer->counter_mt = 2;
 	ag_memcpy(s->buffer->data, ((char*)(b->data)) + at, count);
 	s->buffer->data[count] = 0;
 	s->ptr = s->buffer->data;
@@ -827,43 +943,28 @@ void ag_make_blob_fit(AgBlob* b, size_t required_size) {
 		ag_m_sys_Container_insertItems(b, b->size, required_size - b->size);
 }
 
-int64_t ag_fn_sys_readFile(AgString* name, AgBlob* content) {
-/*	FILE* f = fopen(name->ptr, "rb");
-	fseek(f, 0, SEEK_END);
-	int64_t size = ftell(f);
-	fseek(f, 0, SEEK_SET);
-	ag_make_blob_fit(content, size);
-	int64_t read_size = fread(content->data, 1, size, f);
-	fclose(f);
-	return read_size == size ? size : -1;
-*/
-	return -1;
-}
-bool ag_fn_sys_writeFile(AgString* name, int64_t at, int64_t byte_size, AgBlob* content) {
-/*	FILE* f = fopen(name->ptr, "wb");
-	if (!f) return -1;
-	int64_t size_written = fwrite((char*)content->data + at, 1, byte_size, f);
-	fclose(f);
-	return size_written == byte_size;
-*/
-	return false;
+static void ag_init_thread_queues(ag_thread* th) {
+	th->queue_start = AG_ALLOC(sizeof(int64_t) * AG_THREAD_QUEUE_SIZE);
+	th->queue_end = th->queue_start + AG_THREAD_QUEUE_SIZE;
+	mtx_init(&th->mutex, mtx_plain);
+	cnd_init(&th->is_not_empty);
+	th->read_pos = th->write_pos = th->queue_start;
+	th->root = NULL;
+	th->timer_ms = 0;
+	th->timer_proc = 0;
+	th->timer_proc_param = 0;
 }
 
 bool ag_fn_sys_setMainObject(AgObject* s) {
-	ag_thread* th = &ag_main_thread; // todo reuse this code in Thread.launch
-	if (!th->queue_start) {
-		th->queue_start = AG_ALLOC(sizeof(int64_t) * AG_THREAD_QUEUE_SIZE);
-		th->queue_end = th->queue_start + AG_THREAD_QUEUE_SIZE;
-		mtx_init(&th->mutex, mtx_plain);
-		cnd_init(&th->is_not_empty);
-		th->read_pos = th->write_pos = th->queue_start;
-	}
-	ag_release(th->root);
+	ag_thread* th = &ag_main_thread;
+	if (!th->queue_start)
+		ag_init_thread_queues(th);
+	ag_release_own(th->root);
 	if (s && ag_fn_sys_getParent(s)) {
 		th->root = NULL;
 		return false;
 	}
-	th->root = ag_retain(s);
+	th->root = ag_retain_pin(s);
 	return true;
 }
 
@@ -900,16 +1001,13 @@ static ag_thread* ag_lock_thread(AgWeak* receiver) {
 	}
 	return th;
 }
-// returns locked thread or NULL if receiver's thread is dead
-ag_thread* ag_prepare_post_message(AgWeak* receiver, ag_fn fn, ag_trampoline tramp, size_t params_count) {
-	ag_thread* th = ag_lock_thread(receiver);
-	if (!th)
-		return NULL;
+
+void ag_resize_thread_queue(ag_thread* th, size_t space_needed) {
 	size_t free_space = th->read_pos > th->write_pos
 		? th->write_pos - th->read_pos
 		: (th->queue_end - th->queue_start) - (th->write_pos - th->read_pos);
-	if (free_space < params_count + 3) { // params + trampoline + entry_point + receiver_weak
-		uint64_t new_size = (th->queue_end - th->queue_start) * 2 + params_count + 3;
+	if (free_space < space_needed) {
+		uint64_t new_size = (th->queue_end - th->queue_start) * 2 + space_needed;
 		uint64_t* new_buf = AG_ALLOC(sizeof(uint64_t) * new_size);
 		if (!new_buf)
 			exit(-42);
@@ -931,6 +1029,16 @@ ag_thread* ag_prepare_post_message(AgWeak* receiver, ag_fn fn, ag_trampoline tra
 		th->queue_start = new_buf;
 		th->queue_end = new_buf + new_size;
 	}
+}
+
+// returns locked thread or NULL if receiver's thread is dead
+ag_thread* ag_prepare_post_message(AgWeak* receiver, ag_fn fn, ag_trampoline tramp, size_t params_count) {
+	ag_thread* th = ag_lock_thread(receiver);
+	if (!th)
+		return NULL;
+	ag_resize_thread_queue(
+		th,
+		params_count + 3);  // params + trampoline + entry_point + receiver_weak
 	ag_put_thread_param(th, (uint64_t) tramp);
 	ag_put_thread_param(th, (uint64_t) receiver); // It comes prelocked. Caller doesn't release it
 	ag_put_thread_param(th, (uint64_t) fn);
@@ -941,6 +1049,57 @@ void ag_put_thread_param(ag_thread* th, uint64_t param) {
 	*th->write_pos = param;
 	if (++th->write_pos == th->queue_end)
 		th->write_pos = th->queue_start;
+}
+
+inline void ag_bound_weak_to_thread(AgWeak* w) {
+	if (ag_not_null(w) && (w->wb_ctr_mt & AG_CTR_MT) == 0) {
+		w->wb_ctr_mt |= AG_CTR_MT;  //previously this weak belonged only to this thread, so no atomic op here
+	}
+}
+
+inline void ag_bound_own_to_thread(AgObject* ptr, ag_thread* th) {
+	if (ag_not_null(ptr)) {
+		uintptr_t parent = 0;
+		if ((ptr->wb_p & AG_F_PARENT) == 0) {
+			parent = ptr->wb_p;
+			AgWeak* w = (AgWeak*)ptr->wb_p;
+			if (w->thread == th)
+				return;
+			if (w->wb_ctr_mt & AG_CTR_MT) // we can check this bit, but can't rewrite it if it's mt
+				w->wb_ctr_mt |= AG_CTR_MT;
+			w->thread = th;
+		} else {
+			parent = ptr->wb_p & ~AG_F_PARENT;
+		}
+		if (parent == AG_SHARED) {
+			if ((ptr->ctr_mt & AG_CTR_MT) == 0) {
+				ptr->ctr_mt |= AG_CTR_MT;  //previously it belonged only to this thread, so no atomic op here
+				((AgVmt*)(ag_head(ptr)->dispatcher))[-1].visit(ptr, ag_bound_field_to_thread, th);
+			}
+		} else { // non-shared object strictly belongs to one thread, and can't be MT
+			((AgVmt*)(ag_head(ptr)->dispatcher))[-1].visit(ptr, ag_bound_field_to_thread, th);
+		}
+	}
+}
+
+void ag_put_thread_param_weak_ptr(ag_thread* th, AgWeak* param) {
+	ag_bound_weak_to_thread(param, th);
+	ag_put_thread_param(th, (uint64_t)param);
+}
+
+void ag_bound_field_to_thread(void* field, int type, void* ctx) {
+	if (type == AG_VISIT_WEAK) {
+		ag_bound_weak_to_thread(*(AgWeak**)field);
+	} else if (type == AG_VISIT_OWN){
+		ag_bound_own_to_thread(*(AgObject**)field, (ag_thread*)ctx);
+	} else if (type == AG_VISIT_STRING_BUF) {
+		AgStringBuffer* buf = *(AgStringBuffer**)field;
+		if ((buf->counter_mt & 1) == 0)
+			buf->counter_mt |= 1;
+	}
+}
+void ag_put_thread_param_own_ptr(ag_thread* th, AgObject* param) {
+	ag_put_thread_param(th, (uint64_t)param);
 }
 
 void ag_finalize_post_message(ag_thread* th) {
@@ -958,10 +1117,7 @@ void ag_thread_proc(ag_thread* th) {
 				mtx_unlock(&th->mutex);
 				AgObject* r = th->root;
 				th->root = NULL;
-				ag_release(r);
-				ag_get_thread_param(th); // skip
-				if (ag_get_thread_param(th)) // hard quit
-					return;
+				ag_release_own(r);
 				if (th->timer_ms) {
 					ag_release_weak(th->timer_proc_param);
 					th->timer_ms = 0;
@@ -971,7 +1127,7 @@ void ag_thread_proc(ag_thread* th) {
 				ag_fn entry_point = (ag_fn)ag_get_thread_param(th);
 				AgObject* receiver = ag_deref_weak(w_receiver);
 				((ag_trampoline)tramp)(receiver, entry_point, th); // it unlocks mutex internally
-				ag_release(receiver);
+				ag_release_pin(receiver);
 				ag_release_weak(w_receiver);
 			}
 			mtx_lock(&th->mutex);
@@ -981,7 +1137,7 @@ void ag_thread_proc(ag_thread* th) {
 			if (timer_object) {
 				mtx_unlock(&th->mutex);
 				th->timer_proc(timer_object);
-				ag_release(timer_object);
+				ag_release_pin(timer_object);
 				mtx_lock(&th->mutex);
 			}
 		} else if (th->timer_ms) {
@@ -994,20 +1150,53 @@ void ag_thread_proc(ag_thread* th) {
 		}
 	}
 	mtx_unlock(&th->mutex);
+	thrd_exit(0);
 }
 
 int ag_handle_main_thread() {
-	if (ag_main_thread.root)
+	if (ag_main_thread.root) {
 		ag_thread_proc(&ag_main_thread);
+	}
 	return 0;
 }
 
-#ifdef AG_ENTRY_POINT
-
-extern void ag_main();
-
-int main() {
-	ag_main();
-	return ag_handle_main_thread();
+void ag_m_sys_Thread_init(AgThread* th, AgObject* root) {
+	ag_thread* t = NULL;
+	if (ag_thread_free) {
+		t = ag_thread_free;
+		ag_thread_free = (ag_thread*)ag_thread_free->write_pos;
+		t->write_pos = t->read_pos = t->queue_start;
+	} else {
+		if (!ag_alloc_threads_left) {
+			ag_alloc_thread = AG_ALLOC(sizeof(ag_thread) * (ag_alloc_threads_left = 16));
+			if (!ag_alloc_thread)
+				exit(-42);
+		}
+		t = ag_alloc_thread++;
+		ag_alloc_threads_left--;
+		ag_init_thread_queues(t);
+	}
+	t->root = ag_retain_pin(root); // TODO: make root object marker value for parent ptr.
+	th->thread = t;
+	thrd_create(t->thread, ag_thread_proc, t);
 }
-#endif
+
+AgWeak* ag_m_sys_Thread_getRoot(AgThread* th) {
+	return ag_mk_weak(th->thread->root);
+}
+void ag_copy_sys_Thread(AgThread* dst, AgThread* src) {
+	dst->thread = NULL;
+}
+void ag_dtor_sys_Thread(AgThread* ptr) {
+	if (ptr->thread) {
+		ag_thread* th = ptr->thread;
+		mtx_lock(&th->mutex);
+		ag_resize_thread_queue(th, 1);
+		ag_put_thread_param(th, 0);
+		ag_finalize_post_message(th);
+		int unused_result;
+		thrd_join(th->thread, &unused_result);
+		th->write_pos = (int64_t*) ag_thread_free;
+		ag_thread_free = th;
+	}
+}

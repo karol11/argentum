@@ -122,6 +122,7 @@ struct ClassInfo {
 	llvm::Function* initializer = nullptr; // void(void*)
 	llvm::Function* copier = nullptr;      // void(void* dst, void* src);
 	llvm::Function* dispose = nullptr;     // void(void*);
+	llvm::Function* visit = nullptr;       // void(void* dst, void (*visitor) (void* field, int type, void* ctx));
 	llvm::Function* dispatcher = nullptr;  // void*(void*obj, uint64 inerface_and_method_ordinal);
 	vector<llvm::Constant*> vmt_fields;    // pointers to methods. size <= 2^16, at index 0 - inteface id for dynamic cast
 	uint64_t interface_ordinal = 0;        // 48_bit_random << 16
@@ -213,7 +214,10 @@ struct Generator : ast::ActionScanner {
 	llvm::Function* fn_get_thread_param = nullptr;   // in64 (Thread*)
 	llvm::Function* fn_prepare_post_message = nullptr;   // ?Thread* (weak*, fn, tramp, int params)
 	llvm::Function* fn_put_thread_param = nullptr;   // void (Thread*, int64 val)
+	llvm::Function* fn_put_thread_param_own_ptr = nullptr;   // void (Thread*, Obj* val)
+	llvm::Function* fn_put_thread_param_weak_ptr = nullptr;   // void (Thread*, Weak* val)
 	llvm::Function* fn_finalize_post_message = nullptr;   // void (Thread*)
+	llvm::Function* fn_handle_main_thread = nullptr;   // int (void)
 	std::default_random_engine random_generator;
 	std::uniform_int_distribution<uint64_t> uniform_uint64_distribution;
 	unordered_set<uint64_t> assigned_interface_ids;
@@ -358,10 +362,25 @@ struct Generator : ast::ActionScanner {
 			llvm::Function::ExternalLinkage,
 			"ag_put_thread_param",
 			*module);
+		fn_put_thread_param_own_ptr = llvm::Function::Create(
+			llvm::FunctionType::get(void_type, { ptr_type, ptr_type }, false),
+			llvm::Function::ExternalLinkage,
+			"ag_put_thread_param_own_ptr",
+			*module);
+		fn_put_thread_param_weak_ptr = llvm::Function::Create(
+			llvm::FunctionType::get(void_type, { ptr_type, ptr_type }, false),
+			llvm::Function::ExternalLinkage,
+			"ag_put_thread_param_weak_ptr",
+			*module);
 		fn_finalize_post_message = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { ptr_type }, false),
 			llvm::Function::ExternalLinkage,
 			"ag_finalize_post_message",
+			*module);
+		fn_handle_main_thread = llvm::Function::Create(
+			llvm::FunctionType::get(int_type, {}, false),
+			llvm::Function::ExternalLinkage,
+			"ag_handle_main_thread",
 			*module);
 	}
 
@@ -1043,10 +1062,13 @@ struct Generator : ast::ActionScanner {
 				build_release(builder->CreateLoad(ptr_type, c.data), c.type, false);
 			}
 		}
-		if (isa<ast::TpVoid>(*fn_result.type))
+		if (&node == &*ast->starting_module->entry_point) {
+			builder->CreateRet(builder->CreateCall(fn_handle_main_thread, {}));
+		} else if (isa<ast::TpVoid>(*fn_result.type)) {
 			builder->CreateRetVoid();
-		else
+		} else {
 			builder->CreateRet(fn_result.data);
+		}
 		current_di_scope = prev_di_scope;
 		current_capture_di_type = prev_capture_di_type;
 		builder = prev_builder;
@@ -1443,12 +1465,20 @@ struct Generator : ast::ActionScanner {
 				void handle_64_bit() {
 					gen.builder->CreateCall(gen.fn_put_thread_param, { thread, gen.cast_to(value, gen.int_type) });
 				}
-				void handle_pair() {
-					gen.builder->CreateCall(gen.fn_put_thread_param, {
+				void handle_own() {
+					gen.builder->CreateCall(gen.fn_put_thread_param_own_ptr, { thread, gen.cast_to(value, gen.ptr_type) });
+				}
+				void handle_weak() {
+					gen.builder->CreateCall(gen.fn_put_thread_param_weak_ptr, { thread, gen.cast_to(value, gen.ptr_type) });
+				}
+				void handle_pair(llvm::Function* first_param_placer) {
+					gen.builder->CreateCall(first_param_placer, {
 						thread,
 						gen.cast_to(
 							gen.builder->CreateExtractValue(value, { 0 }),
-							gen.int_type)
+							first_param_placer == gen.fn_put_thread_param_weak_ptr
+								? (llvm::Type*) gen.ptr_type
+								: gen.int_type)
 					});
 					gen.builder->CreateCall(gen.fn_put_thread_param, {
 						thread,
@@ -1460,26 +1490,26 @@ struct Generator : ast::ActionScanner {
 				void on_int64(ast::TpInt64& type) override { handle_64_bit(); }
 				void on_double(ast::TpDouble& type) override { handle_64_bit(); }
 				void on_function(ast::TpFunction& type) override { handle_64_bit(); }
-				void on_lambda(ast::TpLambda& type) override { handle_pair(); }
-				void on_delegate(ast::TpDelegate& type) override { handle_pair(); }
-				void on_cold_lambda(ast::TpColdLambda& type) override {}
-				void on_void(ast::TpVoid& type) override {}
+				void on_lambda(ast::TpLambda& type) override { assert(false); }
+				void on_delegate(ast::TpDelegate& type) override { handle_pair(gen.fn_put_thread_param_weak_ptr); }
+				void on_cold_lambda(ast::TpColdLambda& type) override { assert(false); }
+				void on_void(ast::TpVoid& type) override { assert(false); }
 				void on_optional(ast::TpOptional& type) override {
 					if (dom::isa<ast::TpInt64>(*type.wrapped)) {
-						handle_pair();
+						handle_pair(gen.fn_put_thread_param);
 					} else if (dom::isa<ast::TpVoid>(*type.wrapped)) {
 						handle_64_bit();
 					} else {
 						type.wrapped->match(*this);
 					}
 				}
-				void on_own(ast::TpOwn& type) override { handle_64_bit(); }
-				void on_ref(ast::TpRef& type) override { handle_64_bit(); }
-				void on_shared(ast::TpShared& type) override { handle_64_bit(); }
-				void on_weak(ast::TpWeak& type) override { handle_64_bit(); }
-				void on_frozen_weak(ast::TpFrozenWeak& type) override { handle_64_bit(); }
-				void on_conform_ref(ast::TpConformRef& type) override { handle_64_bit(); }
-				void on_conform_weak(ast::TpConformWeak& type) override { handle_64_bit(); }
+				void on_own(ast::TpOwn& type) override { handle_own(); }
+				void on_ref(ast::TpRef& type) override { handle_own(); }
+				void on_shared(ast::TpShared& type) override { handle_own(); }
+				void on_weak(ast::TpWeak& type) override { handle_weak(); }
+				void on_frozen_weak(ast::TpFrozenWeak& type) override { handle_weak(); }
+				void on_conform_ref(ast::TpConformRef& type) override { handle_own(); }
+				void on_conform_weak(ast::TpConformWeak& type) override { handle_weak(); }
 			};
 			TypeSerializer ts(*this, thread_ptr, comp_to_persistent(p).data);
 			p->type()->match(ts);
@@ -1667,7 +1697,7 @@ struct Generator : ast::ActionScanner {
 			builder->CreateCmp(llvm::CmpInst::Predicate::ICMP_ULE,
 				builder->getInt64(classes[cls].vmt_size),
 				builder->CreateLoad(tp_int_ptr,
-					builder->CreateConstGEP2_32(obj_vmt_struct, vmt_ptr, -1, 3))),
+					builder->CreateConstGEP2_32(obj_vmt_struct, vmt_ptr, -1, AG_VMT_FIELD_VMT_SIZE))),
 			[&] {
 				return compile_if(
 					*result_type,
@@ -2374,9 +2404,15 @@ struct Generator : ast::ActionScanner {
 	}
 
 	llvm::orc::ThreadSafeModule build() {
-		std::unordered_set<pin<ast::Class>> special_copy_and_dispose = { ast->blob->base_class.cast<ast::Class>(), ast->blob, ast->own_array, ast->weak_array, ast->string_cls};
+		std::unordered_set<pin<ast::Class>> special_copy_and_dispose = {
+			ast->blob->base_class.cast<ast::Class>(),
+			ast->blob,
+			ast->own_array,
+			ast->weak_array,
+			ast->string_cls,
+			ast->modules["sys"]->peek_class("Thread")};
 		dispatcher_fn_type = llvm::FunctionType::get(ptr_type, { int_type }, false);
-		auto dispos_fn_type = llvm::FunctionType::get(void_type, { ptr_type }, false);
+		auto dispose_fn_type = llvm::FunctionType::get(void_type, { ptr_type }, false);
 		auto copier_fn_type = llvm::FunctionType::get(
 			void_type,
 			{
@@ -2384,11 +2420,28 @@ struct Generator : ast::ActionScanner {
 				ptr_type  // src
 			},
 			false);  // varargs
+		auto visitor_fn_type = llvm::FunctionType::get(
+			void_type,
+			{
+				ptr_type, // field addr
+				int_type, // field_type (see AG_VISIT_* in runtime.h)
+				ptr_type  // context
+			},
+			false);  // varargs
+		auto visit_fn_type = llvm::FunctionType::get(
+			void_type,
+			{
+				ptr_type,        // object
+				visitor_fn_type, // called on each pointer field and containter item
+				ptr_type         // context
+			},
+			false);  // varargs
 		obj_vmt_struct = llvm::StructType::get(
 			*context,
 			{
 				copier_fn_type->getPointerTo(),
-				dispos_fn_type->getPointerTo(),
+				dispose_fn_type->getPointerTo(),
+				visit_fn_type->getPointerTo(),
 				int_type,  // instance alloc size
 				int_type   // obj vmt size (used in casts)
 			});
@@ -2515,7 +2568,7 @@ struct Generator : ast::ActionScanner {
 			auto& info = classes[cls];
 			ClassInfo* base_info = cls->base_class && cls->base_class != ast->object ? &classes[cls->base_class] : nullptr;
 			info.dispose = llvm::Function::Create(
-				dispos_fn_type,
+				dispose_fn_type,
 				special_copy_and_dispose.count(cls) == 0
 					? llvm::Function::InternalLinkage
 					: llvm::Function::ExternalLinkage,
@@ -2588,6 +2641,45 @@ struct Generator : ast::ActionScanner {
 							builder.CreateStructGEP(info.fields, result, field->offset)),
 						field->initializer->type(),
 						false);  // not local, clear parent
+				}
+				builder.CreateRetVoid();
+			}
+			// Visitor
+			info.visit = llvm::Function::Create(
+				visit_fn_type,
+				special_copy_and_dispose.count(cls) == 0
+					? llvm::Function::InternalLinkage
+					: llvm::Function::ExternalLinkage,
+				ast::format_str("ag_visit_", cls->module->name, "_", cls->name), module.get());
+			if (special_copy_and_dispose.count(cls) == 0) {
+				builder.SetInsertPoint(llvm::BasicBlock::Create(*context, "", info.visit));
+				current_function = info.visit;
+				if (base_info)
+					builder.CreateCall(base_info->visit, { info.visit->getArg(0), info.visit->getArg(1), info.visit->getArg(2) });
+				result = builder.CreateBitOrPointerCast(info.visit->getArg(0), info.fields->getPointerTo());
+				for (auto& field : cls->fields) {
+					auto field_type = field->initializer->type().pinned();
+					if (!is_ptr(field_type))
+						continue;
+					if (auto as_opt = dom::strict_cast<ast::TpOptional>(field_type))
+						field_type = as_opt->wrapped;
+					llvm::Value* field_addr = builder.CreateStructGEP(info.fields, result, field->offset);
+					auto type_id = const_0;  // AG_VISIT_OWN
+					if (isa<ast::TpWeak>(*field_type) || isa<ast::TpFrozenWeak>(*field_type)) {
+						type_id = const_1;  // AG_VISIT_WEAK
+					} else if (isa<ast::TpDelegate>(*field_type)) {
+						type_id = const_1;  // AG_VISIT_WEAK;
+						field_addr = builder.CreateStructGEP(delegate_struct, result, { 0 });
+					} else if (isa<ast::TpShared>(*field_type) || isa<ast::TpOwn>(*field_type)) {
+						type_id = const_0;  // AG_VISIT_OWN
+					} else {
+						continue;
+					}
+					builder.CreateCall(
+						llvm::FunctionCallee(
+							visitor_fn_type,
+							info.visit->getArg(1)),
+						{ field_addr, type_id, info.visit->getArg(2) });
 				}
 				builder.CreateRetVoid();
 			}
@@ -2681,6 +2773,7 @@ struct Generator : ast::ActionScanner {
 			info.vmt_fields.push_back(llvm::ConstantStruct::get(obj_vmt_struct, {
 				info.copier,
 				info.dispose,
+				info.visit,
 				builder.getInt64(layout.getTypeStoreSize(info.fields)),
 				builder.getInt64(info.vmt_size) }));
 			info.dispatcher->setPrefixData(llvm::ConstantStruct::get(info.vmt, move(info.vmt_fields)));
@@ -2733,7 +2826,7 @@ struct Generator : ast::ActionScanner {
 			llvm::FunctionType::get(void_type, {}, false),
 			llvm::Function::ExternalLinkage,
 			"ag_main", module.get());
-		compile_fn_body(*ast->starting_module->entry_point, "ag_main");
+		compile_fn_body(*ast->starting_module->entry_point, "main");
 		// Compile tests
 		for (auto& m : ast->modules) {
 			for (auto& test : m.second->tests) {
@@ -2805,7 +2898,6 @@ int64_t execute(llvm::orc::ThreadSafeModule& module, ast::Ast& ast, bool dump_ir
 		}
 	}
 	main_addr();
-	ag_handle_main_thread();
 	assert(ag_leak_detector_ok());
 	return 0;
 #endif
