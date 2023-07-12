@@ -229,6 +229,7 @@ struct Generator : ast::ActionScanner {
 	llvm::Constant* const_0 = nullptr;
 	llvm::Constant* const_1 = nullptr;
 	llvm::Constant* const_256 = nullptr;
+	llvm::Constant* const_ctr_step = nullptr;
 	llvm::Constant* const_null_ptr = nullptr;
 	unordered_map<
 		vector<llvm::Constant*>,
@@ -263,6 +264,7 @@ struct Generator : ast::ActionScanner {
 		const_0 = llvm::ConstantInt::get(tp_int_ptr, 0);
 		const_1 = llvm::ConstantInt::get(tp_int_ptr, 1);
 		const_256 = llvm::ConstantInt::get(tp_int_ptr, 256);
+		const_ctr_step = llvm::ConstantInt::get(tp_int_ptr, AG_CTR_STEP);
 		const_null_ptr = llvm::ConstantPointerNull::get(ptr_type);
 
 		fn_dispose = llvm::Function::Create(
@@ -581,24 +583,25 @@ struct Generator : ast::ActionScanner {
 			dom::strict_cast<ast::TpDelegate>(type);
 	}
 
-	void build_inc(llvm::Value* addr) {
+	void build_inc(llvm::Constant* step, llvm::Value* addr) {
 		builder->CreateStore(
 			builder->CreateAdd(
 				builder->CreateLoad(tp_int_ptr, addr),
-				const_1),
+				step),
 			addr);
 	}
 	void build_retain_not_null(llvm::Value* ptr, const ast::Type& type, llvm::Value* maybe_own_parent = nullptr) {
 		if (isa<ast::TpWeak>(type)) {
-			build_inc(builder->CreateStructGEP(weak_struct, cast_to(ptr, ptr_type), 1));
+			build_inc(const_ctr_step, builder->CreateStructGEP(weak_struct, cast_to(ptr, ptr_type), 1));
 		} else if (isa<ast::TpDelegate>(type)) {
 			build_inc(
+				const_ctr_step,
 				builder->CreateStructGEP(
 					obj_struct,
 					builder->CreateExtractValue(cast_to(ptr, ptr_type), { 0 }),
 					1));
 		} else if (isa<ast::TpRef>(type) || isa<ast::TpShared>(type) || (isa<ast::TpOwn>(type) && !maybe_own_parent)) {
-			build_inc(builder->CreateStructGEP(obj_struct, cast_to(ptr, ptr_type), 1));
+			build_inc(const_ctr_step, builder->CreateStructGEP(obj_struct, cast_to(ptr, ptr_type), 1));
 		} else if (isa<ast::TpOwn>(type)) {
 			builder->CreateCall(fn_retain_own, { cast_to(ptr, ptr_type), maybe_own_parent });
 		}
@@ -632,12 +635,12 @@ struct Generator : ast::ActionScanner {
 		llvm::Value* counter_addr = builder->CreateStructGEP(obj_struct, ptr, 1);
 		llvm::Value* ctr = builder->CreateSub(
 			builder->CreateLoad(tp_int_ptr, counter_addr),
-			const_1);
+			const_ctr_step);
 		builder->CreateStore(ctr, counter_addr);
 		auto bb_not_zero = llvm::BasicBlock::Create(*context, "", current_function);
 		auto bb_zero = llvm::BasicBlock::Create(*context, "", current_function);
 		builder->CreateCondBr(
-			builder->CreateCmp(llvm::CmpInst::Predicate::ICMP_EQ, ctr, const_0),
+			builder->CreateCmp(llvm::CmpInst::Predicate::ICMP_ULT, ctr, const_ctr_step),
 			bb_zero,
 			bb_not_zero);
 		builder->SetInsertPoint(bb_zero);
@@ -2432,7 +2435,7 @@ struct Generator : ast::ActionScanner {
 			void_type,
 			{
 				ptr_type,        // object
-				visitor_fn_type, // called on each pointer field and containter item
+				visitor_fn_type->getPointerTo(), // called on each pointer field and containter item
 				ptr_type         // context
 			},
 			false);  // varargs
