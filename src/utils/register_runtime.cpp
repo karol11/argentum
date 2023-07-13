@@ -139,14 +139,20 @@ void register_runtime_content(struct ast::Ast& ast) {
 
 		{ "ag_copy_sys_Container", FN(ag_copy_sys_Container) },
 		{ "ag_dtor_sys_Container", FN(ag_dtor_sys_Container) },
+		{ "ag_visit_sys_Container", FN(ag_visit_sys_Container) },
 		{ "ag_copy_sys_Blob", FN(ag_copy_sys_Blob) },
 		{ "ag_dtor_sys_Blob", FN(ag_dtor_sys_Blob) },
+		{ "ag_visit_sys_Blob", FN(ag_visit_sys_Blob) },
 		{ "ag_copy_sys_Array", FN(ag_copy_sys_Array) },
 		{ "ag_dtor_sys_Array",FN(ag_dtor_sys_Array) },
+		{ "ag_visit_sys_Array",FN(ag_visit_sys_Array) },
 		{ "ag_copy_sys_WeakArray", FN(ag_copy_sys_WeakArray) },
 		{ "ag_dtor_sys_WeakArray", FN(ag_dtor_sys_WeakArray) },
+		{ "ag_visit_sys_WeakArray", FN(ag_visit_sys_WeakArray) },
 		{ "ag_copy_sys_String", FN(ag_copy_sys_String) },
 		{ "ag_dtor_sys_String", FN(ag_dtor_sys_String) },
+		{ "ag_visit_sys_String", FN(ag_visit_sys_String) },
 		{ "ag_copy_sys_Thread", FN(ag_copy_sys_Thread) },
-		{ "ag_dtor_sys_Thread", FN(ag_dtor_sys_Thread) }});
+		{ "ag_dtor_sys_Thread", FN(ag_dtor_sys_Thread) },
+		{ "ag_visit_sys_Thread", FN(ag_visit_sys_Thread) } });
 }

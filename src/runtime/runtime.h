@@ -18,7 +18,7 @@ typedef int bool;
 // Tags in `counter` field (only for shared or conform pointers)
 #define AG_CTR_MT ((uintptr_t) 1)
 #define AG_CTR_WEAK ((uintptr_t) 2)
-#define AG_CTR_STEP ((uintptr_t) 4)
+#define AG_CTR_STEP ((uintptr_t) 16)
 
 typedef struct ag_thread_tag ag_thread;
 
@@ -115,8 +115,9 @@ AgObject* ag_deref_weak      (AgWeak* w);
 //
 // AgString support
 //
-void      ag_copy_sys_String(AgString* dst, AgString* src);
-void      ag_dtor_sys_String(AgString* str);
+void      ag_copy_sys_String        (AgString* dst, AgString* src);
+void      ag_dtor_sys_String        (AgString* str);
+void      ag_visit_sys_String       (AgString* ptr, void(*visitor)(void*, int, void*), void* ctx);
 int32_t   ag_m_sys_String_getCh     (AgString* s);
 bool      ag_m_sys_String_fromBlob  (AgString* s, AgBlob* b, int at, int count);
 int64_t   ag_m_sys_Blob_putChAt     (AgBlob* b, int at, int codepoint);
@@ -133,8 +134,10 @@ bool    ag_m_sys_Container_moveItems   (AgBlob* blob, uint64_t a, uint64_t b, ui
 //
 void    ag_copy_sys_Container    (AgBlob* dst, AgBlob* src);
 void    ag_dtor_sys_Container    (AgBlob* ptr);
+void    ag_visit_sys_Container   (void* ptr, void(*visitor)(void*, int, void*), void* ctx);
 void    ag_copy_sys_Blob         (AgBlob* dst, AgBlob* src);
 void    ag_dtor_sys_Blob         (AgBlob* ptr);
+void    ag_visit_sys_Blob        (void* ptr, void(*visitor)(void*, int, void*), void* ctx);
 int64_t ag_m_sys_Blob_get8At     (AgBlob* b, uint64_t index);
 void    ag_m_sys_Blob_set8At     (AgBlob* b, uint64_t index, int64_t val);
 int64_t ag_m_sys_Blob_get16At    (AgBlob* b, uint64_t index);
@@ -152,6 +155,7 @@ void    ag_make_blob_fit         (AgBlob* b, size_t required_size);
 //
 void	  ag_copy_sys_Array       (AgBlob* dst, AgBlob* src);
 void      ag_dtor_sys_Array       (AgBlob* ptr);
+void      ag_visit_sys_Array      (AgBlob* ptr, void(*visitor)(void*, int, void*), void* ctx);
 AgObject* ag_m_sys_Array_getAt    (AgBlob* b, uint64_t index);
 AgObject* ag_m_sys_Array_setAt    (AgBlob* b, uint64_t index, AgObject* val);
 void      ag_m_sys_Array_setOptAt (AgBlob* b, uint64_t index, AgObject* val);
@@ -163,6 +167,7 @@ void      ag_m_sys_Array_delete   (AgBlob* b, uint64_t index, uint64_t count);
 //
 void      ag_copy_sys_WeakArray    (AgBlob* dst, AgBlob* src);
 void      ag_dtor_sys_WeakArray    (AgBlob* ptr);
+void      ag_visit_sys_WeakArray   (AgBlob* ptr, void(*visitor)(void*, int, void*), void* ctx);
 AgWeak*   ag_m_sys_WeakArray_getAt (AgBlob* b, uint64_t index);
 void      ag_m_sys_WeakArray_setAt (AgBlob* b, uint64_t index, AgWeak* val);
 void      ag_m_sys_WeakArray_delete(AgBlob* b, uint64_t index, uint64_t count);
@@ -179,6 +184,7 @@ void      ag_fn_sys_log           (AgString* s);
 //
 void    ag_copy_sys_Thread      (AgThread* dst, AgThread* src);
 void    ag_dtor_sys_Thread      (AgThread* ptr);
+void    ag_visit_sys_Thread     (AgThread* ptr, void(*visitor)(void*, int, void*), void* ctx);
 void    ag_m_sys_Thread_init    (AgThread* th, AgObject* root);
 AgWeak* ag_m_sys_Thread_getRoot (AgThread* th);
 
@@ -206,7 +212,7 @@ typedef void (*ag_trampoline) (AgObject* self, ag_fn entry_point, ag_thread* thr
 ag_thread* ag_prepare_post_message      (AgWeak* receiver, ag_fn fn, ag_trampoline tramp, size_t params_count);
 void       ag_put_thread_param          (ag_thread* th, uint64_t param);
 void       ag_put_thread_param_weak_ptr (ag_thread* th, AgWeak* param);
-void       ag_put_thread_param_own_ptr  (ag_thread* th, AgWeak* param);
+void       ag_put_thread_param_own_ptr  (ag_thread* th, AgObject* param);
 void       ag_finalize_post_message (ag_thread* th);
 
 //trampoline api

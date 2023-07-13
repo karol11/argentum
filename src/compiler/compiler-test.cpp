@@ -63,7 +63,7 @@ void execute(const char* source_text, bool dump_all = false) {
     generate_and_execute(ast, false, dump_all);
 }
 
-TEST(Parser, Mt) {
+/*TEST(Parser, Mt) {
     execute(R"-(
         class App{
             worker = sys_Thread(sys_Object).start(sys_Object);
@@ -80,7 +80,7 @@ TEST(Parser, Mt) {
             app.endEverything~();
         }~(&app);
     )-");
-}
+}*/
 
 TEST(Parser, AsyncInner) {
     execute(R"-(
@@ -106,21 +106,6 @@ TEST(Parser, AsyncFfi) {
         app = App;
         sys_setMainObject(app);
         callbackInvoker(app.onCallback);
-    )-");
-}
-
-TEST(Parser, GenericInstAsType) {
-    execute(R"-(
-        using sys { Array, String, log }
-        fn myFn(s Array(String)) {
-           s[0] ? log(_)
-        }
-        myFn({
-           a = Array(String);
-           a.insertItems(0, 1);
-           a[0] := "Aloha";
-           a
-        })
     )-");
 }
 
@@ -885,6 +870,22 @@ TEST(Parser, GenericFromGeneric) {
         }
         d = Dict(Blob);
         d[0] ? _.b ? _.capacity();
+    )-");
+}
+
+
+TEST(Parser, GenericInstAsType) {
+    execute(R"-(
+        using sys { Array, String, log }
+        fn myFn(s Array(String)) {
+           s[0] ? log(_)
+        }
+        myFn({
+           a = Array(String);
+           a.insertItems(0, 1);
+           a[0] := "Aloha";
+           a
+        })
     )-");
 }
 

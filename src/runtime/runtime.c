@@ -202,7 +202,7 @@ ag_thread*  ag_thread_free = NULL;     // head of freed ag_thread chain
 ag_thread ag_main_thread = { 0 };
 
 #define AG_RETAIN_BUFFER_SIZE 8192
-AG_THREAD_LOCAL ag_thread* ag_current_thread;
+AG_THREAD_LOCAL ag_thread* ag_current_thread = &ag_main_thread;
 AG_THREAD_LOCAL uintptr_t* ag_retain_buffer;
 AG_THREAD_LOCAL uintptr_t* ag_retain_pos;
 AG_THREAD_LOCAL uintptr_t* ag_release_pos;
@@ -231,7 +231,7 @@ void ag_flush_retain_release() {
 			AgObject* obj = (AgObject*)*i;
 			if ((obj->ctr_mt -= AG_CTR_STEP) < AG_CTR_STEP) {
 				obj->ctr_mt = (obj->ctr_mt & AG_CTR_WEAK) | ((intptr_t)root);
-				root = *i;
+				root = obj;
 			}
 		}
 	}
@@ -297,7 +297,7 @@ inline void ag_reg_mt_retain(uintptr_t p) {
 	if (++ag_retain_pos == ag_release_pos)
 		ag_flush_retain_release();
 }
-inline void ag_release_weak(AgWeak* w) {
+void ag_release_weak(AgWeak* w) {
 	if (!ag_not_null(w))
 		return;
 	if (w->wb_ctr_mt & AG_CTR_MT) {
@@ -456,8 +456,8 @@ AgObject* ag_copy_object_field(AgObject* src, AgObject* parent) {
 		AgWeak* wb = (AgWeak*) ag_head(src)->wb_p;
 		if (wb->thread != ag_current_thread) {
 			// TODO: implement hashmap lookup or tree splicing array lookup
-			// So far cross-thread weak pointers to shared objects are not maintain topology.
-			// I'm not sure if this should be a bug or feature.
+			// So far cross-thread weak pointers to shared objects do not maintain topology.
+			// I'm not sure if this should be a bug.
 		} else {
 			if (wb->target == src) { // no weak copied yet
 				dh->ctr_mt = (uintptr_t)ag_copy_head;  // AG_TG_NOWEAK_DST uses counter as link
@@ -468,12 +468,12 @@ AgObject* ag_copy_object_field(AgObject* src, AgObject* parent) {
 				dst_wb->thread = ((AgWeak*)(ag_head(src)->wb_p))->thread;
 				dh->wb_p = (uintptr_t)dst_wb;  // also clears NO_WEAK
 				void* i = ((AgWeak*)(ag_head(src)->wb_p))->target;
-				uintptr_t dst_wb_locks = AG_CTR_STEP;
+				uintptr_t dst_wb_locks = AG_CTR_STEP | AG_CTR_WEAK;
 				while (AG_PTR_TAG(i) == AG_TG_WEAK) {
 					AgWeak** w = AG_UNTAG_PTR(AgWeak*, i);
 					i = *w;
 					*w = dst_wb;
-					dst_wb_locks++;
+					dst_wb_locks += AG_CTR_STEP;
 				}
 				dst_wb->wb_ctr_mt = dst_wb_locks;
 				dst_wb->target = (AgObject*)i;
@@ -534,7 +534,7 @@ AgWeak* ag_mk_weak(AgObject* obj) { // obj can't be null
 		AgWeak* w = (AgWeak*) ag_alloc(sizeof(AgWeak));
 		w->org_pointer_to_parent = ag_head(obj)->wb_p & ~AG_F_PARENT;
 		w->target = obj;
-		w->wb_ctr_mt = AG_CTR_STEP * 2; // one from obj and one from `mk_weak` result
+		w->wb_ctr_mt = AG_CTR_WEAK | (AG_CTR_STEP * 2); // one from obj and one from `mk_weak` result
 		w->thread = ag_current_thread;
 		ag_head(obj)->wb_p = (uintptr_t) w;
 		return w;
@@ -580,7 +580,7 @@ void ag_copy_sys_String(AgString* d, AgString* s) {
 	d->buffer = s->buffer;
 	if (d->buffer) {
 		if (d->buffer->counter_mt & 1)
-			ag_reg_mt_retain(d);
+			ag_reg_mt_retain((uintptr_t)d->buffer | 1);
 		else
 			d->buffer->counter_mt += 2;
 	}
@@ -598,7 +598,7 @@ void ag_visit_sys_String(
 void ag_dtor_sys_String(AgString* s) {
 	if (s->buffer) {
 		if (s->buffer->counter_mt & 1)
-			ag_reg_mt_release(s);
+			ag_reg_mt_release((uintptr_t)s->buffer | 1);
 		else if ((s->buffer->counter_mt -= 2) < 2)
 			ag_free(s->buffer);
 	}
@@ -926,7 +926,7 @@ AgObject* ag_fn_sys_getParent(AgObject* obj) {  // obj not null, result is nulla
 		: ((AgWeak*)obj->wb_p)->org_pointer_to_parent;
 	return r <= AG_SHARED
 		? 0
-		: ag_retain((AgObject*)(r));
+		: ag_retain_pin((AgObject*)(r));
 }
 
 void ag_fn_sys_terminate(int result) {
@@ -1031,7 +1031,8 @@ void ag_resize_thread_queue(ag_thread* th, size_t space_needed) {
 	}
 }
 
-// returns locked thread or NULL if receiver's thread is dead
+// returns mtx-locked thread or NULL if receiver's thread is dead
+// receiver goes prelocked
 ag_thread* ag_prepare_post_message(AgWeak* receiver, ag_fn fn, ag_trampoline tramp, size_t params_count) {
 	ag_thread* th = ag_lock_thread(receiver);
 	if (!th)
@@ -1040,7 +1041,7 @@ ag_thread* ag_prepare_post_message(AgWeak* receiver, ag_fn fn, ag_trampoline tra
 		th,
 		params_count + 3);  // params + trampoline + entry_point + receiver_weak
 	ag_put_thread_param(th, (uint64_t) tramp);
-	ag_put_thread_param(th, (uint64_t) receiver); // It comes prelocked. Caller doesn't release it
+	ag_put_thread_param(th, (uint64_t) receiver); // if weak posted to another thread, it's already mt-marked, no need to mark it here
 	ag_put_thread_param(th, (uint64_t) fn);
 	return th;
 }
@@ -1056,6 +1057,8 @@ inline void ag_bound_weak_to_thread(AgWeak* w) {
 		w->wb_ctr_mt |= AG_CTR_MT;  //previously this weak belonged only to this thread, so no atomic op here
 	}
 }
+
+void ag_bound_field_to_thread(void* field, int type, void* ctx);
 
 inline void ag_bound_own_to_thread(AgObject* ptr, ag_thread* th) {
 	if (ag_not_null(ptr)) {
@@ -1083,7 +1086,8 @@ inline void ag_bound_own_to_thread(AgObject* ptr, ag_thread* th) {
 }
 
 void ag_put_thread_param_weak_ptr(ag_thread* th, AgWeak* param) {
-	ag_bound_weak_to_thread(param, th);
+	if (ag_current_thread != th)
+		ag_bound_weak_to_thread(param);
 	ag_put_thread_param(th, (uint64_t)param);
 }
 
@@ -1099,6 +1103,8 @@ void ag_bound_field_to_thread(void* field, int type, void* ctx) {
 	}
 }
 void ag_put_thread_param_own_ptr(ag_thread* th, AgObject* param) {
+	if (ag_current_thread != th)
+		ag_bound_own_to_thread(param, th);
 	ag_put_thread_param(th, (uint64_t)param);
 }
 
@@ -1107,7 +1113,11 @@ void ag_finalize_post_message(ag_thread* th) {
 	cnd_signal(&th->is_not_empty);
 }
 
-void ag_thread_proc(ag_thread* th) {
+int ag_thread_proc(ag_thread* th) {
+	ag_current_thread = th;
+	ag_retain_buffer = AG_ALLOC(sizeof(intptr_t) * AG_RETAIN_BUFFER_SIZE);
+	ag_retain_pos = ag_retain_buffer;
+	ag_release_pos = ag_retain_buffer;
 	struct timespec now;
 	mtx_lock(&th->mutex);
 	while (th->root) {
@@ -1150,7 +1160,7 @@ void ag_thread_proc(ag_thread* th) {
 		}
 	}
 	mtx_unlock(&th->mutex);
-	thrd_exit(0);
+	return 0;
 }
 
 int ag_handle_main_thread() {
@@ -1200,3 +1210,8 @@ void ag_dtor_sys_Thread(AgThread* ptr) {
 		ag_thread_free = th;
 	}
 }
+void ag_visit_sys_Thread(
+	AgThread* ptr,
+	void(*visitor)(void*, int, void*),
+	void* ctx)
+{}
