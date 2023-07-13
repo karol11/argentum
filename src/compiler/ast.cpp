@@ -791,11 +791,13 @@ string ClassParam::get_name() {
 }
 string ClassInstance::get_name() {
 	std::stringstream dst;
-	bool is_first = true;
+	int n = 0;
 	for (auto& p : params) {
+		dst << (
+			n == 0 ? "" :
+			n == 1 ? "(" : ",");
 		dst << p->get_name();
-		dst << is_first ? ", " : "(";
-		is_first = false;
+		n++;
 	}
 	dst << ")";
 	return dst.str();
