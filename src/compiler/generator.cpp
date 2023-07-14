@@ -1260,7 +1260,7 @@ struct Generator : ast::ActionScanner {
 			builder->CreateInsertValue(
 				llvm::UndefValue::get(delegate_struct),
 				dom::isa<ast::TpWeak>(*base.type)
-					? base.data
+					? make_retained_or_non_ptr(move(base)).data
 					: builder->CreateCall(fn_mk_weak, { base.data }),
 				{ 0 }),
 			dl_fn,
@@ -2648,7 +2648,7 @@ struct Generator : ast::ActionScanner {
 				info.fields->getPointerTo());
 			for (auto& field : cls->fields) {
 				builder.CreateStore(
-					make_retained_or_non_ptr(compile(field->initializer)).data,
+					make_retained_or_non_ptr(compile(field->initializer), result).data,
 					builder.CreateStructGEP(info.fields, result, field->offset));
 			}
 			builder.CreateRetVoid();
