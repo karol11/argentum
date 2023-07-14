@@ -143,6 +143,8 @@ struct Typer : ast::ActionMatcher {
 			find_type(p);
 		type_call(node, find_type(node.callee), node.params);
 		if (auto as_mk_delegate = dom::strict_cast<ast::MakeDelegate>(node.callee)) {
+			if (dom::isa<ast::TpWeak>(*as_mk_delegate->base->type()))
+				node.error("Weak pointer delegate can be called only async"); // TODO: replace Call(MkDelegate) with Invoke
 			if (as_mk_delegate->method->is_factory)
 				node.type_ = as_mk_delegate->base->type();  // preserve both own/ref and actual this type.
 		}
@@ -151,8 +153,7 @@ struct Typer : ast::ActionMatcher {
 		for (auto& p : node.params)
 			find_type(p);
 		type_call(node, find_type(node.callee), node.params);
-		auto as_mk_delegate = dom::strict_cast<ast::MakeDelegate>(node.callee);
-		if (!as_mk_delegate)
+		if (!dom::isa<ast::TpDelegate>(*node.callee->type()))
 			node.error("only delegates can be called asynchronously");
 		node.type_ = ast->tp_void();
 	}
@@ -279,7 +280,7 @@ struct Typer : ast::ActionMatcher {
 	}
 	void on_make_delegate(ast::MakeDelegate& node) override {
 		node.type_ = remove_member_type_params(
-			class_from_action(node.base),
+			class_from_action(node.base, true),  // include week
 			node.method->cls,
 			type_fn(node.method)->type_);
 		if (dom::isa<ast::TpConformRef>(*node.base->type())) {
@@ -400,16 +401,25 @@ struct Typer : ast::ActionMatcher {
 		}
 		node.p->error("Expected &ClassName or expression returning reference, not expr of type ", node.p->type().pinned());
 	}
-	pin<ast::AbstractClass> class_from_action(own<ast::Action>& node) {
-		if (auto cls = ast->extract_class(find_type(node)->type()))
-			return cls;
-		node->error("Expected pointer to class, not ", node->type().pinned());
+	pin<ast::AbstractClass> class_from_action(own<ast::Action>& node, bool include_week = false) {
+		auto node_type = find_type(node)->type();
+		auto type_as_weak = dom::strict_cast<ast::TpWeak>(node_type);
+		auto cls = type_as_weak && include_week
+			? type_as_weak->target
+			: ast->extract_class(node_type);
+		if (!cls)
+			node->error("Expected pointer to class, not ", node->type().pinned());
+		return cls;
 	}
 	void on_get_field(ast::GetField& node) override {
-		auto base_cls = class_from_action(node.base);
+		auto base_cls = class_from_action(node.base, true);  // include week
 		if (!node.field) {
 			if (!base_cls->get_implementation()->handle_member(node, ast::LongName{ node.field_name, node.field_module },
-				[&](auto field) { node.field = field; },
+				[&](auto field) {
+					node.field = field;
+					if (dom::isa<ast::TpWeak>(*node.base->type()))
+						node.error("accessing field ", ast::LongName{ node.field_name, node.field_module }, " requires non-week ptr");
+				},
 				[&](auto method) {
 					auto r = ast::make_at_location<ast::MakeDelegate>(node).owned();
 					r->base = move(node.base);
@@ -643,9 +653,7 @@ struct Typer : ast::ActionMatcher {
 			type_fn(&node);
 			return;
 		}
-		auto cls = ast->extract_class(find_type(node.base)->type());
-		if (!cls)
-			node.error("delegate should be connected to class pointer, not to ", node.base->type());
+		auto cls = class_from_action(node.base, true); // include week
 		resolve_immediate_delegate(ast, node, cls->get_implementation());
 		dom::strict_cast<ast::MkInstance>(node.names[0]->initializer)->cls = cls;
 		type_fn(&node);

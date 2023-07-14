@@ -1229,7 +1229,9 @@ struct Generator : ast::ActionScanner {
 		result->data = builder->CreateInsertValue(
 			builder->CreateInsertValue(
 				llvm::UndefValue::get(delegate_struct),
-				builder->CreateCall(fn_mk_weak, { base.data }),
+				dom::isa<ast::TpWeak>(*base.type)
+					? base.data
+					: builder->CreateCall(fn_mk_weak, { base.data }),
 				{ 0 }),
 			method->cls->is_interface
 				? (llvm::Value*) builder->CreateCall(
@@ -1257,7 +1259,9 @@ struct Generator : ast::ActionScanner {
 		result->data = builder->CreateInsertValue(
 			builder->CreateInsertValue(
 				llvm::UndefValue::get(delegate_struct),
-				builder->CreateCall(fn_mk_weak, { base.data }),
+				dom::isa<ast::TpWeak>(*base.type)
+					? base.data
+					: builder->CreateCall(fn_mk_weak, { base.data }),
 				{ 0 }),
 			dl_fn,
 			{ 1 });
