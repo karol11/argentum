@@ -203,7 +203,7 @@ ag_thread ag_main_thread = { 0 };
 
 #define AG_RETAIN_BUFFER_SIZE 8192
 AG_THREAD_LOCAL ag_thread* ag_current_thread = &ag_main_thread;
-AG_THREAD_LOCAL uintptr_t* ag_retain_buffer;
+AG_THREAD_LOCAL uintptr_t* ag_retain_buffer = NULL;
 AG_THREAD_LOCAL uintptr_t* ag_retain_pos;
 AG_THREAD_LOCAL uintptr_t* ag_release_pos;
 mtx_t retain_release_mutex;
@@ -1113,11 +1113,17 @@ void ag_finalize_post_message(ag_thread* th) {
 	cnd_signal(&th->is_not_empty);
 }
 
-int ag_thread_proc(ag_thread* th) {
-	ag_current_thread = th;
+void ag_init_retain_buffer() {
+	if (ag_retain_buffer)
+		return;
 	ag_retain_buffer = AG_ALLOC(sizeof(intptr_t) * AG_RETAIN_BUFFER_SIZE);
 	ag_retain_pos = ag_retain_buffer;
 	ag_release_pos = ag_retain_buffer;
+}
+
+int ag_thread_proc(ag_thread* th) {
+	ag_current_thread = th;
+	ag_init_retain_buffer();
 	struct timespec now;
 	mtx_lock(&th->mutex);
 	while (th->root) {
@@ -1170,15 +1176,18 @@ int ag_handle_main_thread() {
 	return 0;
 }
 
-void ag_m_sys_Thread_init(AgThread* th, AgObject* root) {
+AgObject* ag_m_sys_Thread_start(AgThread* th, AgObject* root) {
 	ag_thread* t = NULL;
+	ag_init_retain_buffer();
+	// TODO: protect `ag_alloc_threads_left` with mutex
 	if (ag_thread_free) {
 		t = ag_thread_free;
 		ag_thread_free = (ag_thread*)ag_thread_free->write_pos;
 		t->write_pos = t->read_pos = t->queue_start;
 	} else {
 		if (!ag_alloc_threads_left) {
-			ag_alloc_thread = AG_ALLOC(sizeof(ag_thread) * (ag_alloc_threads_left = 16));
+			ag_alloc_threads_left = 16;
+			ag_alloc_thread = AG_ALLOC(sizeof(ag_thread) * ag_alloc_threads_left);
 			if (!ag_alloc_thread)
 				exit(-42);
 		}
@@ -1188,10 +1197,15 @@ void ag_m_sys_Thread_init(AgThread* th, AgObject* root) {
 	}
 	t->root = ag_retain_pin(root); // TODO: make root object marker value for parent ptr.
 	th->thread = t;
-	thrd_create(t->thread, ag_thread_proc, t);
+	AgWeak* w = ag_mk_weak(root);
+	w->wb_ctr_mt |= AG_CTR_MT;
+	w->thread = t;
+	thrd_create(&t->thread, ag_thread_proc, t);
+	th->head.ctr_mt += AG_CTR_STEP;
+	return th;
 }
 
-AgWeak* ag_m_sys_Thread_getRoot(AgThread* th) {
+AgWeak* ag_m_sys_Thread_root(AgThread* th) {
 	return ag_mk_weak(th->thread->root);
 }
 void ag_copy_sys_Thread(AgThread* dst, AgThread* src) {

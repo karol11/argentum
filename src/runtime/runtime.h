@@ -182,11 +182,11 @@ void      ag_fn_sys_log           (AgString* s);
 //
 // Thread
 //
-void    ag_copy_sys_Thread      (AgThread* dst, AgThread* src);
-void    ag_dtor_sys_Thread      (AgThread* ptr);
-void    ag_visit_sys_Thread     (AgThread* ptr, void(*visitor)(void*, int, void*), void* ctx);
-void    ag_m_sys_Thread_init    (AgThread* th, AgObject* root);
-AgWeak* ag_m_sys_Thread_getRoot (AgThread* th);
+void      ag_copy_sys_Thread      (AgThread* dst, AgThread* src);
+void      ag_dtor_sys_Thread      (AgThread* ptr);
+void      ag_visit_sys_Thread     (AgThread* ptr, void(*visitor)(void*, int, void*), void* ctx);
+AgObject* ag_m_sys_Thread_start   (AgThread* th, AgObject* root);
+AgWeak*   ag_m_sys_Thread_root    (AgThread* th);
 
 //
 // Cross-thread FFI interop
