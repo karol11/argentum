@@ -1195,10 +1195,11 @@ AgObject* ag_m_sys_Thread_start(AgThread* th, AgObject* root) {
 		ag_alloc_threads_left--;
 		ag_init_thread_queues(t);
 	}
-	t->root = ag_retain_pin(root); // TODO: make root object marker value for parent ptr.
+	// TODO: make root object marker value for parent ptr.
+	t->root = ag_retain_pin(root); // ok to retain on the crating thread before thrd_create
 	th->thread = t;
 	AgWeak* w = ag_mk_weak(root);
-	w->wb_ctr_mt |= AG_CTR_MT;
+	w->wb_ctr_mt = (w->wb_ctr_mt - AG_CTR_STEP) | AG_CTR_MT;
 	w->thread = t;
 	thrd_create(&t->thread, ag_thread_proc, t);
 	th->head.ctr_mt += AG_CTR_STEP;
