@@ -374,7 +374,7 @@ struct Ast: dom::DomItem {
 	pin<Field> mk_field(string name, pin<Action> initializer);
 	pin<Class> mk_class(string name, std::initializer_list<pin<Field>> fields = {});
 	pin<Function> mk_fn(string name, void(*entry_point)(), pin<Action> result_type, std::initializer_list<pin<Type>> params);
-	pin<Function> mk_method(Mut mut, pin<Class> cls, string m_name, void(*entry_point)(), pin<Action> result_type, std::initializer_list<pin<Type>> params);
+	pin<Method> mk_method(Mut mut, pin<Class> cls, string m_name, void(*entry_point)(), pin<Action> result_type, std::initializer_list<pin<Type>> params);
 	void add_this_param(ast::Function& fn, pin<ast::Class> cls);
 
 	pin<TpInt64> tp_int64();

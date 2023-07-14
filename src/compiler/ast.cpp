@@ -503,7 +503,7 @@ void Ast::add_this_param(ast::Function& fn, pin<ast::Class> cls) {
 	this_param->initializer = this_init;
 }
 
-pin<ast::Function> Ast::mk_method(
+pin<ast::Method> Ast::mk_method(
 	ast::Mut mut,
 	pin<Class> cls,
 	string m_name,
