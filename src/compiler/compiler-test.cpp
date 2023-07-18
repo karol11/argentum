@@ -33,10 +33,10 @@ void void_void_tramp(AgObject* self, ag_fn entry_point, ag_thread* th) {
     // release params here
 }
 void callback_invoker(AgWeak* cb_data, ag_fn cb_entry_point) {
-    if (auto th = ag_prepare_post_message(cb_data, cb_entry_point, void_void_tramp, 0)) {
-        // post params here
-        ag_finalize_post_message(th);
-    }
+    ag_retain_weak(cb_data);
+    auto th = ag_prepare_post_message(cb_data, cb_entry_point, void_void_tramp, 0);
+    // post params here
+    ag_finalize_post_message(th);
 }
 
 void ag_assert(int64_t expected, int64_t actual) {
@@ -61,52 +61,6 @@ void execute(const char* source_text, bool dump_all = false) {
         std::cout << std::make_pair(ast.pinned(), ast->dom.pinned()) << "\n";
     foreign_test_function_state = 0;
     generate_and_execute(ast, false, dump_all);
-}
-
-/*TEST(Parser, Mt) {
-    execute(R"-(
-        class App{
-            worker = sys_Thread(sys_Object).start(sys_Object);
-            endEverything() {
-                sys_Log("shutdown from main thread");
-                sys_setMainObject(?sys_Object);
-            }
-        }
-        app = App;
-        sys_setMainObject(app);
-        sys_Log("activate from main thread");
-        app.worker.getRoot().&workerCode(app &App){
-            sys_Log("hi from worker thread");
-            app.endEverything~();
-        }~(&app);
-    )-");
-}*/
-
-TEST(Parser, AsyncInner) {
-    execute(R"-(
-        class App{
-            asyncOp() {
-                sys_setMainObject(?sys_Object);
-            }
-        }
-        app = App;
-        sys_setMainObject(app);
-        app.asyncOp~();
-    )-");
-}
-
-TEST(Parser, AsyncFfi) {
-    execute(R"-(
-        fn callbackInvoker(callback &()void);
-        class App{
-            onCallback() {
-                sys_setMainObject(?sys_Object);
-            }
-        }
-        app = App;
-        sys_setMainObject(app);
-        callbackInvoker(app.onCallback);
-    )-");
 }
 
 TEST(Parser, Ints) {
@@ -886,6 +840,51 @@ TEST(Parser, GenericInstAsType) {
            a[0] := "Aloha";
            a
         })
+    )-");
+}
+
+TEST(Parser, AsyncInner) {
+    execute(R"-(
+        class App{
+            asyncOp() {
+                sys_setMainObject(?sys_Object);
+            }
+        }
+        app = App;
+        sys_setMainObject(app);
+        app.asyncOp~();
+    )-");
+}
+
+TEST(Parser, AsyncFfi) {
+    execute(R"-(
+        fn callbackInvoker(callback &()void);
+        class App{
+            onCallback() {
+                sys_setMainObject(?sys_Object);
+            }
+        }
+        app = App;
+        sys_setMainObject(app);
+        callbackInvoker(app.onCallback);
+    )-");
+}
+
+TEST(Parser, Multithreading) {
+    execute(R"-(
+        class App{
+            worker = sys_Thread(sys_Object).start(sys_Object);
+        }
+        app = App;
+        sys_setMainObject(app);
+        sys_log("Started on main thread\n");
+        app.worker.root().&workerCode(onEnd &()void){
+            sys_log("Hello from the worker thread\n");
+            onEnd~();
+        }~(app.&endEverything(){
+            sys_log("Shutdown from the main thread\n");
+            sys_setMainObject(?sys_Object);        
+        });
     )-");
 }
 
