@@ -1059,6 +1059,7 @@ struct Generator : ast::ActionScanner {
 		}
 		vector<Val> consts_to_dispose; // addr of const, todo: optimize with const pass
 		if (&node == &*ast->starting_module->entry_point) {
+			builder->CreateCall(fn_init, {});
 			for (auto& m : ast->modules_in_order) {
 				for (auto& c : m->constants) {
 					auto addr = globals[c.second];
@@ -1069,8 +1070,6 @@ struct Generator : ast::ActionScanner {
 				}
 			}
 		}
-		if (&node == &*ast->starting_module->entry_point)
-			builder->CreateCall(fn_init, {});
 		for (auto& a : node.body) {
 			if (a != node.body.back())
 				comp_to_void(a);
@@ -2894,9 +2893,9 @@ struct Generator : ast::ActionScanner {
 			}
 		}
 		current_function = llvm::Function::Create(
-			llvm::FunctionType::get(void_type, {}, false),
+			llvm::FunctionType::get(int_type, {}, false),
 			llvm::Function::ExternalLinkage,
-			"ag_main", module.get());
+			"main", module.get());
 		compile_fn_body(*ast->starting_module->entry_point, "main");
 		// Compile tests
 		for (auto& m : ast->modules) {
