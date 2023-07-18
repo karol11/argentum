@@ -1,6 +1,6 @@
-using sdl { Window; Sdl; Texture; }
-using utils { Random; forRange; }
-using gui { Actor; Group; }
+using sdl { Window, Sdl, Texture }
+using utils { Random, forRange }
+using gui { Actor, Group }
 
 class Scene{
     +Group;
@@ -15,21 +15,21 @@ class Scene{
 
     init() ?Scene {
         sdl.initVideo() &&
-        w.createCentered("Hello!", 800, 600) &&
+        w.createCentered("Hello from Argentum!", 800, 600) &&
         background.init(w, "back.jpg") &&
         foreground.init(w, "fore.png") &&
         flare.init(w, "round.png") &&
         star.init(w, "star.png") ? this
     }
     run() {
-        push(10, (i){ Flare.initAtBottom(this) });
+        push(10, Flare.initAtBottom(this));
         sdl.eventLoop((e){
             w.blt(background, 0, 0, 800, 600, 0, 0, 800, 600);
             paint(w);
             w.blt(foreground, 0, 0, 800, 600, 0, 0, 800, 600);
             w.flip();
             rnd.get(0, 30) == 0 ?
-                push(1, (i){ Flare.initAtBottom(this) });
+                push(1, Flare.initAtBottom(this));
             tick(1000/30);
         });
     }
@@ -37,7 +37,7 @@ class Scene{
 
 class Flare {
     +Actor {
-        paint(Window dst) {
+        paint(dst Window) {
             sprite? {
                 _.setColorMod(color);
                 _.setAlphaMod(fade >> 8);
@@ -45,24 +45,24 @@ class Flare {
                 dst.blt(_, 0, 0, 64, 64, x >> 16 - size/2, y >> 16 - size/2, size, size);
             }
         }
-        tick(int milliseconds) bool {
+        tick(milliseconds int) bool {
             x += dx;
             y += dy;
             dy += 1 << 13;
             scene ?=sc sc.rnd.get(0, 2) == 0 ?
-                sc.push(1, (i){ Sparkles.init(sc, x >> 16, y >> 16, color) });
+                sc.push(1, Sparkles.init(sc, x >> 16, y >> 16, color));
             fade += dFade;
             dFade -= 140;
             fade == 0 && scene &&=s s.rnd.get(0, generation) == 0 ?
                 distributeInCircle(s.rnd, s.rnd.get(6, 15), 10 << 16, (dx, dy) {
-                    s.push(1, (i){ Flare.initAtFlare(this, dx, dy) });
+                    s.push(1, Flare.initAtFlare(this, dx, dy));
                 });
             y > -100 << 16 && y <= 600 << 16 && x > 0 && x < 800 << 16 && fade >= 0
         }
     }
-    initAtFlare(Flare parent, int dx, int dy) this {
+    initAtFlare(parent Flare, dx int, dy int) this {
         scene := parent.scene;
-        scene? sprite := &_.star;
+        scene? sprite := &_.star; 
         x := parent.x;
         y := parent.y;
         color := parent.color;
@@ -70,7 +70,7 @@ class Flare {
         this.dx := dx;
         this.dy := dy;
     }
-    initAtBottom(Scene scene) this {
+    initAtBottom(scene Scene) this {
         this.scene := &scene;
         r = scene.rnd;
         x := r.get(200 << 16, (800-200) << 16);
@@ -93,20 +93,19 @@ class Flare {
 
 class Sparkles {
     +Actor {
-        paint(Window dst) {
+        paint(dst Window) {
             scene? distributeInCircle(_.rnd, r, r, (x, y){
                 dst.fillRect(this.x + x, this.y + y, 1, 1, color);
             })
         }
-        tick(int milliseconds) bool { (r -= 1) > 0 }
+        tick(milliseconds int) bool { (r -= 1) > 0 }
     }
-    init(Scene scene, int x, int y, int color) this {
+    init(scene Scene, x int, y int, color int) this {
         this.scene := &scene;
         this.x := x;
         this.y := y;
         this.color := color;
     }
-    setRadius(int r) this { this.r := r; }
     scene = &Scene;
     x = 0;
     y = 0;
@@ -114,14 +113,14 @@ class Sparkles {
     color = 0;
 }
 
-fn makeBrightColor(Random rnd) int {
+fn makeBrightColor(rnd Random) int {
     r = (rnd.get(-1, 1) & 0xff) |
         (rnd.get(-1, 1) & 0xff << 8) |
         (rnd.get(-1, 1) & 0xff << 16);
     r == 0 ? 0x0ffffff : r
 }
 
-fn distributeInCircle(Random rnd, int count, int r, (int, int)void callback) {
+fn distributeInCircle(rnd Random, count int, r int, callback (int, int)void) {
     forRange(0, count, (i){
         x = rnd.get(-r, r);
         y = rnd.get(-r, r);
@@ -129,4 +128,4 @@ fn distributeInCircle(Random rnd, int count, int r, (int, int)void callback) {
     });
 }
 
-Scene.init()?_.run()
+Scene.init()?_.run();

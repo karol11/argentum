@@ -1,0 +1,29 @@
+using sys { Array }
+
+class Map(K, V) {
+    keys = Array(*K);
+    vals = Array(V);
+    hashes = Blob;
+    hashFn = ?fn(key -K) int;
+    compareFn = ?fn(a -K, b -K) bool;
+    maxChain = 0;
+    used = 0;
+    mag = 1;
+    getAt(key -K) ?V {
+        h = hash ? _(key) : sys_Hash(key);
+        i = h;
+        step = 1;
+        attempts = maxChain;
+        loop {
+            step *= 2;
+            i := (i + step) & (mag - 1);
+            found = hashes.get64At(i) == h &&
+                keys[i] &&
+                (equal ? equal(key, _) : key == _);
+            found || (attempts -= 1) < 0 ? found ? vals[i]
+        }
+    }
+    setAt(key K, val V) {
+        
+    }
+}

@@ -1,27 +1,27 @@
 class Random {
     seed = 123456789;
-    get(int from, int to) int {
+    get(from int, to int) int {
         seed := seed * 5 + 12345;
         r = seed & 0x7fff_ffff_ffff_ffff >> 3;
         r % (to - from) + from
     }
 }
 
-fn forRangeWhile(int from, int to, (int)bool body) { // TODO replace bool with ?T after introduction of generics
+fn forRangeWhile(from int, to int, body (int)bool) {
     loop !(
         from < to && body(from) ?
             from += 1
     )
 }
 
-fn forRange(int from, int to, (int)void body) {
+fn forRange(from int, to int, body (int)void) {
     loop !(from < to ? {
         body(from);
         from += 1
     })
 }
 
-fn existsInRange(int from, int to, (int)bool predicate) bool {
+fn existsInRange(from int, to int, predicate (int)bool) bool {
     loop !(
         from < to && !predicate(from) ? from += 1
     );

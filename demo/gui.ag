@@ -1,29 +1,21 @@
-using sys { Array; }
+using sys { Array }
 using array;
-using sdl { Window; }
+using sdl { Window }
 
 interface Actor {
-    paint(Window dst);
-    tick(int milliseconds) bool; // returns true if alive
+    paint(dst Window);
+    tick(milliseconds int) bool; // returns true if alive
 }
 
 class Group {
-    +Array;
+    +Array(Actor);
     +Actor{
-        paint(Window dst) {
-            each((i){
-                i~Actor ? _.paint(dst)
-            })
+        paint(dst Window) {
+            each((i){ i.paint(dst) })
         }
-        tick(int milliseconds) bool {
-            plow((i) {
-                i~Actor && _.tick(milliseconds)
-            });
+        tick(milliseconds int) bool {
+            plow((i) { i.tick(milliseconds) });
             size() != 0
         }
     }
-}
-
-fn getAtGroup(Group a, int i) ?Actor {
-    a~Array[i] && _~Actor
 }

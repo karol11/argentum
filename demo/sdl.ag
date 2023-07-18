@@ -1,26 +1,32 @@
-using sys { String; }
+using sys { String }
 using sdlFfi;
+
+const xEventQuit = 256;
+const xRendererAccelerated = 2;
+const xImgJpg = 1;
+const xImgPng = 2;
+const xInitEverything = 0x7231;
+const xDefaultPos = 0x1FFF0000;
 
 //
 // High level safe API
 //
 class Sdl {
     initVideo() bool {
-        sdlFfi_sdlInit(0x7231) == 0 && // SDL_INIT_EVERYTHING
-        sdlFfi_imgInit(3) != 0         // JPG, PNG
+        sdlFfi_sdlInit(xInitEverything) == 0 &&
+        sdlFfi_imgInit(xImgJpg | xImgPng) != 0
     }
-    eventLoop((Event)void handler) {
-        SdlQuit = 256;
+    eventLoop(handler (Event)void) {
         e = Event;
         loop{
             sdlFfi_pollEvent(e);
             handler(e);
             sdlFfi_delay(1000/30);
-            e[0] == SdlQuit
+            e[0] == xEventQuit
         }
     }
 }
-fn disposeSdl(Sdl sdl) {
+fn disposeSdl(sdl Sdl) {
     sdlFfi_imgQuit();
     sdlFfi_sdlQuit();
 }
@@ -28,25 +34,25 @@ fn disposeSdl(Sdl sdl) {
 class Window {
     handle = 0;
     renderer = 0;
-    createCentered(String title, int w, int h) bool {
+    createCentered(title String, w int, h int) bool {
         destroyWindow(this);
-        handle := sdlFfi_createWindow(title, 0x1FFF0000, 0x1FFF0000, w, h, 0);
-        renderer := handle == 0 ? 0 : sdlFfi_createRenderer(handle, -1, 2); //2=SDL_RENDERER_ACCELERATED
+        handle := sdlFfi_createWindow(title, xDefaultPos, xDefaultPos, w, h, 0);
+        renderer := handle == 0 ? 0 : sdlFfi_createRenderer(handle, -1, xRendererAccelerated);
         renderer != 0
     }
-    fill(int color) {
+    fill(color int) {
         renderer != 0 ? {
             sdlFfi_setRendererDrawColor(renderer, color, color >> 8, color >> 16, color >> 24);
             sdlFfi_rendererClear(renderer)
         }
     }
-    fillRect(int x, int y, int w, int h, int color) {
+    fillRect(x int, y int, w int, h int, color int) {
         renderer != 0 ? {
             sdlFfi_setRendererDrawColor(renderer, color, color >> 8, color >> 16, color >> 24);
             sdlFfi_rendererFillRect(renderer, x, y, w, h);
         }
     }
-    blt(Texture tex, int sx, int sy, int sw, int sh, int dx, int dy, int dw, int dh){
+    blt(tex Texture, sx int, sy int, sw int, sh int, dx int, dy int, dw int, dh int){
         renderer != 0 && tex.id != 0 ?
             sdlFfi_blt(renderer, tex.id, sx, sy, sw, sh, dx, dy, dw, dh);
     }
@@ -54,20 +60,20 @@ class Window {
         renderer != 0 ? sdlFfi_rendererPresent(renderer);
     }
 }
-fn destroyWindow(Window w) {
+fn destroyWindow(w Window) {
     w.renderer != 0 ? sdlFfi_destroyRenderer(w.renderer);
     w.handle != 0 ? sdlFfi_destroyWindow(w.handle);
 }
-fn afterCopyWindow(Window w) { w.handle := w.renderer := 0 }
+fn afterCopyWindow(w Window) { w.handle := w.renderer := 0 }
 
 class Event {
     +sys_Blob;
-    getAt(int i) int { sys_get32At(this, i) }
+    getAt(i int) int { get32At(i) }
 }
 
 class Texture{
     id = 0;
-    init(Window wnd, String fileName) bool {
+    init(wnd Window, fileName String) bool {
         wnd.renderer != 0 && {
             surface = sdlFfi_imgLoad(fileName);
             surface != 0 && {
@@ -78,13 +84,13 @@ class Texture{
             }
         }
     }
-    setAlphaMod(int multiplier) {
+    setAlphaMod(multiplier int) {
         id != 0 ? sdlFfi_setTextureAlphaMod(id, multiplier);
     }
-    setColorMod(int color) {
+    setColorMod(color int) {
         id != 0 ? sdlFfi_setTextureColorMod(id, color);
     }
 }
-fn disposeTexture(Texture t) {
+fn disposeTexture(t Texture) {
     t.id != 0 ? sdlFfi_destroyTexture(t.id)
 }

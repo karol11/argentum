@@ -1,41 +1,39 @@
 using sys {
-    String;
-    Blob;
+    String,
+    Blob,
+    StrBuilder
 }
 
-class sys_String{
-    get() int { sys_getCh(this) }
-}
-class Builder {
-    +Blob;
+class StrBuilder {
     pos = 0;
-    reserve(int qwords) {
-        size = sys_getSize(this);
+    reserve(qwords int) {
+        size = capacity();
         growStep = size * 2 + 4;
         pos + qwords >= size ?
-            sys_insertItems(this, size, growStep);
+            insertItems(size, growStep);
     }
-    putCh(int codePoint) this {
+    putCh(codePoint int) this {
         reserve(1);
-        pos := sys_putCh(this, pos, codePoint)
+        pos := putChAt(pos, codePoint)
     }
-    putStr(String s) this {
+    putStr(s String) this {
         loop !{
-            c = sys_getCh(s);
+            c = s.getCh();
             c != 0 ? putCh(c)
         }
     }
-    putInt(int val) this {
+    putOptStr(s ?String) this { s ? putStr(_) }
+    putInt(val int) this {
         reserve(3);
         isNeg = val < 0;
         isNeg ? val *= -1;
         p = pos + 21;
         loop {
-            sys_set8At(this, p -= 1, val % 10 + '0');
+            set8At(p -= 1, val % 10 + '0');
             (val /= 10) == 0
         };
-        isNeg ? sys_set8At(this, p -= 1, '-');
-        sys_copyBytes(this, pos, this, p, pos + 21 - p);
+        isNeg ? set8At(p -= 1, '-');
+        copyBytesTo(pos, this, p, pos + 21 - p);
         pos += pos + 21 - p;
     }
     newLine() this {
@@ -43,7 +41,7 @@ class Builder {
     }
     toStr() @String {
         r = String;
-        sys_stringFromBlob(r, this, 0, pos);
+        r.fromBlob(this, 0, pos);
         pos := 0;
         r
     }

@@ -1,12 +1,12 @@
-using sys { Object; Array; }
-using utils { existsInRange; }
+using sys { Object, Array, WeakArray }
+using utils { existsInRange }
 
-class sys_Array{
+class Array {
     itemsCount = 0;
 
-    size() int { itemsCount }
+    -size() int { itemsCount }
 
-    each((Object)void handler) {
+    -each(handler (T)void) {
         i = 0;
         loop!{
             i < itemsCount ? {
@@ -15,7 +15,12 @@ class sys_Array{
             }
         }
     }
-    plow((Object)bool filter) {
+    -contain(predicate (T)bool) bool {
+        existsInRange(0, itemsCount, (i){
+            this[i] && predicate(_)
+        })
+    }
+    plow(filter (T)bool) {
         i = 0;
         loop!{
             i < itemsCount ? {
@@ -25,55 +30,41 @@ class sys_Array{
             }
         }
     }
-    deleteAt(int i) {
-        sys_setOptAt(this, i, ?sys_Object);
-        sys_moveItems(this, i, i + 1, itemsCount);
+    deleteAt(i int) {
+        setOptAt(i, ?T);
+        moveItems(i, i + 1, itemsCount);
         itemsCount -= 1;
     }
-    push(int n, (int)@Object generator) {
-        itemsCount + n >= sys_getSize(this)
-            ? sys_insertItems(this, itemsCount, (itemsCount + n + 20) / 4);
+    allocate(count int) {
+        itemsCount + count >= capacity()
+            ? insertItems(itemsCount, (itemsCount + count + 20) / 4);
+    }
+    push(n int, generator ()@T) {
+        allocate(n);
         loop{
-            sys_setAtArray(this, itemsCount, generator(itemsCount));
+            this[itemsCount] := generator();
             itemsCount += 1;
             (n -= 1) == 0
         }
     }
-    setAt(int i, ()@Object generator) bool {
-        i < itemsCount ? sys_setAtArray(this, i, generator())
-    }
-    append(()@Object provider) ?Object {
-        push(1, (i){ provider() });
-        this[itemsCount - 1]
-    }
-    contain((Object)bool predicate) bool {
-        existsInRange(0, size(), (i){
-            this[i] && predicate(_)
-        })
+    append(provider ()@T) T {
+        allocate(1);
+        itemsCount += 1;
+        this[itemsCount - 1] := provider()
     }
 }
 
-class sys_WeakArray{
-    size() int { sys_getSize(this) }
-    resize(int n) this { sys_insertItems(this, 0, n) }
-    append(?Object item) ?Object {
-        n = size();
-        sys_insertItems(this, n, 1);
-        setAt(n, item)
+class WeakArray {
+    -size() int { capacity() }
+    resize(n int) this { insertItems(0, n) }
+    append(item &T) {
+        n = capacity();
+        insertItems(n, 1);
+        this[n] := item
     }
-    setAt(int n, ?Object item) ?Object {
-        item ? sys_setAtWeakArray(this, n, &_);
-        item
-    }
-    contain((Object)bool predicate) bool {
-        existsInRange(0, size(), (i){
+    -contain(predicate (T)bool) bool {
+        existsInRange(0, capacity(), (i){
             this[i] && predicate(_)
         })
     }
-}
-
-test insertIntoArray() {
-    a = Array;
-    a.push(2, (i){ Object });
-    a.size() != 2 ? sys_terminate(-1)
 }

@@ -1,19 +1,17 @@
-using sys { WeakArray; Array; String; log; }
-using utils { existsInRange; }
+using sys { WeakArray, Array, String, log }
+using utils { existsInRange }
 using string;
 using array;
 
 class Node {
-    connections = WeakArray;
+    connections = WeakArray(Node);
     isVisited = false;
     isActive = false;
 
     hasLoop() bool {
         isActive || (!isVisited && {
             isVisited := isActive := true;
-            r = connections.contain((n){
-                n~Node && _.hasLoop()
-            });
+            r = connections.contain((n){ n.hasLoop() });
             isActive := false;
             r
         })
@@ -21,27 +19,29 @@ class Node {
 }
 
 class Graph {
-    nodes = Array;
-    fromStr(String in) this {
-        byNames = WeakArray.resize('z' + 1);
+    nodes = Array(Node);
+    fromStr(in String) this {
+        byNames = WeakArray(Node).resize('z' + 1);
         getOrCreateNode = () {
-            name = in.get();
-            byNames[name] || byNames[name] := nodes.append(Node)
+            name = in.getCh();
+            byNames[name] : {
+                r = nodes.append(Node);
+                byNames[name] := &r;
+                r
+            }
         };
         loop {
             from = getOrCreateNode();
-            in.get();
-            from ? _~Node ? _.connections.append(getOrCreateNode());
-            in.get() == 0
+            in.getCh();
+            from.connections.append(&getOrCreateNode());
+            in.getCh() == 0
         }
     }    
     hasLoop() bool {    
-        nodes.contain((n){
-            n~Node && _.hasLoop()
-        })
+        nodes.contain((n){ n.hasLoop() })
     }
 }
 
 log(Graph.fromStr("a>b b>c c>d e>f b>e e>a c>c").hasLoop()
-    ? "has loop"
-    : "has no loop")
+    ? "has some loop"
+    : "has no loops")

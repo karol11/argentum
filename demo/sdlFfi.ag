@@ -1,31 +1,31 @@
-using sys { String; Blob; }
+using sys { String, Blob }
 
 // Low level unsafe API
-fn sdlInit(int flags) int;
+fn sdlInit(flags int) int;
 fn sdlQuit();
 
-fn createWindow(String title, int x,int y, int w, int h, int flags) int;
-fn destroyWindow(int windowId);
+fn createWindow(title String, x int, y int, w int, h int, flags int) int;
+fn destroyWindow(windowId int);
 
-fn createRenderer(int windowId, int index, int flags) int;
-fn destroyRenderer(int rendererId);
+fn createRenderer(windowId int, index int, flags int) int;
+fn destroyRenderer(rendererId int);
 
-fn waitEvent(Blob event);
-fn pollEvent(Blob event);
-fn delay(int millisec);
+fn waitEvent(event Blob);
+fn pollEvent(event Blob);
+fn delay(millisec int);
 
-fn setRendererDrawColor(int rendererId, int r, int g, int b, int a);
-fn rendererClear(int rendererId);
-fn rendererFillRect(int rendererId, int x, int y, int w, int h);
-fn blt(int rendererId, int textureId, int sx, int sy, int sw, int sh, int dx, int dy, int dw, int dh);
-fn rendererPresent(int rendererId);
+fn setRendererDrawColor(rendererId int, r int, g int, b int, a int);
+fn rendererClear(rendererId int);
+fn rendererFillRect(rendererId int, x int, y int, w int, h int);
+fn blt(rendererId int, textureId int, sx int, sy int, sw int, sh int, dx int, dy int, dw int, dh int);
+fn rendererPresent(rendererId int);
 
-fn createTextureFromSurface(int rendererId, int surfaceId) int;
-fn destroyTexture(int textureId);
-fn setTextureAlphaMod(int texId, int multiplier);
-fn setTextureColorMod(int id, int color);
-fn freeSurface(int surfaceId);
+fn createTextureFromSurface(rendererId int, surfaceId int) int;
+fn destroyTexture(textureId int);
+fn setTextureAlphaMod(texId int, multiplier int);
+fn setTextureColorMod(id int, color int);
+fn freeSurface(surfaceId int);
 
-fn imgInit(int flags) int;
+fn imgInit(flags int) int;
 fn imgQuit();
-fn imgLoad(String fileName) int; // returns surfaceId
+fn imgLoad(fileName String) int; // returns surfaceId

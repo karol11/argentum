@@ -1,8 +1,8 @@
-using sys { log; }
-using string { Builder; }
-using utils{ forRange; }
+using sys { log, StrBuilder }
+using string;
+using utils{ forRange }
 
-b = Builder;
+b = StrBuilder;
 forRange(1, 101, (i){
    i % 3 == 0 ? b.putStr("fizz");
    i % 5 == 0 ? b.putStr("buzz");
