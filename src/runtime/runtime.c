@@ -179,15 +179,20 @@ void ag_free(void* data) {
 
 #define AG_THREAD_QUEUE_SIZE 8192
 
+typedef struct ag_queue_tag {
+	int64_t* start;
+	int64_t* end;
+	int64_t* read_pos;
+	int64_t* write_pos;
+} ag_queue;
+
 typedef struct ag_thread_tag {
-	int64_t*  queue_start;
-	int64_t*  queue_end;
-	int64_t*  read_pos;  // 0 if free
-	int64_t*  write_pos; // next free if free
-	AgObject* root;
+	ag_queue  in;
+	ag_queue  out;
+	AgObject* root;     // 0 if free
 	uint64_t  timer_ms;  // todo: replace with pyramid-heap
 	ag_fn     timer_proc;
-	AgWeak*   timer_proc_param;
+	AgWeak*   timer_proc_param; // next free if free
 	mtx_t     mutex;
 	cnd_t     is_not_empty;
 	thrd_t    thread;
@@ -198,18 +203,19 @@ typedef struct ag_thread_tag {
 ag_thread*  ag_alloc_thread = NULL;    // next free ag_thread in page
 uint64_t    ag_alloc_threads_left = 0; // number of free ag_threads left in page
 ag_thread*  ag_thread_free = NULL;     // head of freed ag_thread chain
+mtx_t ag_threads_mutex;
 
 ag_thread ag_main_thread = { 0 };
 
 #define AG_RETAIN_BUFFER_SIZE 8192
-AG_THREAD_LOCAL ag_thread* ag_current_thread = &ag_main_thread;
+AG_THREAD_LOCAL ag_thread* ag_current_thread = NULL;
 AG_THREAD_LOCAL uintptr_t* ag_retain_buffer = NULL;
 AG_THREAD_LOCAL uintptr_t* ag_retain_pos;
 AG_THREAD_LOCAL uintptr_t* ag_release_pos;
-mtx_t retain_release_mutex;
+mtx_t ag_retain_release_mutex;
 
 void ag_flush_retain_release() {
-	mtx_lock(&retain_release_mutex);
+	mtx_lock(&ag_retain_release_mutex);
 	uintptr_t* i = ag_retain_buffer;
 	uintptr_t* term = ag_retain_pos;
 	for (; i != term; ++i) {
@@ -237,7 +243,7 @@ void ag_flush_retain_release() {
 	}
 	ag_retain_pos = ag_retain_buffer;
 	ag_release_pos = ag_retain_buffer + AG_RETAIN_BUFFER_SIZE;
-	mtx_unlock(&retain_release_mutex);
+	mtx_unlock(&ag_retain_release_mutex);
 	while (root) {
 		AgObject* n = AG_UNTAG_PTR(AgObject, root->ctr_mt);
 		if (root->ctr_mt & AG_CTR_WEAK)
@@ -943,12 +949,16 @@ void ag_make_blob_fit(AgBlob* b, size_t required_size) {
 		ag_m_sys_Container_insertItems(b, b->size, required_size - b->size);
 }
 
-static void ag_init_thread_queues(ag_thread* th) {
-	th->queue_start = AG_ALLOC(sizeof(int64_t) * AG_THREAD_QUEUE_SIZE);
-	th->queue_end = th->queue_start + AG_THREAD_QUEUE_SIZE;
+static void ag_init_queue(ag_queue* q) {
+	q->read_pos = q->write_pos = q->start = AG_ALLOC(sizeof(int64_t) * AG_THREAD_QUEUE_SIZE);
+	q->end = q->start + AG_THREAD_QUEUE_SIZE;
+}
+
+static void ag_init_thread(ag_thread* th) {
+	ag_init_queue(&th->in);
+	ag_init_queue(&th->out);
 	mtx_init(&th->mutex, mtx_plain);
 	cnd_init(&th->is_not_empty);
-	th->read_pos = th->write_pos = th->queue_start;
 	th->root = NULL;
 	th->timer_ms = 0;
 	th->timer_proc = 0;
@@ -957,8 +967,8 @@ static void ag_init_thread_queues(ag_thread* th) {
 
 bool ag_fn_sys_setMainObject(AgObject* s) {
 	ag_thread* th = &ag_main_thread;
-	if (!th->queue_start)
-		ag_init_thread_queues(th);
+	if (!th->in.start)
+		ag_init_thread(th);
 	ag_release_own(th->root);
 	if (s && ag_fn_sys_getParent(s)) {
 		th->root = NULL;
@@ -968,26 +978,54 @@ bool ag_fn_sys_setMainObject(AgObject* s) {
 	return true;
 }
 
-uint64_t ag_get_thread_param(ag_thread* th) {
-	uint64_t r = *th->read_pos;
-	if (++th->read_pos == th->queue_end)
-		th->read_pos = th->queue_start;
+void ag_resize_queue(ag_queue* q, size_t space_needed) {
+	size_t free_space = q->read_pos > q->write_pos
+		? q->write_pos - q->read_pos
+		: (q->end - q->start) - (q->write_pos - q->read_pos);
+	if (free_space < space_needed) {
+		uint64_t new_size = (q->end - q->start) * 2 + space_needed;
+		uint64_t* new_buf = AG_ALLOC(sizeof(uint64_t) * new_size);
+		if (!new_buf)
+			exit(-42);
+		if (q->read_pos > q->write_pos) {
+			size_t r_size = q->end - q->read_pos;
+			size_t w_size = q->write_pos - q->start;
+			memcpy(new_buf + new_size - r_size, q->read_pos, sizeof(uint64_t) * (r_size));
+			memcpy(new_buf, q->start, sizeof(uint64_t) * (w_size));
+			AG_FREE(q->start);
+			q->read_pos = new_buf + new_size - r_size;
+			q->write_pos = new_buf + w_size;
+		} else {
+			size_t size = q->write_pos - q->read_pos;
+			memcpy(new_buf, q->read_pos, sizeof(uint64_t) * size);
+			AG_FREE(q->start);
+			q->read_pos = new_buf;
+			q->write_pos = new_buf + size;
+		}
+		q->start = new_buf;
+		q->end = new_buf + new_size;
+	}
+}
+
+uint64_t ag_read_queue(ag_queue* q) {
+	uint64_t r = *q->read_pos;
+	if (++q->read_pos == q->end)
+		q->read_pos = q->start;
 	return r;
 }
 
-void ag_unlock_thread_queue(ag_thread* th) {
-	mtx_unlock(&th->mutex);
+void ag_write_queue(ag_queue* q, uint64_t param) {
+	*q->write_pos = param;
+	if (++q->write_pos == q->end)
+		q->write_pos = q->start;
 }
 
-bool ag_fn_sys_postTimer(int64_t at, AgWeak* receiver, ag_fn fn) {
-	ag_thread* th = receiver->thread;
-	if (!th)
-		return false;
-	th->timer_ms = at;
-	th->timer_proc = fn;
-	th->timer_proc_param = receiver;
-	ag_finalize_post_message(th);
-	return true;
+uint64_t ag_get_thread_param(ag_thread* th) {  // for trampolines
+	return ag_read_queue(&th->in);
+}
+
+void ag_unlock_thread_queue(ag_thread* th) { // for trampolines
+	mtx_unlock(&th->mutex);
 }
 
 static ag_thread* ag_lock_thread(AgWeak* receiver) {
@@ -1002,33 +1040,20 @@ static ag_thread* ag_lock_thread(AgWeak* receiver) {
 	return th;
 }
 
-void ag_resize_thread_queue(ag_thread* th, size_t space_needed) {
-	size_t free_space = th->read_pos > th->write_pos
-		? th->write_pos - th->read_pos
-		: (th->queue_end - th->queue_start) - (th->write_pos - th->read_pos);
-	if (free_space < space_needed) {
-		uint64_t new_size = (th->queue_end - th->queue_start) * 2 + space_needed;
-		uint64_t* new_buf = AG_ALLOC(sizeof(uint64_t) * new_size);
-		if (!new_buf)
-			exit(-42);
-		if (th->read_pos > th->write_pos) {
-			size_t r_size = th->queue_end - th->read_pos;
-			size_t w_size = th->write_pos - th->queue_start;
-			memcpy(new_buf + new_size - r_size, th->read_pos, sizeof(uint64_t) * (r_size));
-			memcpy(new_buf, th->queue_start, sizeof(uint64_t) * (w_size));
-			AG_FREE(th->queue_start);
-			th->read_pos = new_buf + new_size - r_size;
-			th->write_pos = new_buf + w_size;
-		} else {
-			size_t size = th->write_pos - th->read_pos;
-			memcpy(new_buf, th->read_pos, sizeof(uint64_t) * size);
-			AG_FREE(th->queue_start);
-			th->read_pos = new_buf;
-			th->write_pos = new_buf + size;
-		}
-		th->queue_start = new_buf;
-		th->queue_end = new_buf + new_size;
-	}
+void ag_unlock_and_notify_thread(ag_thread* th) {
+	mtx_unlock(&th->mutex);
+	cnd_broadcast(&th->is_not_empty);
+}
+
+bool ag_fn_sys_postTimer(int64_t at, AgWeak* receiver, ag_fn fn) {
+	ag_thread* th = ag_lock_thread(receiver);
+	if (!th)
+		return false;
+	th->timer_ms = at;
+	th->timer_proc = fn;
+	th->timer_proc_param = receiver;
+	ag_unlock_and_notify_thread(th);
+	return true;
 }
 
 // returns mtx-locked thread or NULL if receiver's thread is dead
@@ -1037,22 +1062,33 @@ ag_thread* ag_prepare_post_message(AgWeak* receiver, ag_fn fn, ag_trampoline tra
 	ag_thread* th = ag_lock_thread(receiver);
 	if (!th)
 		return NULL;
-	ag_resize_thread_queue(
-		th,
-		params_count + 3);  // params + trampoline + entry_point + receiver_weak
+	if (!ag_current_thread) {
+		mtx_unlock(&th->mutex);
+		return NULL; // todo add support for non-ag threads
+	}
+	// no need to lock out-queue thread b/c it's our thread
+	ag_queue* q = &ag_current_thread->out;
+	ag_resize_queue(
+		q,
+		params_count + 4);  // params_count + params + trampoline + entry_point + receiver_weak
 	ag_put_thread_param(th, (uint64_t) tramp);
 	ag_put_thread_param(th, (uint64_t) receiver); // if weak posted to another thread, it's already mt-marked, no need to mark it here
 	ag_put_thread_param(th, (uint64_t) fn);
+	ag_put_thread_param(th, (uint64_t) params_count);
 	return th;
 }
 
 void ag_put_thread_param(ag_thread* th, uint64_t param) {
-	*th->write_pos = param;
-	if (++th->write_pos == th->queue_end)
-		th->write_pos = th->queue_start;
+	if (th)
+		ag_write_queue(&ag_current_thread->out, param);
 }
 
-inline void ag_bound_weak_to_thread(AgWeak* w) {
+void ag_finalize_post_message(ag_thread* th) {
+	if (th)
+		mtx_unlock(&th->mutex);
+}
+
+inline void ag_make_weak_mt(AgWeak* w) {
 	if (ag_not_null(w) && (w->wb_ctr_mt & AG_CTR_MT) == 0) {
 		w->wb_ctr_mt |= AG_CTR_MT;  //previously this weak belonged only to this thread, so no atomic op here
 	}
@@ -1087,13 +1123,13 @@ inline void ag_bound_own_to_thread(AgObject* ptr, ag_thread* th) {
 
 void ag_put_thread_param_weak_ptr(ag_thread* th, AgWeak* param) {
 	if (ag_current_thread != th)
-		ag_bound_weak_to_thread(param);
+		ag_make_weak_mt(param);
 	ag_put_thread_param(th, (uint64_t)param);
 }
 
 void ag_bound_field_to_thread(void* field, int type, void* ctx) {
 	if (type == AG_VISIT_WEAK) {
-		ag_bound_weak_to_thread(*(AgWeak**)field);
+		ag_make_weak_mt(*(AgWeak**)field);
 	} else if (type == AG_VISIT_OWN){
 		ag_bound_own_to_thread(*(AgObject**)field, (ag_thread*)ctx);
 	} else if (type == AG_VISIT_STRING_BUF) {
@@ -1108,17 +1144,12 @@ void ag_put_thread_param_own_ptr(ag_thread* th, AgObject* param) {
 	ag_put_thread_param(th, (uint64_t)param);
 }
 
-void ag_finalize_post_message(ag_thread* th) {
-	mtx_unlock(&th->mutex);
-	cnd_signal(&th->is_not_empty);
-}
-
 void ag_init_retain_buffer() {
 	if (ag_retain_buffer)
 		return;
 	ag_retain_buffer = AG_ALLOC(sizeof(intptr_t) * AG_RETAIN_BUFFER_SIZE);
 	ag_retain_pos = ag_retain_buffer;
-	ag_release_pos = ag_retain_buffer;
+	ag_release_pos = ag_retain_buffer + AG_RETAIN_BUFFER_SIZE;
 }
 
 int ag_thread_proc(ag_thread* th) {
@@ -1126,8 +1157,8 @@ int ag_thread_proc(ag_thread* th) {
 	ag_init_retain_buffer();
 	struct timespec now;
 	mtx_lock(&th->mutex);
-	while (th->root) {
-		if (th->read_pos != th->write_pos) {
+	for (;;) {
+		if (th->in.read_pos != th->in.write_pos) {
 			uint64_t tramp = ag_get_thread_param(th);
 			if (!tramp) {
 				mtx_unlock(&th->mutex);
@@ -1156,16 +1187,48 @@ int ag_thread_proc(ag_thread* th) {
 				ag_release_pin(timer_object);
 				mtx_lock(&th->mutex);
 			}
-		} else if (th->timer_ms) {
-			struct timespec timeout;
-			timeout.tv_sec = th->timer_ms / 1000;
-			timeout.tv_nsec = th->timer_ms % 1000 * 1000000;
-			cnd_timedwait(&th->is_not_empty, &th->mutex, &timeout);
+		} else if (th->out.read_pos != th->out.write_pos) {
+			if (ag_retain_buffer != ag_retain_pos || ag_release_pos != ag_retain_buffer + AG_RETAIN_BUFFER_SIZE)
+				ag_flush_retain_release();
+			mtx_unlock(&th->mutex);
+			ag_queue* out = &th->out;
+			while (out->read_pos != out->write_pos) {
+				uint64_t tramp = ag_read_queue(out);
+				uint64_t recv = ag_read_queue(out);
+				uint64_t fn = ag_read_queue(out);
+				uint64_t count = ag_read_queue(out);
+				ag_thread* out_th = ag_lock_thread((AgWeak*)recv);
+				if (!out_th) {
+					out_th = th; // send to myself to dispose
+					mtx_lock(&th->mutex);
+				}
+				ag_queue* q = &out_th->in;
+				ag_resize_queue(
+					q,
+					count + 3);  // trampoline + entry_point + receiver_weak + params
+				ag_write_queue(q, (uint64_t)tramp);
+				ag_write_queue(q, recv);
+				ag_write_queue(q, fn);
+				for (; count; --count)
+					ag_write_queue(q, ag_read_queue(out));
+				ag_unlock_and_notify_thread(out_th);
+			}
+			mtx_lock(&th->mutex);
+		} else if (th->root) {
+			if (th->timer_ms) {
+				struct timespec timeout;
+				timeout.tv_sec = th->timer_ms / 1000;
+				timeout.tv_nsec = th->timer_ms % 1000 * 1000000;
+				cnd_timedwait(&th->is_not_empty, &th->mutex, &timeout);
+			} else {
+				cnd_wait(&th->is_not_empty, &th->mutex);
+			}
 		} else {
-			cnd_wait(&th->is_not_empty, &th->mutex);
+			break;
 		}
 	}
 	mtx_unlock(&th->mutex);
+	ag_flush_retain_release();
 	return 0;
 }
 
@@ -1176,14 +1239,17 @@ int ag_handle_main_thread() {
 	return 0;
 }
 
-AgObject* ag_m_sys_Thread_start(AgThread* th, AgObject* root) {
+AgThread* ag_m_sys_Thread_start(AgThread* th, AgObject* root) {
 	ag_thread* t = NULL;
-	ag_init_retain_buffer();
-	// TODO: protect `ag_alloc_threads_left` with mutex
+	if (!ag_retain_buffer) { // it's first thread creation
+		ag_init_retain_buffer();
+		mtx_init(&ag_retain_release_mutex, mtx_plain);
+		mtx_init(&ag_threads_mutex, mtx_plain);
+	}
+	mtx_lock(&ag_threads_mutex);
 	if (ag_thread_free) {
 		t = ag_thread_free;
-		ag_thread_free = (ag_thread*)ag_thread_free->write_pos;
-		t->write_pos = t->read_pos = t->queue_start;
+		ag_thread_free = (ag_thread*)ag_thread_free->timer_proc_param;
 	} else {
 		if (!ag_alloc_threads_left) {
 			ag_alloc_threads_left = 16;
@@ -1193,8 +1259,9 @@ AgObject* ag_m_sys_Thread_start(AgThread* th, AgObject* root) {
 		}
 		t = ag_alloc_thread++;
 		ag_alloc_threads_left--;
-		ag_init_thread_queues(t);
+		ag_init_thread(t);
 	}
+	mtx_unlock(&ag_threads_mutex);
 	// TODO: make root object marker value for parent ptr.
 	t->root = ag_retain_pin(root); // ok to retain on the crating thread before thrd_create
 	th->thread = t;
@@ -1216,12 +1283,12 @@ void ag_dtor_sys_Thread(AgThread* ptr) {
 	if (ptr->thread) {
 		ag_thread* th = ptr->thread;
 		mtx_lock(&th->mutex);
-		ag_resize_thread_queue(th, 1);
-		ag_put_thread_param(th, 0);
-		ag_finalize_post_message(th);
+		ag_resize_queue(&th->in, 1);
+		ag_write_queue(&th->in, 0);
+		ag_unlock_and_notify_thread(th);
 		int unused_result;
 		thrd_join(th->thread, &unused_result);
-		th->write_pos = (int64_t*) ag_thread_free;
+		th->timer_proc_param = (AgWeak*) ag_thread_free;
 		ag_thread_free = th;
 	}
 }
@@ -1230,3 +1297,7 @@ void ag_visit_sys_Thread(
 	void(*visitor)(void*, int, void*),
 	void* ctx)
 {}
+
+void ag_init() {
+	ag_current_thread = &ag_main_thread;
+}

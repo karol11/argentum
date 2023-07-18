@@ -83,6 +83,7 @@ typedef struct {
 bool ag_leak_detector_ok();
 uintptr_t ag_max_mem();
 
+void ag_init();
 //
 // AgObject support
 //
@@ -185,7 +186,7 @@ void      ag_fn_sys_log           (AgString* s);
 void      ag_copy_sys_Thread      (AgThread* dst, AgThread* src);
 void      ag_dtor_sys_Thread      (AgThread* ptr);
 void      ag_visit_sys_Thread     (AgThread* ptr, void(*visitor)(void*, int, void*), void* ctx);
-AgObject* ag_m_sys_Thread_start   (AgThread* th, AgObject* root);
+AgThread* ag_m_sys_Thread_start   (AgThread* th, AgObject* root);
 AgWeak*   ag_m_sys_Thread_root    (AgThread* th);
 
 //
@@ -213,7 +214,7 @@ ag_thread* ag_prepare_post_message      (AgWeak* receiver, ag_fn fn, ag_trampoli
 void       ag_put_thread_param          (ag_thread* th, uint64_t param);
 void       ag_put_thread_param_weak_ptr (ag_thread* th, AgWeak* param);
 void       ag_put_thread_param_own_ptr  (ag_thread* th, AgObject* param);
-void       ag_finalize_post_message (ag_thread* th);
+void       ag_finalize_post_message     (ag_thread* th);
 
 //trampoline api
 uint64_t ag_get_thread_param    (ag_thread* th);

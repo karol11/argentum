@@ -116,6 +116,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 	ast.mk_method(mut::MUTATING, thread, "root", FN(ag_m_sys_Thread_root), make_ptr_result(new ast::MkWeakOp, ast.object), {});
 
 	ast.platform_exports.insert({
+		{ "ag_init", FN(ag_init) },
 		{ "ag_copy", FN(ag_copy) },
 		{ "ag_copy_object_field", FN(ag_copy_object_field) },
 		{ "ag_copy_weak_field", FN(ag_copy_weak_field) },
