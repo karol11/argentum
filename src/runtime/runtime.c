@@ -203,7 +203,7 @@ typedef struct ag_thread_tag {
 ag_thread*  ag_alloc_thread = NULL;    // next free ag_thread in page
 uint64_t    ag_alloc_threads_left = 0; // number of free ag_threads left in page
 ag_thread*  ag_thread_free = NULL;     // head of freed ag_thread chain
-mtx_t ag_threads_mutex;
+mtx_t       ag_threads_mutex;
 
 ag_thread ag_main_thread = { 0 };
 
@@ -1152,6 +1152,11 @@ void ag_init_retain_buffer() {
 	ag_release_pos = ag_retain_buffer + AG_RETAIN_BUFFER_SIZE;
 }
 
+void ag_maybe_flush_retain_release() {
+	if (ag_retain_buffer != ag_retain_pos || ag_release_pos != ag_retain_buffer + AG_RETAIN_BUFFER_SIZE)
+		ag_flush_retain_release();
+}
+
 int ag_thread_proc(ag_thread* th) {
 	ag_current_thread = th;
 	ag_init_retain_buffer();
@@ -1188,8 +1193,7 @@ int ag_thread_proc(ag_thread* th) {
 				mtx_lock(&th->mutex);
 			}
 		} else if (th->out.read_pos != th->out.write_pos) {
-			if (ag_retain_buffer != ag_retain_pos || ag_release_pos != ag_retain_buffer + AG_RETAIN_BUFFER_SIZE)
-				ag_flush_retain_release();
+			ag_maybe_flush_retain_release();
 			mtx_unlock(&th->mutex);
 			ag_queue* out = &th->out;
 			while (out->read_pos != out->write_pos) {
@@ -1228,7 +1232,7 @@ int ag_thread_proc(ag_thread* th) {
 		}
 	}
 	mtx_unlock(&th->mutex);
-	ag_flush_retain_release();
+	ag_maybe_flush_retain_release();
 	return 0;
 }
 
@@ -1241,7 +1245,7 @@ int ag_handle_main_thread() {
 
 AgThread* ag_m_sys_Thread_start(AgThread* th, AgObject* root) {
 	ag_thread* t = NULL;
-	if (!ag_retain_buffer) { // it's first thread creation
+	if (!ag_alloc_thread) { // it's first thread creation
 		ag_init_retain_buffer();
 		mtx_init(&ag_retain_release_mutex, mtx_plain);
 		mtx_init(&ag_threads_mutex, mtx_plain);
