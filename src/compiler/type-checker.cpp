@@ -280,7 +280,7 @@ struct Typer : ast::ActionMatcher {
 	}
 	void on_make_delegate(ast::MakeDelegate& node) override {
 		node.type_ = remove_member_type_params(
-			class_from_action(node.base, true),  // include week
+			class_from_action(node.base),
 			node.method->cls,
 			type_fn(node.method)->type_);
 		if (dom::isa<ast::TpConformRef>(*node.base->type())) {
@@ -412,14 +412,10 @@ struct Typer : ast::ActionMatcher {
 		return cls;
 	}
 	void on_get_field(ast::GetField& node) override {
-		auto base_cls = class_from_action(node.base, true);  // include week
+		auto base_cls = class_from_action(node.base);
 		if (!node.field) {
 			if (!base_cls->get_implementation()->handle_member(node, ast::LongName{ node.field_name, node.field_module },
-				[&](auto field) {
-					node.field = field;
-					if (dom::isa<ast::TpWeak>(*node.base->type()))
-						node.error("accessing field ", ast::LongName{ node.field_name, node.field_module }, " requires non-week ptr");
-				},
+				[&](auto field) { node.field = field; },
 				[&](auto method) {
 					auto r = ast::make_at_location<ast::MakeDelegate>(node).owned();
 					r->base = move(node.base);
