@@ -640,10 +640,8 @@ struct Generator : ast::ActionScanner {
 			builder->CreateCall(fn_retain_own, { cast_to(ptr, ptr_type), maybe_own_parent });
 		} else if (isa<ast::TpDelegate>(*type)) {
 			builder->CreateCall(fn_retain_weak, {
-				builder->CreateStructGEP(
-					obj_struct,
-					builder->CreateExtractValue(cast_to(ptr, ptr_type), { 0 }),
-					1) });
+				builder->CreateExtractValue(ptr, { 0 }),
+			});
 		} else if (isa<ast::TpWeak>(*type) || isa<ast::TpConformWeak>(*type) || isa<ast::TpFrozenWeak>(*type)) {
 			builder->CreateCall(fn_retain_weak, { cast_to(ptr, ptr_type) });
 		} else if (isa<ast::TpShared>(*type) || isa<ast::TpConformRef>(*type)) {
@@ -1495,7 +1493,7 @@ struct Generator : ast::ActionScanner {
 	}
 
 	void on_async_call(ast::AsyncCall& node) {
-		Val callee = comp_to_persistent(node.callee);
+		Val callee = make_retained_or_non_ptr(compile(node.callee));
 		auto calle_type = dom::strict_cast<ast::TpDelegate>(callee.type);
 		size_t params_size = 0;
 		auto tramp = build_trampoline(calle_type, params_size);
@@ -1559,7 +1557,7 @@ struct Generator : ast::ActionScanner {
 				void on_conform_ref(ast::TpConformRef& type) override { handle_own(); }
 				void on_conform_weak(ast::TpConformWeak& type) override { handle_weak(); }
 			};
-			TypeSerializer ts(*this, thread_ptr, comp_to_persistent(p).data);
+			TypeSerializer ts(*this, thread_ptr, make_retained_or_non_ptr(compile(p)).data);
 			p->type()->match(ts);
 		}
 		builder->CreateCall(fn_finalize_post_message, { thread_ptr });
