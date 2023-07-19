@@ -1432,13 +1432,18 @@ struct Generator : ast::ActionScanner {
 							second,
 							{ 1 }));
 				}
-				void on_int64(ast::TpInt64& type) override { params.push_back(gen.builder->CreateCall(gen.fn_get_thread_param, { thread })); }
+				void on_int64(ast::TpInt64& type) override {
+					params_size_out++;
+					params.push_back(gen.builder->CreateCall(gen.fn_get_thread_param, { thread })); }
 				void on_double(ast::TpDouble& type) override { handle_64_bit(type); }
 				void on_function(ast::TpFunction& type) override { handle_64_bit(type); }
 				void on_lambda(ast::TpLambda& type) override { handle_pair(type); }
 				void on_delegate(ast::TpDelegate& type) override { handle_pair(type); }
 				void on_cold_lambda(ast::TpColdLambda& type) override {}
-				void on_void(ast::TpVoid& type) override { params.push_back(llvm::UndefValue::get(gen.void_type)); }
+				void on_void(ast::TpVoid& type) override {
+					params_size_out++;
+					params.push_back(llvm::UndefValue::get(gen.void_type));
+				}
 				void on_optional(ast::TpOptional& type) override {
 					if (dom::isa<ast::TpInt64>(*type.wrapped)) {
 						handle_pair(type);
