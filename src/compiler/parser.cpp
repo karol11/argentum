@@ -375,12 +375,12 @@ struct Parser {
 			return inst;
 		};
 		if (match("&")) {
-			if (match("*")) {
+			if (match("-")) {
 				return fill(
 					make<ast::MkWeakOp>(),
 					fill(make<ast::ConformOp>(), parse_pointer()));
 			}
-			if (match("+")) {
+			if (match("*")) {
 				return fill(
 					make<ast::MkWeakOp>(),
 					fill(make<ast::FreezeOp>(), parse_pointer()));
@@ -394,7 +394,7 @@ struct Parser {
 			}
 			return fill(make<ast::MkWeakOp>(), parse_pointer());
 		}
-		if (match("+")) {
+		if (match("-")) {
 			return fill(make<ast::ConformOp>(), parse_pointer());
 		}
 		if (match("*")) {
