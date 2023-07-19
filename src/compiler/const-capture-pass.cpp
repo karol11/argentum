@@ -61,6 +61,8 @@ struct ConstCapturePass : ast::ActionScanner {
 	}
 
 	void fix_var_depth(pin<ast::Var> var) {
+		if (var->is_const)
+			return;
 		if (var->lexical_depth != lambda_levels.size() - 1) {
 			if (!var->captured) {
 				var->captured = true;
