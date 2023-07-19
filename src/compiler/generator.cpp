@@ -2963,7 +2963,7 @@ int64_t execute(llvm::orc::ThreadSafeModule& module, ast::Ast& ast, bool dump_ir
 		runtime_exports.insert({ es.intern(i.first), { llvm::pointerToJITTargetAddress(i.second), llvm::JITSymbolFlags::Callable} });
 	check(lib->define(llvm::orc::absoluteSymbols(move(runtime_exports))));
 	check(jit->addIRModule(std::move(module)));
-	auto f_main = check(jit->lookup("ag_main"));
+	auto f_main = check(jit->lookup("main"));
 	auto main_addr = f_main.toPtr<void()>();
 	for (auto& m : ast.modules) {
 		for (auto& test : m.second->tests) {
