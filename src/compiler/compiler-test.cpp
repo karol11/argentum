@@ -858,7 +858,7 @@ TEST(Parser, AsyncInner) {
 
 TEST(Parser, AsyncFfi) {
     execute(R"-(
-        fn callbackInvoker(callback &()void);
+        fn callbackInvoker(callback &());
         class App{
             onCallback() {
                 sys_setMainObject(?sys_Object);
@@ -878,7 +878,7 @@ TEST(Parser, Multithreading) {
         app = App;
         sys_setMainObject(app);
         sys_log("Started on main thread\n");
-        app.worker.root().&workerCode(onEnd &()void){
+        app.worker.root().&workerCode(onEnd &()){
             sys_log("Hello from the worker thread\n");
             onEnd~();
         }~(app.&endEverything(){

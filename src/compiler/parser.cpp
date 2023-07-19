@@ -68,7 +68,7 @@ struct Parser {
 			auto param = make<ast::Var>();
 			fn->names.push_back(param);
 			param->name = expect_id("parameter name");
-			param->initializer = parse_type();
+			param->initializer = parse_non_void_type();
 			if (match(")"))
 				break;
 			expect(",");
@@ -84,21 +84,12 @@ struct Parser {
 			fn->type_expression = get_this;
 			expect("{");
 		} else {
+			fn->type_expression = parse_maybe_void_type();
 			if (match(";")) {
-				fn->type_expression = make<ast::ConstVoid>();
 				fn->is_platform = true;
 				return;
 			}
-			if (match("{")) {
-				fn->type_expression = make<ast::ConstVoid>();
-			} else {
-				fn->type_expression = parse_type();
-				if (match(";")) {
-					fn->is_platform = true;
-					return;
-				}
-				expect("{");
-			}
+			expect("{");
 		}
 		parse_statement_sequence(fn->body);
 		if (as_method && as_method->is_factory) {
@@ -343,8 +334,13 @@ struct Parser {
 		get->var_module = n.module;
 		return get;
 	};
-
-	pin<Action> parse_type() {
+	pin<Action> parse_non_void_type() {
+		auto r = parse_maybe_void_type();
+		if (dom::isa<ast::ConstVoid>(*r))
+			error("Expected type name");
+		return r;
+	}
+	pin<Action> parse_maybe_void_type() {
 		if (match("~"))
 			return parse_expression();
 		if (match("int"))
@@ -353,19 +349,17 @@ struct Parser {
 			return mk_const<ast::ConstDouble>(0.0);
 		if (match("bool"))
 			return make<ast::ConstBool>();
-		if (match("void"))
-			return make<ast::ConstVoid>();
 		if (match("?")) {
 			auto r = make<ast::If>();
 			r->p[0] = make<ast::ConstBool>();
-			r->p[1] = parse_type();
+			r->p[1] = parse_non_void_type();  // use bool for ?void
 			return r;
 		}
 		auto parse_params = [&](pin<ast::MkLambda> fn) {
 			if (!match(")")) {
 				for (;;) {
 					fn->names.push_back(make<ast::Var>());
-					fn->names.back()->initializer = parse_type();
+					fn->names.back()->initializer = parse_non_void_type();
 					if (match(")"))
 						break;
 					expect(",");
@@ -395,7 +389,7 @@ struct Parser {
 				auto fn = make<ast::ImmediateDelegate>();
 				ast->add_this_param(*fn, nullptr);  // type to be set at the type resolution pass
 				parse_params(fn);
-				fn->type_expression = parse_type();
+				fn->type_expression = parse_maybe_void_type();
 				return fn;
 			}
 			return fill(make<ast::MkWeakOp>(), parse_pointer());
@@ -413,18 +407,18 @@ struct Parser {
 			expect("(");
 			auto fn = make<ast::Function>();
 			parse_params(fn);
-			fn->type_expression = parse_type();
+			fn->type_expression = parse_maybe_void_type();
 			return fn;
 		}
 		if (match("(")) {
 			auto fn = parse_params(make<ast::MkLambda>());
-			fn->body.push_back(parse_type());
+			fn->body.push_back(parse_maybe_void_type());
 			return fn;
 		}
 		if (is_id_head(*cur)) {
 			return fill(make<ast::RefOp>(), parse_pointer());
 		}
-		error("Expected type name");
+		return make<ast::ConstVoid>();
 	}
 
 	pin<Action> parse_statement() {
@@ -735,8 +729,6 @@ struct Parser {
 			r->value = matched_true;
 			return r;
 		}
-		if (match("void"))
-			return make<ast::ConstVoid>();
 		if (match("int"))
 			return fill(make<ast::ToIntOp>(), parse_expression_in_parethesis());
 		if (match("double"))
