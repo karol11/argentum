@@ -225,7 +225,7 @@ struct Generator : ast::ActionScanner {
 	std::default_random_engine random_generator;
 	std::uniform_int_distribution<uint64_t> uniform_uint64_distribution;
 	unordered_set<uint64_t> assigned_interface_ids;
-	std::unordered_map<own<ast::TpDelegate>, llvm::Function*> trampolines;
+	std::unordered_map<own<ast::TpDelegate>, pair<llvm::Function*, size_t>> trampolines;
 	llvm::FunctionType* dispatcher_fn_type = nullptr;
 	llvm::Constant* empty_mtable = nullptr; // void_ptr[1] = { null }
 	unordered_map<weak<ast::MkLambda>, llvm::Function*> compiled_functions;
@@ -1384,21 +1384,23 @@ struct Generator : ast::ActionScanner {
 
 	llvm::Function* build_trampoline(pin<ast::TpDelegate> type, size_t& params_size_out) {
 		auto& tramp = trampolines[type];
-		if (tramp)
-			return tramp;
-		tramp = llvm::Function::Create(
+		if (tramp.first) {
+			params_size_out = tramp.second;
+			return tramp.first;
+		}
+		tramp.first = llvm::Function::Create(
 			trampoline_fn_type,
 			llvm::Function::InternalLinkage,
 			ast::format_str("ag_tr_", (void*)type),
 			module.get());
 		llvm::Function* prev = current_function;
-		current_function = tramp;
+		current_function = tramp.first;
 		auto prev_builder = builder;
 		llvm::IRBuilder fn_bulder(llvm::BasicBlock::Create(*context, "", current_function));
 		this->builder = &fn_bulder;
-		auto self = tramp->arg_begin();
-		auto entry_point = tramp->arg_begin() + 1;
-		auto thread = tramp->arg_begin() + 2;
+		auto self = tramp.first->arg_begin();
+		auto entry_point = tramp.first->arg_begin() + 1;
+		auto thread = tramp.first->arg_begin() + 2;
 		vector<llvm::Value*> params{ self };
 		for (auto pti = type->params.begin(), ptt = type->params.end() - 1; pti != ptt; ++pti) {
 			struct TypeDeserializer : ast::TypeMatcher {
@@ -1493,7 +1495,8 @@ struct Generator : ast::ActionScanner {
 		builder->CreateRetVoid();
 		swap(prev, current_function);
 		builder = prev_builder;
-		return tramp;
+		tramp.second = params_size_out;
+		return tramp.first;
 	}
 
 	void on_async_call(ast::AsyncCall& node) {
