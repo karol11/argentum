@@ -963,7 +963,7 @@ struct Generator : ast::ActionScanner {
 				auto capture_layout = layout.getStructLayout(capture_struct);
 				vector<llvm::Metadata*> di_captures;
 				size_t i = 0;
-				if (current_capture_di_type) {
+				if (has_parent_capture_ptr) {
 					di_captures.push_back(di_builder->createMemberType(
 						current_di_scope,
 						"parent",
