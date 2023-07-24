@@ -35,9 +35,9 @@ They can work in a loop forever, no GC pauses, no leaks, no memory corruptions.
 #### Fizz-buzz
 
 ```Rust
-using sys { String; log; }
-using string { Builder; }
-using utils{ forRange; }
+using sys { String, log }
+using string { Builder }
+using utils{ forRange }
 
 b = Builder;
 forRange(1, 101, (i){
@@ -51,26 +51,26 @@ forRange(1, 101, (i){
 #### Find loop in a graph
 
 ```Rust
-using sys { WeakArray; Array; String; log; }
-using utils { existsInRange; }
+using sys { WeakArray, Array, String, log }
+using utils { existsInRange }
 using string;
 using array;
 
 class Node {
-    connections = WeakArray;
+    connections = WeakArray(Node);
     isVisited = false;
     isActive = false;
     hasLoop() bool {
         isActive || (!isVisited && {
             isVisited := isActive := true;
-            r = connections.contain((c){ c~Node && _.hasLoop() });
+            r = connections.contain((c){ c.hasLoop() });
             isActive := false;
             r
         })
     }
 }
 class Graph {
-    nodes = Array;
+    nodes = Array(Node);
     fromStr(String in) this {
         byNames = WeakArray.resize('z' + 1);
         getOrCreateNode = () {
@@ -80,12 +80,12 @@ class Graph {
         loop {
             from = getOrCreateNode();
             in.get();
-            from ? _~Node ? _.connections.append(getOrCreateNode());
+            from.connections.append(getOrCreateNode());
             in.get() == 0
         }
     }    
     hasLoop() bool {
-        nodes.contain((n){ n~Node && _.hasLoop() })
+        nodes.contain((n){ n.hasLoop() })
     }
 }
 log(Graph.fromStr("a>b b>c c>d e>f b>e e>a c>c").hasLoop()
