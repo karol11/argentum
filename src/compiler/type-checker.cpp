@@ -21,12 +21,14 @@ auto type_in_progress = own<ast::TpInt64>::make();
 struct Typer : ast::ActionMatcher {
 	pin<ast::Ast> ast;
 	pin<Type> tp_bool;
+	pin<Type> tp_no_ret;
 	pin<ast::Class> this_class;
 
 	Typer(ltm::pin<ast::Ast> ast)
 		: ast(ast)
 	{
 		tp_bool = ast->tp_optional(ast->tp_void());
+		tp_no_ret = ast->tp_no_ret();
 	}
 
 	void on_int_op(ast::BinaryOp& node, const function<string()>& context) {
@@ -85,6 +87,12 @@ struct Typer : ast::ActionMatcher {
 			}
 		}
 		node.type_ = node.body.back()->type();
+		for (auto& b : node.breaks)
+			expect_type(b->result, node.type_, [&] { return ast::format_str("ret vs natural result"); });
+	}
+	void on_break(ast::Break& node) override {
+		node.type_ = ast->tp_no_ret();
+		find_type(node.result);
 	}
 	void check_fn_proto(ast::Action& node, ast::TpFunction& fn, vector<own<ast::Action>>& actual_params, ast::Action& callee) {
 		if (fn.params.size() - 1 != actual_params.size())
@@ -209,6 +217,7 @@ struct Typer : ast::ActionMatcher {
 			void on_delegate(ast::TpDelegate& type) override { error(type); }
 			void on_cold_lambda(ast::TpColdLambda& type) override { error(type); }
 			void on_void(ast::TpVoid& type) override { result = "Void"; }
+			void on_no_ret(ast::TpNoRet& type) override { error(type); }
 			void on_optional(ast::TpOptional& type) override {
 				ast.get_wrapped(&type)->match(*this);
 				result = ast::format_str("Opt", result);
@@ -503,6 +512,7 @@ struct Typer : ast::ActionMatcher {
 					type.resolved->match(*this);
 			}
 			void on_void(ast::TpVoid& type) override { r = &type; }
+			void on_no_ret(ast::TpNoRet& type) override { r = &type; }
 			void on_optional(ast::TpOptional& type) override { r = ast.tp_optional(remove_params(ast.get_wrapped(&type), ast, ctx)); }
 			void on_own(ast::TpOwn& type) override { r = ast.get_own(ast.resolve_params(type.target, ctx)); }
 			void on_ref(ast::TpRef& type) override { r = ast.get_ref(ast.resolve_params(type.target, ctx)); }
@@ -713,6 +723,8 @@ struct Typer : ast::ActionMatcher {
 		if (expected_type == ast->tp_void())
 			return;
 		if (actual_type == expected_type)
+			return;
+		if (actual_type == tp_no_ret || expected_type == tp_no_ret)
 			return;
 		if (auto exp_as_ref = dom::strict_cast<ast::TpRef>(expected_type)) {
 			if (dom::isa<ast::TpShared>(*actual_type) || dom::isa<ast::TpConformRef>(*actual_type))
