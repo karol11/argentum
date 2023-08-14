@@ -63,6 +63,7 @@ struct Parser {
 	{}
 
 	void parse_fn_def(pin<ast::Function> fn) {
+		fn->break_name = fn->name;
 		expect("(");
 		while (!match(")")) {
 			auto param = make<ast::Var>();
@@ -431,6 +432,9 @@ struct Parser {
 				auto var = make_at_location<ast::Var>(*r);
 				var->name = as_get->var_name;
 				var->initializer = parse_expression();
+				if (auto as_block = dom::strict_cast<ast::Block>(var->initializer)) {
+					as_block->break_name = var->name;
+				}
 				block->names.push_back(var);
 				expect(";");
 				parse_statement_sequence(block->body);
@@ -702,6 +706,14 @@ struct Parser {
 			return fill(make<ast::XorOp>(),
 				parse_unar(),
 				mk_const<ast::ConstInt64>(-1));
+		if (match("^")) {
+			auto r = make<ast::Break>();
+			r->block_name = expect_id("block to break");
+			if (match("()"))
+				r->result = make<ast::ConstVoid>();
+			else
+				r->result = parse_expression();
+		}
 		if (auto n = match_num()) {
 			if (auto v = get_if<uint64_t>(&*n))
 				return mk_const<ast::ConstInt64>(*v);
@@ -710,6 +722,8 @@ struct Parser {
 		}
 		if (match("{")) {
 			auto r = make<ast::Block>();
+			if (match("="))
+				r->break_name = expect_id("block name");
 			parse_statement_sequence(r->body);
 			expect("}");
 			return r;
