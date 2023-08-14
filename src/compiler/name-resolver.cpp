@@ -26,6 +26,7 @@ struct NameResolver : ast::ActionScanner {
 	pin<ast::Ast> ast;
 	unordered_set<pin<ast::Class>> ordered_classes;
 	unordered_set<pin<ast::Class>> active_base_list;
+	unordered_map<string, pin<ast::Block>> blocks;
 
 	NameResolver(pin<ast::Ast> ast, pin<dom::Dom> dom)
 		: dom(dom)
@@ -213,20 +214,26 @@ struct NameResolver : ast::ActionScanner {
 				fix(p->initializer);
 		}
 		fix(fn->type_expression);
-		fix_with_params(fn->names, fn->body);
+		fix_with_params(fn);
 		this_var = nullptr;
 	}
-	void fix_with_params(const vector<own<ast::Var>>& params, vector<own<ast::Action>>& body) {
+	void fix_with_params(pin<ast::Block> block) {
+		weak<ast::Block> prev_named;
+		if (!block->break_name.empty()) {
+			auto& n = blocks[block->break_name];
+			prev_named = n;
+			n = block;
+		}
 		vector<pair<string, pin<ast::Var>>> prev;
-		prev.reserve(params.size());
-		for (auto& p : params) {
+		prev.reserve(block->names.size());
+		for (auto& p : block->names) {
 			if (p->initializer)
 				fix(p->initializer);
 			auto& dst = locals[p->name];
 			prev.push_back({ p->name, dst });
 			dst = p;
 		}
-		for (auto& b : body)
+		for (auto& b : block->body)
 			fix(b);
 		for (auto& p : prev) {
 			if (p.second)
@@ -234,6 +241,10 @@ struct NameResolver : ast::ActionScanner {
 			else
 				locals.erase(p.first);
 		}
+		if (prev_named)
+			blocks[block->break_name] = prev_named;
+		else
+			blocks.erase(block->break_name);
 	}
 
 	template<typename F, typename M, typename C, typename FN>
@@ -353,20 +364,29 @@ struct NameResolver : ast::ActionScanner {
 		ast::ActionScanner::on_call(node);
 	}
 	void on_block(ast::Block& node) override {
-		fix_with_params(node.names, node.body);
-		if (node.body.size() == 1) {
+		fix_with_params(&node);
+		if (node.body.size() == 1 && node.breaks.empty()) {
 			if (node.names.empty())
 				*fix_result = move(node.body[0]);
 			else if (auto child_as_block = dom::strict_cast<ast::Block>(node.body[0])) {
-				for (auto& l : child_as_block->names)
-					node.names.push_back(move(l));
-				node.body = move(child_as_block->body);
+				if (child_as_block->breaks.empty()) {
+					for (auto& l : child_as_block->names)
+						node.names.push_back(move(l));
+					node.body = move(child_as_block->body);
+				}
 			}
 		}
 	}
-
+	void on_break(ast::Break& node) override {
+		auto n = blocks.find(node.block_name);
+		if (n == blocks.end()) {
+			node.error("unresolved block name ", node.block_name);
+		}
+		n->second->breaks.push_back(&node);
+		fix(node.result);
+	}
 	void on_mk_lambda(ast::MkLambda& node) override {
-		fix_with_params(node.names, node.body);
+		fix_with_params(&node);
 	}
 
 	void on_immediate_delegate(ast::ImmediateDelegate& node) override {
@@ -377,10 +397,13 @@ struct NameResolver : ast::ActionScanner {
 	void fix_immediate_delegate(ast::ImmediateDelegate& node, pin<ast::Class> cls) {
 		unordered_map<string, pin<ast::Var>> prev_locals;
 		swap(prev_locals, locals);
+		unordered_map<string, pin<ast::Block>> prev_blocks;
+		swap(prev_blocks, blocks);
 		this_var = node.names.front();
 		this_class = cls;
 		fix_fn(&node);
 		locals = move(prev_locals);
+		blocks = move(prev_blocks);
 	}
 };
 
