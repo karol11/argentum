@@ -157,6 +157,7 @@ struct Generator : ast::ActionScanner {
 	unordered_map<pin<ast::AbstractClass>, ClassInfo> classes;  // for classes and class instances
 	unordered_map<pin<ast::Method>, MethodInfo> methods;
 	unordered_map<pin<ast::Function>, llvm::Function*> functions;
+	unordered_map<pin<ast::Break>, pair<llvm::BasicBlock*, Val>> active_breaks;
 	
 	llvm::DICompileUnit* di_cu = nullptr;
 	unordered_map<string, llvm::DIFile*> di_files;
@@ -718,7 +719,7 @@ struct Generator : ast::ActionScanner {
 			: val;
 	}
 
-	void dispose_val(Val&& val, bool is_local = true) {
+	void dispose_val_in_current_bb(Val& val, bool is_local = true) {
 		if (auto as_retained = get_if<Val::Retained>(&val.lifetime)) {
 			build_release(val.data, val.type, is_local);
 		} else if (auto as_rfield = get_if<Val::RField>(&val.lifetime)) {
@@ -734,7 +735,17 @@ struct Generator : ast::ActionScanner {
 				}
 			}
 			builder->SetInsertPoint(common_bb);
-			val.optional_br = nullptr;
+		}
+	}
+	void dispose_val(Val& val, bool is_local = true) {
+		dispose_val_in_current_bb(val, is_local);
+		if (!active_breaks.empty()) {
+			auto cur_bb = builder->GetInsertBlock();
+			for (auto& bb : active_breaks) {
+				builder->SetInsertPoint(bb.second.first);
+				dispose_val_in_current_bb(val, is_local);
+			}
+			builder->SetInsertPoint(cur_bb);
 		}
 	}
 
@@ -1076,27 +1087,47 @@ struct Generator : ast::ActionScanner {
 		}
 		auto fn_result = compile(node.body.back());
 		persist_rfield(fn_result);
-		auto result_as_temp = get_if<Val::Temp>(&fn_result.lifetime); // null if not temp
-		auto make_result_retained = [&](bool actual_retain = true) {
-			if (actual_retain)
-				build_retain(fn_result.data, fn_result.type);
-			fn_result.lifetime = Val::Retained{};
-			result_as_temp = nullptr;
-		};
-		if (result_as_temp && !result_as_temp->var)  // if connected to field
-			make_result_retained();
-		for (auto& p : node.names) {
-			// param\	 |	returned      | non-returned
-			// mutable	 |	nothing       | release
-			// immutable |  retain result | nothing
-			if (result_as_temp && result_as_temp->var == p) {
-				make_result_retained(!p->is_mutable);
-			} else if (p->is_mutable && is_ptr(p->type)) {
-				build_release(remove_indirection(*p, locals[p]), p->type);
+		auto release_params = [&](Val& result) {
+			auto result_as_temp = get_if<Val::Temp>(&result.lifetime); // null if not temp
+			auto make_result_retained = [&](bool actual_retain = true) {
+				if (actual_retain)
+					build_retain(result.data, result.type);
+				result.lifetime = Val::Retained{};
+				result_as_temp = nullptr;
+			};
+			if (result_as_temp && !result_as_temp->var)  // if connected to field
+				make_result_retained();
+			for (auto& p : node.names) {
+				// param\	 |	returned      | non-returned
+				// mutable	 |	nothing       | release
+				// immutable |  retain result | nothing
+				if (result_as_temp && result_as_temp->var == p) {
+					make_result_retained(!p->is_mutable);
+				} else if (p->is_mutable && is_ptr(p->type)) {
+					build_release(remove_indirection(*p, locals[p]), p->type);
+				}
 			}
-		}
-		if (get_if<Val::Temp>(&fn_result.lifetime)) {  // if connected to outer local/param
-			make_result_retained();
+			if (get_if<Val::Temp>(&result.lifetime)) {  // if connected to outer local/param
+				make_result_retained();
+			}
+		};
+		release_params(fn_result);
+		if (!node.breaks.empty()) {
+			auto exit_bb = llvm::BasicBlock::Create(*context, "", current_function);
+			builder->CreateBr(exit_bb);
+			builder->SetInsertPoint(exit_bb);
+			auto phi = builder->CreatePHI(to_llvm_type(*r.type), node.breaks.size() + 1);
+			for (auto& brk : node.breaks) {
+				auto& brk_info = active_breaks[brk.pinned()];
+				builder->SetInsertPoint(brk_info.first);
+				release_params(brk_info.second);
+				builder->CreateBr(exit_bb);
+				phi->addIncoming(brk_info.second.data, brk_info.first);
+				active_breaks.erase(brk);
+			}
+			assert(active_breaks.empty());
+			r.data = phi;
+			builder->SetInsertPoint(exit_bb);
 		}
 		for (auto& c : consts_to_dispose) {
 			if (is_ptr(c.type)) {
@@ -1201,23 +1232,52 @@ struct Generator : ast::ActionScanner {
 		}
 		auto r = compile(node.body.back());
 		persist_rfield(r);
-		auto result_as_temp = get_if<Val::Temp>(&r.lifetime);
-		weak<ast::Var> temp_var = result_as_temp ? result_as_temp->var : nullptr;
-		auto val_iter = to_dispose.begin();
-		for (auto& p : node.names) {
-			if (temp_var == p) { // result is locked by the dying temp ptr.
-				if (!get_if<Val::Retained>(&val_iter->lifetime))
-					build_retain(r.data, p->type);
-				r.type = node.type();  // revert own->pin cohersion
-				r.lifetime = Val::Retained{};
-			} else if (is_ptr(p->type)) {
-				if (p->is_mutable) {
-					build_release(builder->CreateLoad(to_llvm_type(*p->type), val_iter->data), p->type);
-				} else {
-					dispose_val(move(*val_iter));
+		auto dispose_block_params = [&](Val& result) {
+			auto result_as_temp = get_if<Val::Temp>(&result.lifetime);
+			weak<ast::Var> temp_var = result_as_temp ? result_as_temp->var : nullptr;
+			auto val_iter = to_dispose.begin();
+			for (auto& p : node.names) {
+				if (temp_var == p) { // result is locked by the dying temp ptr.
+					if (!get_if<Val::Retained>(&val_iter->lifetime))
+						build_retain(result.data, p->type);
+					result.type = node.type();  // revert own->pin cohersion
+					result.lifetime = Val::Retained{};
+					temp_var = nullptr;
+				} else if (is_ptr(p->type)) {
+					if (p->is_mutable) {
+						build_release(builder->CreateLoad(to_llvm_type(*p->type), val_iter->data), p->type);
+					} else {
+						dispose_val_in_current_bb(*val_iter);
+					}
 				}
+				val_iter++;
 			}
-			val_iter++;
+			return temp_var; // return out-of-block temp-var to which this block result by this branch is bounded
+		};
+		auto result_temp_var = dispose_block_params(r);
+		for (auto& brk : active_breaks) {
+			builder->SetInsertPoint(brk.second.first);
+			auto brk_temp_var = dispose_block_params(brk.second.second);
+			if (brk.first == &node && result_temp_var != brk_temp_var)
+				result_temp_var = nullptr;  // different vars, retain is needed
+		}
+		if (!node.breaks.empty()) {
+			auto exit_bb = llvm::BasicBlock::Create(*context, "", current_function);
+			builder->CreateBr(exit_bb);
+			builder->SetInsertPoint(exit_bb);
+			auto phi = builder->CreatePHI(to_llvm_type(*r.type), node.breaks.size() + 1);
+			for (auto& brk : node.breaks) {
+				auto& brk_info = active_breaks[brk.pinned()];
+				builder->SetInsertPoint(brk_info.first);
+				if (!result_temp_var)
+					brk_info.second = make_retained_or_non_ptr(move(brk_info.second));
+				dispose_block_params(brk_info.second);
+				builder->CreateBr(exit_bb);
+				phi->addIncoming(brk_info.second.data, brk_info.first);
+				active_breaks.erase(brk);
+			}
+			r.data = phi;
+			builder->SetInsertPoint(exit_bb);
 		}
 		current_di_scope = prev_di_scope;
 		return r;
@@ -1225,6 +1285,13 @@ struct Generator : ast::ActionScanner {
 
 	void on_block(ast::Block& node) override {
 		*result = handle_block(node, Val{});
+	}
+	void on_break(ast::Break& node) override {
+		auto r = compile(node.result);
+		persist_rfield(r);
+		auto bb = llvm::BasicBlock::Create(*context, "", current_function);
+		builder->CreateBr(bb);
+		active_breaks.insert({ &node, {bb, move(r)} });
 	}
 	void on_make_delegate(ast::MakeDelegate& node) override {
 		auto base = compile(node.base);
