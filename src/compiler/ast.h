@@ -26,6 +26,7 @@ namespace ast {
 	struct Ast;
 	struct Module;
 	struct Var;
+	struct Block;
 
 	struct LongName {
 		string name;
@@ -132,6 +133,10 @@ struct TpDelegate : TpFunction {
 struct TpVoid : Type {
 	void match(TypeMatcher& matcher) override;
 	DECLARE_DOM_CLASS(TpVoid);
+};
+struct TpNoRet : Type {
+	void match(TypeMatcher& matcher) override;
+	DECLARE_DOM_CLASS(TpNoRet);
 };
 struct TpOptional : Type {
 	own<Type> wrapped;
@@ -275,6 +280,7 @@ struct TypeMatcher {
 	virtual void on_delegate(TpDelegate& type) = 0;
 	virtual void on_cold_lambda(TpColdLambda& type) = 0;
 	virtual void on_void(TpVoid& type) = 0;
+	virtual void on_no_ret(TpNoRet& type) = 0;
 	virtual void on_optional(TpOptional& type) =0;
 	virtual void on_own(TpOwn& type) = 0;
 	virtual void on_ref(TpRef& type) = 0;
@@ -380,6 +386,7 @@ struct Ast: dom::DomItem {
 	pin<TpInt64> tp_int64();
 	pin<TpDouble> tp_double();
 	pin<TpVoid> tp_void();
+	pin<TpNoRet> tp_no_ret();
 	pin<TpFunction> tp_function(vector<own<Type>>&& params);
 	pin<TpLambda> tp_lambda(vector<own<Type>>&& params);
 	pin<TpDelegate> tp_delegate(vector<own<Type>>&& params);
@@ -430,9 +437,20 @@ struct ConstBool : Action {  // it produces optional<void>
 	DECLARE_DOM_CLASS(ConstBool);
 };
 
+struct Break : Action {
+	weak<Block> block;
+	own<Action> result;
+	string block_name;
+	void match(ActionMatcher& matcher) override;
+	DECLARE_DOM_CLASS(Break);
+};
+
 struct Block : Action {
+	int lexical_depth = 0; // nesting level of its lambda
+	string break_name;
 	vector<own<Var>> names; // locals or params
 	vector<own<Action>> body;
+	vector<weak<Break>> breaks;
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(Block);
 };
@@ -689,6 +707,7 @@ struct ActionMatcher {
 	virtual void on_const_double(ConstDouble& node);
 	virtual void on_const_void(ConstVoid& node);
 	virtual void on_const_bool(ConstBool& node);
+	virtual void on_break(Break& node);
 	virtual void on_get(Get& node);
 	virtual void on_set(Set& node);
 	virtual void on_get_field(GetField& node);
@@ -743,6 +762,7 @@ struct ActionScanner : ActionMatcher {
 	void on_bin_op(BinaryOp& node) override;
 	void on_un_op(UnaryOp& node) override;
 	void on_mk_lambda(MkLambda& node) override;
+	void on_break(Break& node) override;
 	void on_call(Call& node) override;
 	void on_async_call(AsyncCall& node) override;
 	void on_get_at_index(GetAtIndex& node) override;

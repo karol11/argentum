@@ -46,6 +46,7 @@ own<TypeWithFills> RefOp::dom_type_;
 own<TypeWithFills> ConformOp::dom_type_;
 own<TypeWithFills> FreezeOp::dom_type_;
 own<TypeWithFills> Block::dom_type_;
+own<TypeWithFills> Break::dom_type_;
 own<TypeWithFills> CastOp::dom_type_;
 own<TypeWithFills> AddOp::dom_type_;
 own<TypeWithFills> SubOp::dom_type_;
@@ -75,6 +76,7 @@ own<TypeWithFills> TpLambda::dom_type_;
 own<TypeWithFills> TpColdLambda::dom_type_;
 own<TypeWithFills> TpDelegate::dom_type_;
 own<TypeWithFills> TpVoid::dom_type_;
+own<TypeWithFills> TpNoRet::dom_type_;
 own<TypeWithFills> TpOptional::dom_type_;
 own<TypeWithFills> TpOwn::dom_type_;
 own<TypeWithFills> TpRef::dom_type_;
@@ -185,6 +187,9 @@ void initialize() {
 	Block::dom_type_ = (new CppClassType<Block>(cpp_dom, { "m0", "Block" }))
 		->field("body", pin<CField<&Block::body>>::make(own_vector_type))
 		->field("locals", pin<CField<&Block::names>>::make(own_vector_type));
+	Break::dom_type_ = (new CppClassType<Block>(cpp_dom, { "m0", "Break" }))
+		->field("result", pin<CField<&Break::result>>::make(own_type))
+		->field("block", pin<CField<&Break::block>>::make(weak_type));
 	MkLambda::dom_type_ = (new CppClassType<MkLambda>(cpp_dom, { "m0", "MkLambda" }))
 		->field("body", pin<CField<&Block::body>>::make(own_vector_type))
 		->field("params", pin<CField<&Block::names>>::make(own_vector_type));
@@ -246,6 +251,7 @@ void initialize() {
 	TpColdLambda::dom_type_ = (new CppClassType<TpColdLambda>(cpp_dom, { "m0", "Type", "ColdLambda" }))
 		->field("resolved", pin<CField<&TpColdLambda::resolved>>::make(own_type));
 	TpVoid::dom_type_ = (new CppClassType<TpVoid>(cpp_dom, { "m0", "Type", "Void" }));
+	TpVoid::dom_type_ = (new CppClassType<TpVoid>(cpp_dom, { "m0", "Type", "NoRet" }));
 	TpOptional::dom_type_ = (new CppClassType<TpOptional>(cpp_dom, { "m0", "Type", "Optional" }))
 		->field("wrapped", pin<CField<&TpOptional::wrapped>>::make(own_type));
 	Field::dom_type_ = (new CppClassType<Field>(cpp_dom, { "m0", "Field" }))
@@ -335,6 +341,7 @@ void CopyOp::match(ActionMatcher& matcher) { matcher.on_copy(*this); }
 void MkWeakOp::match(ActionMatcher& matcher) { matcher.on_mk_weak(*this); }
 void DerefWeakOp::match(ActionMatcher& matcher) { matcher.on_deref_weak(*this); }
 void Block::match(ActionMatcher& matcher) { matcher.on_block(*this); }
+void Break::match(ActionMatcher& matcher) { matcher.on_break(*this); }
 void CastOp::match(ActionMatcher& matcher) { matcher.on_cast(*this); }
 void ToStrOp::match(ActionMatcher& matcher) { matcher.on_to_str(*this); }
 void AddOp::match(ActionMatcher& matcher) { matcher.on_add(*this); }
@@ -388,6 +395,7 @@ void ActionMatcher::on_copy(CopyOp& node) { on_un_op(node); }
 void ActionMatcher::on_mk_weak(MkWeakOp& node) { on_un_op(node); }
 void ActionMatcher::on_deref_weak(DerefWeakOp& node) { on_un_op(node); }
 void ActionMatcher::on_block(Block& node) { on_unmatched(node); }
+void ActionMatcher::on_break(Break& node) { on_unmatched(node); }
 void ActionMatcher::on_cast(CastOp& node) { on_bin_op(node); }
 void ActionMatcher::on_to_str(ToStrOp& node) { on_bin_op(node); }
 void ActionMatcher::on_add(AddOp& node) { on_bin_op(node); }
@@ -450,6 +458,7 @@ void ActionScanner::on_block(Block& node) {
 	for (auto& p : node.body)
 		fix(p);
 }
+void ActionScanner::on_break(Break& node) { fix(node.result); }
 void ActionScanner::on_get_field(GetField& node) { fix(node.base); }
 void ActionScanner::on_set_field(SetField& node) {
 	fix(node.base);
@@ -464,6 +473,7 @@ void TpLambda::match(TypeMatcher& matcher) { matcher.on_lambda(*this); }
 void TpColdLambda::match(TypeMatcher& matcher) { matcher.on_cold_lambda(*this); }
 void TpDelegate::match(TypeMatcher& matcher) { matcher.on_delegate(*this); }
 void TpVoid::match(TypeMatcher& matcher) { matcher.on_void(*this); }
+void TpNoRet::match(TypeMatcher& matcher) { matcher.on_no_ret(*this); }
 void TpOptional::match(TypeMatcher& matcher) { matcher.on_optional(*this); }
 void TpOwn::match(TypeMatcher& matcher) { matcher.on_own(*this); }
 void TpRef::match(TypeMatcher& matcher) { matcher.on_ref(*this); }
@@ -568,6 +578,10 @@ pin<TpDouble> Ast::tp_double() {
 }
 pin<TpVoid> Ast::tp_void() {
 	static auto r = own<TpVoid>::make();
+	return r;
+}
+pin<TpNoRet> Ast::tp_no_ret() {
+	static auto r = own<TpNoRet>::make();
 	return r;
 }
 pin<ClassInstance> Ast::get_class_instance(vector<weak<AbstractClass>>&& params) {
@@ -829,6 +843,7 @@ std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t) {
 		void on_int64(ast::TpInt64& type) override { dst << "int"; }
 		void on_double(ast::TpDouble& type) override { dst << "double"; }
 		void on_void(ast::TpVoid& type) override { dst << "void"; }
+		void on_no_ret(ast::TpNoRet& type) override { dst << "no_ret"; }
 		void out_proto(ast::TpFunction& type) {
 			size_t i = 0, last = type.params.size() - 1;
 			for (auto& p : type.params) {
