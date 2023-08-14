@@ -51,6 +51,7 @@ struct ConstCapturePass : ast::ActionScanner {
 		lambda_levels.pop_back();
 	}
 	void fix_block(ast::Block& b) {
+		b.lexical_depth = lambda_levels.size() - 1;
 		for (auto& p : b.names) {
 			if (p->initializer)
 				fix(p->initializer);
@@ -75,6 +76,11 @@ struct ConstCapturePass : ast::ActionScanner {
 
 	void on_get(ast::Get& node) override {
 		fix_var_depth(node.var);
+	}
+
+	void on_break(ast::Break& node) override {
+		if (node.block->lexical_depth != lambda_levels.size() - 1)
+			node.error("internal: break through lambdas aren't supported yet");
 	}
 
 	void on_set(ast::Set& node) override {
