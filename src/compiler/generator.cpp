@@ -892,6 +892,7 @@ struct Generator : ast::ActionScanner {
 			void on_conform_ref(ast::TpConformRef& type) override { result = gen->classes[type.target->get_implementation()].di_ptr;; }
 			void on_conform_weak(ast::TpConformWeak& type) override { result = gen->di_weak_ptr; }
 			void on_delegate(ast::TpDelegate& type) override { result = gen->di_delegate; }
+			void on_no_ret(ast::TpNoRet& type) override { assert(false); }
 		};
 		DiTypeMatcher matcher(this);
 		tp.match(matcher);
@@ -1116,7 +1117,7 @@ struct Generator : ast::ActionScanner {
 			auto exit_bb = llvm::BasicBlock::Create(*context, "", current_function);
 			builder->CreateBr(exit_bb);
 			builder->SetInsertPoint(exit_bb);
-			auto phi = builder->CreatePHI(to_llvm_type(*r.type), node.breaks.size() + 1);
+			auto phi = builder->CreatePHI(to_llvm_type(*fn_result.type), node.breaks.size() + 1);
 			for (auto& brk : node.breaks) {
 				auto& brk_info = active_breaks[brk.pinned()];
 				builder->SetInsertPoint(brk_info.first);
@@ -1126,7 +1127,7 @@ struct Generator : ast::ActionScanner {
 				active_breaks.erase(brk);
 			}
 			assert(active_breaks.empty());
-			r.data = phi;
+			fn_result.data = phi;
 			builder->SetInsertPoint(exit_bb);
 		}
 		for (auto& c : consts_to_dispose) {
@@ -1529,6 +1530,7 @@ struct Generator : ast::ActionScanner {
 				void on_frozen_weak(ast::TpFrozenWeak& type) override { handle_64_bit(type); }
 				void on_conform_ref(ast::TpConformRef& type) override { handle_64_bit(type); }
 				void on_conform_weak(ast::TpConformWeak& type) override { handle_64_bit(type); }
+				void on_no_ret(ast::TpNoRet& type) override { assert(false); }
 			};
 			TypeDeserializer td(params, *this, thread, params_size_out);
 			(*pti)->match(td);
@@ -1630,6 +1632,7 @@ struct Generator : ast::ActionScanner {
 				void on_frozen_weak(ast::TpFrozenWeak& type) override { handle_weak(); }
 				void on_conform_ref(ast::TpConformRef& type) override { handle_own(); }
 				void on_conform_weak(ast::TpConformWeak& type) override { handle_weak(); }
+				void on_no_ret(ast::TpNoRet& type) override { assert(false); }
 			};
 			TypeSerializer ts(*this, thread_ptr, make_retained_or_non_ptr(compile(p)).data);
 			p->type()->match(ts);
@@ -1901,6 +1904,7 @@ struct Generator : ast::ActionScanner {
 					void on_frozen_weak(ast::TpFrozenWeak& type) override { c.compare_scalar(); }
 					void on_conform_ref(ast::TpConformRef& type) override { c.compare_scalar(); }
 					void on_conform_weak(ast::TpConformWeak& type) override { c.compare_scalar(); }
+					void on_no_ret(ast::TpNoRet& type) override { assert(false); }
 				};
 				OptComparer opt_comparer{ *this };
 				type.wrapped->match(opt_comparer);
@@ -1912,6 +1916,7 @@ struct Generator : ast::ActionScanner {
 			void on_frozen_weak(ast::TpFrozenWeak& type) override { compare_scalar(); }
 			void on_conform_ref(ast::TpConformRef& type) override { compare_scalar(); }
 			void on_conform_weak(ast::TpConformWeak& type) override { compare_scalar(); }
+			void on_no_ret(ast::TpNoRet& type) override { assert(false); }
 		};
 		auto lhs = compile(node.p[0]);
 		auto rhs = compile(node.p[1]);
@@ -2036,6 +2041,7 @@ struct Generator : ast::ActionScanner {
 			void on_frozen_weak(ast::TpFrozenWeak& type) override { handle_ptr(); }
 			void on_conform_ref(ast::TpConformRef& type) override { handle_ptr(); }
 			void on_conform_weak(ast::TpConformWeak& type) override { handle_ptr(); }
+			void on_no_ret(ast::TpNoRet& type) override { assert(false); }
 		};
 		ValMaker val_maker(val, this, type->depth);
 		type->wrapped->match(val_maker);
@@ -2080,6 +2086,7 @@ struct Generator : ast::ActionScanner {
 			void on_frozen_weak(ast::TpFrozenWeak& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
 			void on_conform_ref(ast::TpConformRef& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
 			void on_conform_weak(ast::TpConformWeak& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
+			void on_no_ret(ast::TpNoRet& type) override { assert(false); }
 		};
 		NoneMaker none_maker(this, type->depth);
 		type->wrapped->match(none_maker);
@@ -2142,6 +2149,7 @@ struct Generator : ast::ActionScanner {
 			void on_frozen_weak(ast::TpFrozenWeak& type) override { handle_ptr(); }
 			void on_conform_ref(ast::TpConformRef& type) override { handle_ptr(); }
 			void on_conform_weak(ast::TpConformWeak& type) override { handle_ptr(); }
+			void on_no_ret(ast::TpNoRet& type) override { assert(false); }
 		};
 		OptChecker checker(val, this, type->depth);
 		type->wrapped->match(checker);
@@ -2205,6 +2213,7 @@ struct Generator : ast::ActionScanner {
 			void on_frozen_weak(ast::TpFrozenWeak& type) override { handle_ptr(type); }
 			void on_conform_ref(ast::TpConformRef& type) override { handle_ptr(type); }
 			void on_conform_weak(ast::TpConformWeak& type) override { handle_ptr(type); }
+			void on_no_ret(ast::TpNoRet& type) override { assert(false); }
 		};
 		ValMaker val_maker(val, this, type->depth);
 		type->wrapped->match(val_maker);
@@ -2457,6 +2466,7 @@ struct Generator : ast::ActionScanner {
 					void on_frozen_weak(ast::TpFrozenWeak& type) override { result = gen->ptr_type; }
 					void on_conform_ref(ast::TpConformRef& type) override { result = gen->ptr_type; }
 					void on_conform_weak(ast::TpConformWeak& type) override { result = gen->ptr_type; }
+					void on_no_ret(ast::TpNoRet& type) override { result = gen->void_type; }
 				};
 				OptionalMatcher matcher(gen, type.depth);
 				type.wrapped->match(matcher);
@@ -2469,6 +2479,7 @@ struct Generator : ast::ActionScanner {
 			void on_frozen_weak(ast::TpFrozenWeak& type) override { result = gen->ptr_type; }
 			void on_conform_ref(ast::TpConformRef& type) override { result = gen->ptr_type; }
 			void on_conform_weak(ast::TpConformWeak& type) override { result = gen->ptr_type; }
+			void on_no_ret(ast::TpNoRet& type) override { assert(false); }
 		} matcher(this);
 		t.match(matcher);
 		return matcher.result;
