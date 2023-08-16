@@ -9,7 +9,7 @@ See: [Project site](aglang.org)
 * Fully automated memory management (no memory leaks)
 * High efficiency
   * No GC (no pauses, no memory and CPU overhead)
-  * AOT
+  * AOT Compilation
   * Fast interface method calls
   * Fast dynamic casts
 * Designed for large apps
@@ -28,7 +28,7 @@ See: [Project site](aglang.org)
 ## Examples
 
 This language is safe and managed, like Java.\
-This code samples compile to less than 20K Windows executables.\
+These code examples compile into less than 20K Windows executables.\
 No virtual machine/framework needed.\
 They can work in a loop forever, no GC pauses, no leaks, no memory corruptions.
 
@@ -129,7 +129,20 @@ So far no other programming language can do so.
 
 ## Development
 
-I have a working prototype of the first milestone.
-Within the next couple of months I plan to extend the language and make my JIT compiler an AOT one targeted on every platfor supported by LLVM/SDL.
+I have a working prototype of the 2nd milestone that includes:
+
+* Stand-alone compiler producing windows execitables
+* Multithreading
+* Parameterized classes and interfaces
+* String interpolation
+* Frozen-mutable object hierrarchies
+
+Within the next couple of months I plan to extend the language:
+
+* Fast unwind and direct `breaks` from nested levels of lambdas
+* Standard container library
+* Port to some platforms (Linux, Wasm, Android)
+* Standard UI library
+* Bindings to curl, databases.
 
 I plan to work alone, though I'd appreciate any feedback and bugfixes in the form of pull requests.
