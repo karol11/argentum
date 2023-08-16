@@ -623,6 +623,8 @@ pin<TpOptional> Ast::tp_optional(pin<Type> wrapped) {
 	if (auto as_optional = dom::strict_cast<ast::TpOptional>(wrapped)) {
 		depth = as_optional->depth + 1;
 		wrapped = as_optional->wrapped;
+	} else if (dom::isa<TpNoRet>(*wrapped)) {
+		wrapped = tp_void();
 	}
 	auto& depths = optional_types_[wrapped];
 	assert(depth <= depths.size());

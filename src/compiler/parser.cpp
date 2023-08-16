@@ -713,6 +713,7 @@ struct Parser {
 				r->result = make<ast::ConstVoid>();
 			else
 				r->result = parse_expression();
+			return r;
 		}
 		if (auto n = match_num()) {
 			if (auto v = get_if<uint64_t>(&*n))

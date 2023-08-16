@@ -382,6 +382,7 @@ struct NameResolver : ast::ActionScanner {
 		if (n == blocks.end()) {
 			node.error("unresolved block name ", node.block_name);
 		}
+		node.block = n->second;
 		n->second->breaks.push_back(&node);
 		fix(node.result);
 	}

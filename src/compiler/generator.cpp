@@ -744,6 +744,7 @@ struct Generator : ast::ActionScanner {
 			for (auto& bb : active_breaks) {
 				builder->SetInsertPoint(bb.second.first);
 				dispose_val_in_current_bb(val, is_local);
+				bb.second.first = builder->GetInsertBlock();
 			}
 			builder->SetInsertPoint(cur_bb);
 		}
@@ -1114,10 +1115,12 @@ struct Generator : ast::ActionScanner {
 		};
 		release_params(fn_result);
 		if (!node.breaks.empty()) {
+			auto result_bb = builder->GetInsertBlock();
 			auto exit_bb = llvm::BasicBlock::Create(*context, "", current_function);
 			builder->CreateBr(exit_bb);
 			builder->SetInsertPoint(exit_bb);
 			auto phi = builder->CreatePHI(to_llvm_type(*fn_result.type), node.breaks.size() + 1);
+			phi->addIncoming(fn_result.data, result_bb);
 			for (auto& brk : node.breaks) {
 				auto& brk_info = active_breaks[brk.pinned()];
 				builder->SetInsertPoint(brk_info.first);
@@ -1232,7 +1235,6 @@ struct Generator : ast::ActionScanner {
 				comp_to_void(a);
 		}
 		auto r = compile(node.body.back());
-		persist_rfield(r);
 		auto dispose_block_params = [&](Val& result) {
 			auto result_as_temp = get_if<Val::Temp>(&result.lifetime);
 			weak<ast::Var> temp_var = result_as_temp ? result_as_temp->var : nullptr;
@@ -1255,13 +1257,20 @@ struct Generator : ast::ActionScanner {
 			}
 			return temp_var; // return out-of-block temp-var to which this block result by this branch is bounded
 		};
-		auto result_temp_var = dispose_block_params(r);
+		weak<ast::Var> result_temp_var;
+		if (!dom::isa<ast::TpNoRet>(*r.type)) {
+			persist_rfield(r);
+			result_temp_var = dispose_block_params(r);
+		}
+		auto body_bb = builder->GetInsertBlock();
 		for (auto& brk : active_breaks) {
 			builder->SetInsertPoint(brk.second.first);
 			auto brk_temp_var = dispose_block_params(brk.second.second);
 			if (brk.first == &node && result_temp_var != brk_temp_var)
 				result_temp_var = nullptr;  // different vars, retain is needed
+			brk.second.first = builder->GetInsertBlock();
 		}
+		builder->SetInsertPoint(body_bb);
 		if (!node.breaks.empty()) {
 			auto exit_bb = llvm::BasicBlock::Create(*context, "", current_function);
 			builder->CreateBr(exit_bb);
@@ -1290,9 +1299,8 @@ struct Generator : ast::ActionScanner {
 	void on_break(ast::Break& node) override {
 		auto r = compile(node.result);
 		persist_rfield(r);
-		auto bb = llvm::BasicBlock::Create(*context, "", current_function);
-		builder->CreateBr(bb);
-		active_breaks.insert({ &node, {bb, move(r)} });
+		active_breaks.insert({ &node, {builder->GetInsertBlock(), move(r)}});
+		builder->SetInsertPoint((llvm::BasicBlock*)nullptr);
 	}
 	void on_make_delegate(ast::MakeDelegate& node) override {
 		auto base = compile(node.base);
@@ -2271,7 +2279,7 @@ struct Generator : ast::ActionScanner {
 		return result;
 	}
 
-	llvm::Value* compile_llvm_if(
+	llvm::Value* compile_llvm_if(  // dead code
 		llvm::Type* type,
 		llvm::Value* cond,
 		const std::function<llvm::Value* ()>& then_action,
@@ -2312,19 +2320,32 @@ struct Generator : ast::ActionScanner {
 		} else {
 			auto cond_type = dom::strict_cast<ast::TpOptional>(node.p[0]->type());
 			auto cond_opt_val = compile(node.p[0]);
-			*result = compile_if(
-				*node_type,
-				check_opt_has_val(cond_opt_val.data, cond_type),
-				[&] {
-					auto as_block = dom::strict_cast<ast::Block>(node.p[1]);
-					auto val = as_block && !as_block->names.empty() && !as_block->names.front()->initializer
-						? handle_block(*as_block, Val{ as_block->names.front()->type, extract_opt_val(cond_opt_val.data, cond_type), cond_opt_val.lifetime })
-						: compile(node.p[1]);
-					return Val{ node_type, make_opt_val(val.data, node_type), val.lifetime };
-				},
-				[&] {
-					return Val{ node_type, make_opt_none(node_type), Val::NonPtr{} };
-				});
+			auto comp_then = [&] {
+				auto as_block = dom::strict_cast<ast::Block>(node.p[1]);
+				return as_block && !as_block->names.empty() && !as_block->names.front()->initializer
+					? handle_block(*as_block, Val{ as_block->names.front()->type, extract_opt_val(cond_opt_val.data, cond_type), cond_opt_val.lifetime })
+					: compile(node.p[1]);
+			};
+			if (dom::isa<ast::TpNoRet>(*node.p[1]->type())) {
+				auto then_bb = llvm::BasicBlock::Create(*context, "", current_function);
+				auto else_bb = llvm::BasicBlock::Create(*context, "", current_function);
+				builder->CreateCondBr(check_opt_has_val(cond_opt_val.data, cond_type), then_bb, else_bb);
+				builder->SetInsertPoint(then_bb);
+				comp_then();
+				builder->SetInsertPoint(else_bb);
+				*result = Val{ node_type, make_opt_none(node_type), Val::NonPtr{} };
+			} else {
+				*result = compile_if(
+					*node_type,
+					check_opt_has_val(cond_opt_val.data, cond_type),
+					[&] {
+						auto val = comp_then();
+						return Val{ node_type, make_opt_val(val.data, node_type), val.lifetime };
+					},
+					[&] {
+						return Val{ node_type, make_opt_none(node_type), Val::NonPtr{} };
+					});
+			}
 		}
 	}
 	void on_land(ast::LAnd& node) override {
@@ -2347,14 +2368,24 @@ struct Generator : ast::ActionScanner {
 	void on_else(ast::Else& node) override {
 		auto cond_type = dom::strict_cast<ast::TpOptional>(node.p[0]->type());
 		auto cond_opt = compile(node.p[0]);
-		*result = compile_if(
-			*node.type(),
-			check_opt_has_val(cond_opt.data, cond_type),
-			[&] {
-				return Val{ node.p[1]->type(), extract_opt_val(cond_opt.data, cond_type), cond_opt.lifetime };
-			}, [&] {
-				return compile(node.p[1]);
-			});
+		if (dom::isa<ast::TpNoRet>(*node.p[1]->type())) {
+			auto then_bb = llvm::BasicBlock::Create(*context, "", current_function);
+			auto else_bb = llvm::BasicBlock::Create(*context, "", current_function);
+			builder->CreateCondBr(check_opt_has_val(cond_opt.data, cond_type), then_bb, else_bb);
+			builder->SetInsertPoint(else_bb);
+			auto unused = compile(node.p[1]);
+			builder->SetInsertPoint(then_bb);
+			*result = Val{ node.p[1]->type(), extract_opt_val(cond_opt.data, cond_type), cond_opt.lifetime };
+		} else {
+			*result = compile_if(
+				*node.type(),
+				check_opt_has_val(cond_opt.data, cond_type),
+				[&] {
+					return Val{ node.p[1]->type(), extract_opt_val(cond_opt.data, cond_type), cond_opt.lifetime };
+				}, [&] {
+					return compile(node.p[1]);
+				});
+		}
 	}
 	void on_lor(ast::LOr& node) override {
 		auto cond_type = dom::strict_cast<ast::TpOptional>(node.p[0]->type());

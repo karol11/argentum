@@ -446,7 +446,7 @@ struct Break : Action {
 };
 
 struct Block : Action {
-	int lexical_depth = 0; // nesting level of its lambda
+	size_t lexical_depth = 0; // nesting level of its lambda
 	string break_name;
 	vector<own<Var>> names; // locals or params
 	vector<own<Action>> body;
