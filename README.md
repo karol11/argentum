@@ -1,6 +1,6 @@
 # Argentum Programming Language
 
-See: [Project site](aglang.org)
+See: [Project site](https://aglang.org)
 
 ## Main language features:
 
