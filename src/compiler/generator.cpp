@@ -1710,10 +1710,11 @@ struct Generator : ast::ActionScanner {
 		if (is_ptr(node.type())) {
 			auto base = comp_to_persistent(node.base);
 			*result = make_retained_or_non_ptr(compile(node.val), base.data);
+			result->type = node.type();  // @T->T and base-dependent conversions
 			auto addr = builder->CreateStructGEP(class_fields, base.data, node.field->offset);
 			build_release(
 				builder->CreateLoad(ptr_type, addr),
-				node.type(),
+				node.field->initializer->type(),
 				false);  // not local, clear parent
 			builder->CreateStore(result->data, addr);
 			if (get_if<Val::Retained>(&base.lifetime)) {
