@@ -758,7 +758,7 @@ pin<Type> Ast::convert_maybe_optional(pin<Type> src, std::function<pin<Type>(pin
 		while (depths.size() < as_opt->depth + 1) {
 			depths.push_back(pin<TpOptional>::make());
 			depths.back()->wrapped = wrapped;
-			depths.back()->depth = depths.size() - 1;
+			depths.back()->depth = int(depths.size()) - 1;
 		}
 		return depths[as_opt->depth];		
 	}
