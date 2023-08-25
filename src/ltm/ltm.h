@@ -360,16 +360,12 @@ public:
 		return *reinterpret_cast<pin<BASE>*>(this);
 	}
 
-	template <
-		typename SUB,
-		typename = typename std::enable_if<std::is_convertible<SUB*, T*>::value>::type>
+	template <typename SUB>
 	pin<SUB>& cast() noexcept {
 		return *reinterpret_cast<pin<SUB>*>(this);
 	}
 
-	template <
-		typename SUB,
-		typename = typename std::enable_if<std::is_convertible<SUB*, T*>::value>::type>
+	template <typename SUB>
 	const pin<SUB>& cast() const noexcept {
 		return *reinterpret_cast<const pin<SUB>*>(this);
 	}
