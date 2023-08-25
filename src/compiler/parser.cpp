@@ -827,17 +827,21 @@ struct Parser {
 		int tabstops = 0;
 		for (; *c >= '0' && *c <= '9'; c++)
 			tabstops = tabstops * 10 + *c - '0';
-		char open_escape_char = 0;
+		string open_escape_str = "";
 		char close_escape_char = 0;
+		while (*c >= '#' && *c <= '&')
+			open_escape_str += *c++;
 		if (*c == '{') {
-			open_escape_char = '{';
+			open_escape_str += '{';
 			close_escape_char = '}';
 		} else if (*c == '(') {
-			open_escape_char = '(';
+			open_escape_str += '(';
 			close_escape_char = ')';
 		} else if (*c == '[') {
-			open_escape_char = '[';
+			open_escape_str += '[';
 			close_escape_char = ']';
+		} else if (!open_escape_str.empty()) {
+			error("Expected {[( at the end of the open escape sequence");
 		}
 		if (close_escape_char != 0) {
 			if (c[1] != close_escape_char)
@@ -870,11 +874,10 @@ struct Parser {
 		vector<pin<Action>> parts;
 		for (;;) {
 			for (; !match_eoln(); cur++) {
-				if (open_escape_char && *cur == open_escape_char) {
-					cur++;
+				if (!open_escape_str.empty() && match_ns(open_escape_str.c_str())) {
 					if (*cur == close_escape_char) {
 						cur++;
-						current_part->value += open_escape_char;
+						current_part->value += open_escape_str;
 					} else {
 						if (!current_part->value.empty())
 							parts.push_back(current_part);

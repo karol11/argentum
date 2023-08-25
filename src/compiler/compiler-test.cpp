@@ -779,12 +779,12 @@ TEST(Parser, StringInterpolation) {
                 r
             }
       }
-      sys_log("{}/
-         Name={
+      sys_log("${}/
+         Name=${
             1 < 2
                 ? "asdf"
                 : "zxcv"}
-         Age={2 * 2}
+         Age=${2 * 2}
       ");
     )-");
 }
