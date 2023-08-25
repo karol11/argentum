@@ -709,10 +709,10 @@ struct Parser {
 		if (match("^")) {
 			auto r = make<ast::Break>();
 			r->block_name = expect_id("block to break");
-			if (match("()"))
-				r->result = make<ast::ConstVoid>();
-			else
+			if (match("="))
 				r->result = parse_expression();
+			else
+				r->result = make<ast::ConstVoid>();
 			return r;
 		}
 		if (auto n = match_num()) {
