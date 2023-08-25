@@ -751,6 +751,21 @@ pin<AbstractClass> Ast::extract_class(pin<Type> pointer) {
 	return nullptr;
 }
 
+pin<Type> Ast::convert_maybe_optional(pin<Type> src, std::function<pin<Type>(pin<Type>)> converter) {
+	if (auto as_opt = dom::strict_cast<ast::TpOptional>(src)) {
+		auto wrapped = converter(as_opt->wrapped);
+		auto& depths = optional_types_[wrapped];
+		while (depths.size() < as_opt->depth + 1) {
+			depths.push_back(pin<TpOptional>::make());
+			depths.back()->wrapped = wrapped;
+			depths.back()->depth = depths.size() - 1;
+		}
+		return depths[as_opt->depth];		
+	}
+	return converter(src);
+}
+
+
 void Node::err_out(const std::string& message) {
 	std::cerr << message;
 	throw 1;

@@ -400,6 +400,7 @@ struct Ast: dom::DomItem {
 	pin<TpConformRef> get_conform_ref(pin<AbstractClass> target);
 	pin<TpConformWeak> get_conform_weak(pin<AbstractClass> target);
 	pin<AbstractClass> extract_class(pin<Type> pointer); // extracts class from pointer types
+	pin<Type> convert_maybe_optional(pin<Type> src, std::function<pin<Type>(pin<Type>)> converter);  // for non-opt type calls converter, for opt - converts inner type and repack to same level opt
 	pin<ClassInstance> get_class_instance(vector<weak<AbstractClass>>&& params);
 
 	// Takes a parameterized class and its instantiation context and returns a class with all substituted parameters from context.

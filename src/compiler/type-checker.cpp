@@ -353,13 +353,15 @@ struct Typer : ast::ActionMatcher {
 		}
 	}
 	void on_get(ast::Get& node) override {
-		if (!node.var->is_const) {
-			if (auto as_own = dom::strict_cast<ast::TpOwn>(node.var->type)) {
-				node.type_ = ast->get_ref(as_own->target);
-				return;
-			}
+		if (node.var->is_const) {
+			node.type_ = node.var->type;
+		} else {
+			node.type_ = ast->convert_maybe_optional(node.var->type, [&](auto tp) {
+				if (auto as_own = dom::strict_cast<ast::TpOwn>(tp))
+					return ast->get_ref(as_own->target).cast<ast::Type>();
+				return tp;
+			});
 		}
-		node.type_ = node.var->type;
 	}
 	void on_set(ast::Set& node) override {
 		auto value_type = find_type(node.val)->type();
@@ -442,21 +444,28 @@ struct Typer : ast::ActionMatcher {
 			node.field->cls,
 			find_type(node.field->initializer)->type());
 		if (dom::isa<ast::TpConformRef>(*node.base->type())) {
-			if (auto as_own = dom::strict_cast<ast::TpOwn>(node.type())) {
-				node.type_ = ast->get_conform_ref(as_own->target);
-			} else if (auto as_weak = dom::strict_cast<ast::TpWeak>(node.type())) {
-				node.type_ = ast->get_conform_weak(as_weak->target);
-			}
+			node.type_ = ast->convert_maybe_optional(node.type(), [&](auto tp) {
+				if (auto as_own = dom::strict_cast<ast::TpOwn>(tp))
+					return ast->get_conform_ref(as_own->target).cast<ast::Type>();
+				if (auto as_weak = dom::strict_cast<ast::TpWeak>(tp))
+					return ast->get_conform_weak(as_weak->target).cast<ast::Type>();
+				return tp;
+			});
+
 		} else if (dom::isa<ast::TpShared>(*node.base->type())) {
-			if (auto as_own = dom::strict_cast<ast::TpOwn>(node.type())) {
-				node.type_ = ast->get_shared(as_own->target);
-			} else if (auto as_weak = dom::strict_cast<ast::TpWeak>(node.type())) {
-				node.type_ = ast->get_frozen_weak(as_weak->target);
-			}
+			node.type_ = ast->convert_maybe_optional(node.type(), [&](auto tp) {
+				if (auto as_own = dom::strict_cast<ast::TpOwn>(tp))
+					return ast->get_shared(as_own->target).cast<ast::Type>();
+				if (auto as_weak = dom::strict_cast<ast::TpWeak>(tp))
+					return ast->get_frozen_weak(as_weak->target).cast<ast::Type>();
+				return tp;
+			});
 		} else {
-			if (auto as_own = dom::strict_cast<ast::TpOwn>(node.type())) {
-				node.type_ = ast->get_ref(as_own->target);
-			}
+			node.type_ = ast->convert_maybe_optional(node.type(), [&](auto tp) {
+				if (auto as_own = dom::strict_cast<ast::TpOwn>(tp))
+					return ast->get_ref(as_own->target).cast<ast::Type>();
+				return tp;
+			});
 		}
 	}
 	void check_class_params(pin<ast::AbstractClass> cls) {
@@ -535,15 +544,17 @@ struct Typer : ast::ActionMatcher {
 				[&] { node.error("field name is ambiguous, use cast"); }))
 				node.error("class ", base_cls->get_name(), " doesn't have field/method ", ast::LongName{node.field_name, node.field_module});
 		}
-		if (dom::isa<ast::TpShared>(*node.base->type()))
-			node.error("Cannot assign to a shared object field ", ast::LongName{ node.field_name, node.field_module });
+		if (dom::isa<ast::TpShared>(*node.base->type()) && dom::isa<ast::TpConformRef>(*node.base->type()))
+			node.error("Cannot assign to a shared/conform object field ", ast::LongName{ node.field_name, node.field_module });
 		node.type_ = remove_member_type_params(
 			base_cls,
 			node.field->cls,
 			find_type(node.field->initializer)->type());
-		if (auto as_own = dom::strict_cast<ast::TpOwn>(node.type())) {
-			node.type_ = ast->get_ref(as_own->target);
-		}
+		node.type_ = ast->convert_maybe_optional(node.type(), [&](auto tp) {
+			if (auto as_own = dom::strict_cast<ast::TpOwn>(tp))
+				return ast->get_ref(as_own->target).cast<ast::Type>();
+			return tp;
+		});
 	}
 	void on_set_field(ast::SetField& node) override {
 		resolve_set_field(node);
