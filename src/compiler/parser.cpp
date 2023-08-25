@@ -763,6 +763,8 @@ struct Parser {
 			expect("'");
 			return r;
 		}
+		if (match_ns("`"))
+			return handle_fat_string("${}", true);
 		if (match_ns("\"")) {
 			auto r = make<ast::ConstString>();
 			for (;;) {
@@ -774,7 +776,7 @@ struct Parser {
 				if (c < ' ') {
 					if (c == '\n' || c == '\r') {
 						cur--;
-						return handle_multiline_string(r->value);
+						return handle_fat_string(r->value, false);
 					}
 					error("control characters in the string constant");
 				}
@@ -816,7 +818,7 @@ struct Parser {
 		error("syntax error");
 	}
 
-	pin<Action> handle_multiline_string(const string& format) {
+	pin<Action> handle_fat_string(const string& format, bool single_line) {
 		const char* c = format.c_str();
 		string prefix;
 		for (;; c++) {
@@ -865,9 +867,11 @@ struct Parser {
 			}
 		}
 		if (*c != 0)
-			error("Unexpected sumbols in format string at ", c);
-		match_eoln();
-		skip_spaces();
+			error("Unexpected symbols in format string at ", c);
+		if (!single_line) {
+			match_eoln();
+			skip_spaces();
+		}
 		auto base_indent = pos;
 		auto current_part = make<ast::ConstString>();
 		current_part->value = prefix;
@@ -887,10 +891,15 @@ struct Parser {
 							error("Expected ", close_escape_char);
 						current_part = make<ast::ConstString>();
 					}
+				} else if (single_line && *cur == '`') {
+					cur++;
+					goto break_single_line;
 				} else {
 					current_part->value += *cur;
 				}
 			}
+			if (single_line)
+				error("Incomplete single line `string`");
 			skip_spaces();
 			if (pos < base_indent)
 				break;
@@ -910,6 +919,7 @@ struct Parser {
 			}
  		}
 		expect("\"");
+	break_single_line:
 		current_part->value += last_suffix;
 		if (!current_part->value.empty() || parts.empty())
 			parts.push_back(current_part);
