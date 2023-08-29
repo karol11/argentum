@@ -63,21 +63,6 @@ void execute(const char* source_text, bool dump_all = false) {
     generate_and_execute(ast, false, dump_all);
 }
 
-/*TEST(Parser, Break) {
-    execute(R"-(
-        fn myFunction() int {
-            i = 2;
-            r = loop {
-                i -= 1;
-                i == 0 ? ^r = 42;
-                i < 0
-            };
-            r
-        }
-        sys_assert(42, myFunction())
-    )-");
-}*/
-
 TEST(Parser, Ints) {
     execute("sys_assert(7, (2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1)))");
 }
@@ -914,6 +899,20 @@ TEST(Parser, FnReturn) {
                 i < 0
             };
             11
+        }
+        sys_assert(42, myFunction())
+    )-");
+}
+
+TEST(Parser, Break) {
+    execute(R"-(
+        fn myFunction() int {
+            i = 2;
+            r = loop {
+                i -= 1;
+                i == 0 ? ^r = 42;
+            };
+            r
         }
         sys_assert(42, myFunction())
     )-");
