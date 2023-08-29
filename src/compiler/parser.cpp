@@ -893,6 +893,7 @@ struct Parser {
 					}
 				} else if (single_line && *cur == '`') {
 					cur++;
+					match_ws();
 					goto break_single_line;
 				} else {
 					current_part->value += *cur;
