@@ -661,6 +661,7 @@ struct DerefWeakOp : UnaryOp {
 	DECLARE_DOM_CLASS(DerefWeakOp);
 };
 struct Loop : UnaryOp {
+	bool has_breaks = false;
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(Loop);
 };

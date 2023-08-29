@@ -4,12 +4,14 @@
 #include <unordered_set>
 #include <cassert>
 #include <unordered_set>
+#include <variant>
 
 using std::unordered_map;
 using std::unordered_set;
 using std::string;
 using std::vector;
 using std::pair;
+using std::variant;
 using std::move;
 using ltm::pin;
 using ltm::weak;
@@ -26,7 +28,7 @@ struct NameResolver : ast::ActionScanner {
 	pin<ast::Ast> ast;
 	unordered_set<pin<ast::Class>> ordered_classes;
 	unordered_set<pin<ast::Class>> active_base_list;
-	unordered_map<string, pin<ast::Block>> blocks;
+	vector<variant<pin<ast::Block>, pin<ast::Loop>>> bypassed_by_breaks;  // from outer to inner
 
 	NameResolver(pin<ast::Ast> ast, pin<dom::Dom> dom)
 		: dom(dom)
@@ -218,11 +220,8 @@ struct NameResolver : ast::ActionScanner {
 		this_var = nullptr;
 	}
 	void fix_with_params(pin<ast::Block> block) {
-		weak<ast::Block> prev_named;
 		if (!block->break_name.empty()) {
-			auto& n = blocks[block->break_name];
-			prev_named = n;
-			n = block;
+			bypassed_by_breaks.push_back(block);
 		}
 		vector<pair<string, pin<ast::Var>>> prev;
 		prev.reserve(block->names.size());
@@ -241,10 +240,9 @@ struct NameResolver : ast::ActionScanner {
 			else
 				locals.erase(p.first);
 		}
-		if (prev_named)
-			blocks[block->break_name] = prev_named;
-		else
-			blocks.erase(block->break_name);
+		if (!block->break_name.empty()) {
+			bypassed_by_breaks.pop_back();
+		}
 	}
 
 	template<typename F, typename M, typename C, typename FN>
@@ -319,6 +317,12 @@ struct NameResolver : ast::ActionScanner {
 			});
 	}
 
+	void on_loop(ast::Loop& node) override {
+		bypassed_by_breaks.push_back(&node);
+		on_un_op(node);
+		bypassed_by_breaks.pop_back();
+	}
+
 	void on_set(ast::Set& node) override {
 		fix(node.val);
 		handle_data_ref(node,
@@ -378,13 +382,21 @@ struct NameResolver : ast::ActionScanner {
 		}
 	}
 	void on_break(ast::Break& node) override {
-		auto n = blocks.find(node.block_name);
-		if (n == blocks.end()) {
-			node.error("unresolved block name ", node.block_name);
+		for (auto it = bypassed_by_breaks.rbegin(); it != bypassed_by_breaks.rend(); it++) {
+			if (auto *as_block = std::get_if<pin<ast::Block>>(&*it)) {
+				if ((*as_block)->break_name == node.block_name) {
+					node.block = (*as_block);
+					(*as_block)->breaks.push_back(&node);
+					fix(node.result);
+					return;
+				}
+			} else if (auto* as_loop = std::get_if<pin<ast::Loop>>(&*it)) {
+				(*as_loop)->has_breaks = true;
+			} else {
+				node.error("internal: unexpected nesting");
+			}
 		}
-		node.block = n->second;
-		n->second->breaks.push_back(&node);
-		fix(node.result);
+		node.error("unresolved block name ", node.block_name);
 	}
 	void on_mk_lambda(ast::MkLambda& node) override {
 		fix_with_params(&node);
@@ -398,13 +410,14 @@ struct NameResolver : ast::ActionScanner {
 	void fix_immediate_delegate(ast::ImmediateDelegate& node, pin<ast::Class> cls) {
 		unordered_map<string, pin<ast::Var>> prev_locals;
 		swap(prev_locals, locals);
+		vector<variant<pin<ast::Block>, pin<ast::Loop>>> prev_bypassed_by_breaks;
 		unordered_map<string, pin<ast::Block>> prev_blocks;
-		swap(prev_blocks, blocks);
+		swap(prev_bypassed_by_breaks, bypassed_by_breaks);
 		this_var = node.names.front();
 		this_class = cls;
 		fix_fn(&node);
 		locals = move(prev_locals);
-		blocks = move(prev_blocks);
+		bypassed_by_breaks = move(prev_bypassed_by_breaks);
 	}
 };
 
