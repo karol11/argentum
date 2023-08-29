@@ -431,10 +431,10 @@ struct Parser {
 				auto block = make<ast::Block>();
 				auto var = make_at_location<ast::Var>(*r);
 				var->name = as_get->var_name;
-				var->initializer = parse_expression();
-				if (auto as_block = dom::strict_cast<ast::Block>(var->initializer)) {
-					as_block->break_name = var->name;
-				}
+				auto initializer = make<ast::Block>();
+				var->initializer = initializer;
+				initializer->body.push_back(parse_expression());
+				initializer->break_name = var->name;
 				block->names.push_back(var);
 				expect(";");
 				parse_statement_sequence(block->body);
