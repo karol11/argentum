@@ -78,8 +78,12 @@ struct Typer : ast::ActionMatcher {
 			if (l->initializer)
 				l->type = find_type(l->initializer)->type();
 		}
-		for (auto& a : node.body)
+		pin<ast::Action> prev;
+		for (auto& a : node.body) {
+			if (prev && dom::isa<ast::TpNoRet>(*prev->type()))
+				node.error("unreachable code");
 			find_type(a);
+		}
 		if (auto ret_as_get = dom::strict_cast<ast::Get>(node.body.back())) {
 			if (std::find(node.names.begin(), node.names.end(), ret_as_get->var) != node.names.end()) {
 				node.type_ = ret_as_get->var->type;
@@ -348,8 +352,10 @@ struct Typer : ast::ActionMatcher {
 		find_type(node.p);
 		if (auto as_opt = dom::strict_cast<ast::TpOptional>(node.p->type())) {
 			node.type_ = ast->get_wrapped(as_opt);
+		} else if (!node.has_breaks){
+			node.error("loop having no breaks, and body returned ", node.p->type().pinned(), ", that is not bool or optional");
 		} else {
-			node.error("loop body returned ", node.p->type().pinned(), ", that is not bool or optional");
+			node.type_ = ast->tp_no_ret();
 		}
 	}
 	void on_get(ast::Get& node) override {
