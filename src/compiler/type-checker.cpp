@@ -91,8 +91,12 @@ struct Typer : ast::ActionMatcher {
 			}
 		}
 		node.type_ = node.body.back()->type();
-		for (auto& b : node.breaks)
-			expect_type(b->result, node.type_, [&] { return ast::format_str("ret vs natural result"); });
+		for (auto& b : node.breaks) {
+			if (dom::isa<ast::TpNoRet>(*node.type_))
+				node.type_ = b->result->type();
+			else
+				expect_type(b->result, node.type_, [&] { return ast::format_str("ret vs natural result"); });
+		}
 	}
 	void on_break(ast::Break& node) override {
 		node.type_ = ast->tp_no_ret();

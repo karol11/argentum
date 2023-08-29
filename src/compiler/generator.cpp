@@ -1273,9 +1273,13 @@ struct Generator : ast::ActionScanner {
 		builder->SetInsertPoint(body_bb);
 		if (!node.breaks.empty()) {
 			auto exit_bb = llvm::BasicBlock::Create(*context, "", current_function);
-			builder->CreateBr(exit_bb);
+			if (!dom::isa<ast::TpNoRet>(*r.type))
+				builder->CreateBr(exit_bb);
+			auto r_bb = builder->GetInsertBlock();
 			builder->SetInsertPoint(exit_bb);
-			auto phi = builder->CreatePHI(to_llvm_type(*r.type), node.breaks.size() + 1);
+			auto phi = builder->CreatePHI(to_llvm_type(*node.type()), node.breaks.size() + 1);
+			if (!dom::isa<ast::TpNoRet>(*r.type))
+				phi->addIncoming(r.data, r_bb);
 			for (auto& brk : node.breaks) {
 				auto& brk_info = active_breaks[brk.pinned()];
 				builder->SetInsertPoint(brk_info.first);
@@ -1287,6 +1291,7 @@ struct Generator : ast::ActionScanner {
 				active_breaks.erase(brk);
 			}
 			r.data = phi;
+			r.type = node.type();
 			builder->SetInsertPoint(exit_bb);
 		}
 		current_di_scope = prev_di_scope;
@@ -2399,17 +2404,22 @@ struct Generator : ast::ActionScanner {
 	}
 	void on_loop(ast::Loop& node) override {
 		auto loop_body = llvm::BasicBlock::Create(*context, "", current_function);
-		auto after_loop = llvm::BasicBlock::Create(*context, "", current_function);
 		builder->CreateBr(loop_body);
 		builder->SetInsertPoint(loop_body);
 		*result = compile(node.p);
 		auto r_type = dom::strict_cast<ast::TpOptional>(node.p->type());
-		builder->CreateCondBr(
-			check_opt_has_val(result->data, r_type),
-			after_loop,
-			loop_body);
-		builder->SetInsertPoint(after_loop);
-		result->data = extract_opt_val(result->data, r_type);
+		if (r_type) {
+			auto after_loop = llvm::BasicBlock::Create(*context, "", current_function);
+			builder->CreateCondBr(
+				check_opt_has_val(result->data, r_type),
+				after_loop,
+				loop_body);
+			builder->SetInsertPoint(after_loop);
+			result->data = extract_opt_val(result->data, r_type);
+		} else {
+			builder->CreateBr(loop_body);
+			builder->SetInsertPoint((llvm::BasicBlock*)nullptr);
+		}
 		result->type = node.type();
 	}
 	void on_copy(ast::CopyOp& node) override {
