@@ -68,6 +68,63 @@ struct ConstCapturePass : ast::ActionScanner {
 		calls_to_fix.clear();
 		node_lambdas.clear();
 	}
+/*  // Todo Assess if a Loop->Star and full scan approach works better than multiple DFS
+	void fix_calls() {
+		unordered_set<pin<LambdaDep>> seen;
+		unordered_set<pin<LambdaDep>> path_set;
+		vector<pin<LambdaDep>> path_vec;
+		unordered_map<
+			pin<LambdaDep>,
+			shared_ptr<unordered_set<pin<LambdaDep>>>> loops;
+		function<void(pin<LambdaDep>)> find_loops = [&](pin<LambdaDep>& n) {
+			if (seen.count(n)) return;
+			seen.insert(n);
+			if (auto as_pull = get_if<LambdaDep::tp_pull>(&n->val)) {
+				if (!path_set.insert(n).second) {
+					unordered_set<shared_ptr<unordered_set<pin<LambdaDep>>>> intersections;
+					for (int i = path_vec.size() - 1;; --i) {
+						if (auto it = loops.find(path_vec[i]); it != loops.end()) {
+							intersections.insert(it->second);
+						}
+						if (path_vec[i] == n)
+							break;
+					}
+					auto loop = intersections.size() == 1
+						? *intersections.begin()
+						: std::make_shared<unordered_set<pin<LambdaDep>>>();
+					for (int i = path_vec.size() - 1;; --i) {
+						if (loop->insert(path_vec[i]).second)
+							loops.insert({ path_vec[i], loop });
+						if (path_vec[i] == n)
+							break;
+					}
+					if (intersections.size() > 1) {
+						for (auto& l : intersections) {
+							for (auto& dep : *l) {
+								loop->insert(dep);
+								loops.insert({ dep, loop });
+							}
+						}
+					}
+				}
+				path_vec.push_back(n);
+				for (auto& i : *as_pull)
+					find_loops(i);
+				path_vec.pop_back();
+				path_set.erase(n);
+			}
+		};
+		for (auto& n : node_lambdas)
+			find_loops(n.second);
+		while (!loops.empty()) {
+			auto star = new LambdaDep(unordered_set<weak<LambdaDep>>());
+			auto l = loops.begin()->second;
+
+
+		}
+		// turn loops to stars
+		// DFS node_lambdas calls to fix
+	}*/
 
 	void fix_globals() {
 		for (auto& c : ast->classes_in_order) {
