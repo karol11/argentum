@@ -4,6 +4,7 @@
 #include <string>
 #include <random>
 #include <variant>
+#include <list>
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
@@ -19,6 +20,7 @@
 
 using std::string;
 using std::vector;
+using std::list;
 using std::unordered_map;
 using std::unordered_set;
 using std::swap;
@@ -157,7 +159,12 @@ struct Generator : ast::ActionScanner {
 	unordered_map<pin<ast::AbstractClass>, ClassInfo> classes;  // for classes and class instances
 	unordered_map<pin<ast::Method>, MethodInfo> methods;
 	unordered_map<pin<ast::Function>, llvm::Function*> functions;
-	unordered_map<pin<ast::Break>, pair<llvm::BasicBlock*, Val>> active_breaks;
+	struct BreakTrace {
+		llvm::BasicBlock* bb;
+		Val result;
+		weak<ast::Block> block;
+	};
+	list<BreakTrace> active_breaks;
 	
 	llvm::DICompileUnit* di_cu = nullptr;
 	unordered_map<string, llvm::DIFile*> di_files;
@@ -176,7 +183,8 @@ struct Generator : ast::ActionScanner {
 	llvm::DIType* di_lambda = nullptr;
 	llvm::DICompositeType* di_obj_struct = nullptr;
 
-	llvm::Function* current_function = nullptr;
+	llvm::Function* current_ll_fn = nullptr;
+	pin<ast::MkLambda> current_function;
 	unordered_map<weak<ast::Var>, llvm::Value*> locals;
 	unordered_map<weak<ast::Var>, llvm::Value*> globals;
 	unordered_map<weak<ast::Var>, int> capture_offsets;
@@ -223,6 +231,7 @@ struct Generator : ast::ActionScanner {
 	llvm::Function* fn_put_thread_param_weak_ptr = nullptr;   // void (?ag_hread*, Weak* val)
 	llvm::Function* fn_finalize_post_message = nullptr;   // void (?ag_hread*)
 	llvm::Function* fn_handle_main_thread = nullptr;   // int (void)
+	llvm::Function* fn_terminate = nullptr;   // void(void)
 	std::default_random_engine random_generator;
 	std::uniform_int_distribution<uint64_t> uniform_uint64_distribution;
 	unordered_set<uint64_t> assigned_interface_ids;
@@ -408,6 +417,11 @@ struct Generator : ast::ActionScanner {
 			llvm::FunctionType::get(int_type, {}, false),
 			llvm::Function::ExternalLinkage,
 			"ag_handle_main_thread",
+			*module);
+		fn_terminate = llvm::Function::Create(
+			llvm::FunctionType::get(void_type, {}, false),
+			llvm::Function::ExternalLinkage,
+			"ag_fn_sys_terminate",
 			*module);
 	}
 
@@ -648,8 +662,8 @@ struct Generator : ast::ActionScanner {
 		} else if (isa<ast::TpShared>(*type) || isa<ast::TpConformRef>(*type)) {
 			builder->CreateCall(fn_retain_shared, { cast_to(ptr, ptr_type) });
 		} else if (as_opt) {
-			auto bb_not_null = llvm::BasicBlock::Create(*context, "", current_function);
-			auto bb_null = llvm::BasicBlock::Create(*context, "", current_function);
+			auto bb_not_null = llvm::BasicBlock::Create(*context, "", current_ll_fn);
+			auto bb_null = llvm::BasicBlock::Create(*context, "", current_ll_fn);
 			builder->CreateCondBr(
 				builder->CreateCmp(llvm::CmpInst::Predicate::ICMP_UGT,
 					cast_to(ptr, tp_int_ptr),
@@ -671,8 +685,8 @@ struct Generator : ast::ActionScanner {
 			builder->CreateLoad(tp_int_ptr, counter_addr),
 			const_ctr_step);
 		builder->CreateStore(ctr, counter_addr);
-		auto bb_not_zero = llvm::BasicBlock::Create(*context, "", current_function);
-		auto bb_zero = llvm::BasicBlock::Create(*context, "", current_function);
+		auto bb_not_zero = llvm::BasicBlock::Create(*context, "", current_ll_fn);
+		auto bb_zero = llvm::BasicBlock::Create(*context, "", current_ll_fn);
 		builder->CreateCondBr(
 			builder->CreateCmp(llvm::CmpInst::Predicate::ICMP_ULT, ctr, const_ctr_step),
 			bb_zero,
@@ -726,7 +740,7 @@ struct Generator : ast::ActionScanner {
 			build_release_ptr_not_null(as_rfield->to_release);
 		}
 		if (val.optional_br) {
-			auto common_bb = llvm::BasicBlock::Create(*context, "", current_function);
+			auto common_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
 			builder->CreateBr(common_bb);
 			for (auto& b = val.optional_br; b; b = b->deeper) {
 				if (b->none_bb) {
@@ -741,10 +755,10 @@ struct Generator : ast::ActionScanner {
 		dispose_val_in_current_bb(val, is_local);
 		if (!active_breaks.empty()) {
 			auto cur_bb = builder->GetInsertBlock();
-			for (auto& bb : active_breaks) {
-				builder->SetInsertPoint(bb.second.first);
+			for (auto& brk : active_breaks) {
+				builder->SetInsertPoint(brk.bb);
 				dispose_val_in_current_bb(val, is_local);
-				bb.second.first = builder->GetInsertBlock();
+				brk.bb = builder->GetInsertBlock();
 			}
 			builder->SetInsertPoint(cur_bb);
 		}
@@ -758,7 +772,7 @@ struct Generator : ast::ActionScanner {
 		if (!val.optional_br)
 			return;
 		auto val_bb = builder->GetInsertBlock();
-		auto common_bb = llvm::BasicBlock::Create(*context, "", current_function);
+		auto common_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
 		auto type = dom::strict_cast<ast::TpOptional>(val.type);
 		auto wrapped_val = val.optional_br->is_wrapped
 			? val.data
@@ -937,8 +951,10 @@ struct Generator : ast::ActionScanner {
 		vector<llvm::Value*> prev_capture_ptrs;
 		swap(capture_ptrs, prev_capture_ptrs);
 		auto prev_builder = builder;
-		llvm::IRBuilder fn_bulder(llvm::BasicBlock::Create(*context, "", current_function));
+		llvm::IRBuilder fn_bulder(llvm::BasicBlock::Create(*context, "", current_ll_fn));
 		this->builder = &fn_bulder;
+		auto prev_fn = current_function;
+		current_function = &node;
 		llvm::DIScope* prev_di_scope = current_di_scope;
 		if (node.module) {
 			if (auto di_file = di_files[node.module->name]) {
@@ -952,7 +968,7 @@ struct Generator : ast::ActionScanner {
 					node.line,
 					llvm::DINode::FlagPrototyped,
 					llvm::DISubprogram::SPFlagDefinition);
-				current_function->setSubprogram(sub);
+				current_ll_fn->setSubprogram(sub);
 				current_di_scope = sub;
 			}
 		}
@@ -1016,7 +1032,7 @@ struct Generator : ast::ActionScanner {
 			capture = builder->CreateAlloca(captures.back().second);
 			capture_ptrs.push_back(capture);
 			if (has_parent_capture_ptr) {
-				builder->CreateStore(&*current_function->arg_begin(), builder->CreateStructGEP(captures.back().second, capture, 0));
+				builder->CreateStore(&*current_ll_fn->arg_begin(), builder->CreateStructGEP(captures.back().second, capture, 0));
 			}
 			if (di_builder) {
 				insert_di_var(nullptr, "closure", node.line, node.pos, current_capture_di_type, capture);
@@ -1030,7 +1046,7 @@ struct Generator : ast::ActionScanner {
 				builder->CreateAlloca(to_llvm_type(*(local->type))) });
 		}
 		if (di_builder) {
-			auto param_iter = current_function->arg_begin();
+			auto param_iter = current_ll_fn->arg_begin();
 			if (isa<ast::MkLambda>(node)) {
 				if (closure_struct != nullptr) {
 					auto dbg_param_val = builder->CreateAlloca(ptr_type);
@@ -1049,8 +1065,8 @@ struct Generator : ast::ActionScanner {
 			}
 		}
 		if (has_parent_capture_ptr)
-			capture_ptrs.push_back(&*current_function->arg_begin());
-		auto param_iter = current_function->arg_begin() + (isa<ast::MkLambda>(node) ? 1 : 0);
+			capture_ptrs.push_back(&*current_ll_fn->arg_begin());
+		auto param_iter = current_ll_fn->arg_begin() + (isa<ast::MkLambda>(node) ? 1 : 0);
 		for (auto& p : node.names) {
 			auto p_val = &*param_iter;
 			auto p_is_ptr = p == this_source
@@ -1089,6 +1105,11 @@ struct Generator : ast::ActionScanner {
 		}
 		auto fn_result = compile(node.body.back());
 		persist_rfield(fn_result);
+		if (node.has_lambda_params) {
+			auto t = ast->tp_optional(fn_result.type);
+			fn_result.type = t;
+			fn_result.data = make_opt_val(fn_result.data, t);
+		}
 		auto release_params = [&](Val& result) {
 			auto result_as_temp = get_if<Val::Temp>(&result.lifetime); // null if not temp
 			auto make_result_retained = [&](bool actual_retain = true) {
@@ -1116,20 +1137,19 @@ struct Generator : ast::ActionScanner {
 		release_params(fn_result);
 		if (!node.breaks.empty()) {
 			auto result_bb = builder->GetInsertBlock();
-			auto exit_bb = llvm::BasicBlock::Create(*context, "", current_function);
+			auto exit_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
 			builder->CreateBr(exit_bb);
 			builder->SetInsertPoint(exit_bb);
 			auto phi = builder->CreatePHI(to_llvm_type(*fn_result.type), node.breaks.size() + 1);
 			phi->addIncoming(fn_result.data, result_bb);
-			for (auto& brk : node.breaks) {
-				auto& brk_info = active_breaks[brk.pinned()];
-				builder->SetInsertPoint(brk_info.first);
-				release_params(brk_info.second);
+			for (auto& brk : active_breaks) {
+				assert(brk.block == &node);
+				builder->SetInsertPoint(brk.bb);
+				release_params(brk.result);
 				builder->CreateBr(exit_bb);
-				phi->addIncoming(brk_info.second.data, brk_info.first);
-				active_breaks.erase(brk);
+				phi->addIncoming(brk.result.data, builder->GetInsertBlock());
 			}
-			assert(active_breaks.empty());
+			active_breaks.clear();
 			fn_result.data = phi;
 			builder->SetInsertPoint(exit_bb);
 		}
@@ -1146,6 +1166,7 @@ struct Generator : ast::ActionScanner {
 			builder->CreateRet(fn_result.data);
 		}
 		current_di_scope = prev_di_scope;
+		current_function = prev_fn;
 		current_capture_di_type = prev_capture_di_type;
 		builder = prev_builder;
 		if (!captures.empty() && captures.back().first == node.lexical_depth)
@@ -1159,8 +1180,8 @@ struct Generator : ast::ActionScanner {
 	llvm::Function* compile_function(ast::MkLambda& node, string name, llvm::Type* closure_ptr_type, bool is_external) {
 		if (auto seen = compiled_functions[&node])
 			return seen;
-		llvm::Function* prev = current_function;
-		current_function = llvm::Function::Create(
+		llvm::Function* prev = current_ll_fn;
+		current_ll_fn = llvm::Function::Create(
 			lambda_to_llvm_fn(node, node.type()),
 			is_external
 				? llvm::Function::ExternalLinkage
@@ -1170,7 +1191,7 @@ struct Generator : ast::ActionScanner {
 		if (!is_external) {
 			compile_fn_body(node, name, closure_ptr_type);
 		}
-		swap(prev, current_function);
+		swap(prev, current_ll_fn);
 		compiled_functions[&node] = prev;
 		return prev;
 	}
@@ -1264,15 +1285,15 @@ struct Generator : ast::ActionScanner {
 		}
 		auto body_bb = builder->GetInsertBlock();
 		for (auto& brk : active_breaks) {
-			builder->SetInsertPoint(brk.second.first);
-			auto brk_temp_var = dispose_block_params(brk.second.second);
-			if (brk.first == &node && result_temp_var != brk_temp_var)
+			builder->SetInsertPoint(brk.bb);
+			auto brk_temp_var = dispose_block_params(brk.result);
+			brk.bb = builder->GetInsertBlock();
+			if (brk.block == &node && result_temp_var != brk_temp_var)
 				result_temp_var = nullptr;  // different vars, retain is needed
-			brk.second.first = builder->GetInsertBlock();
 		}
 		builder->SetInsertPoint(body_bb);
 		if (!node.breaks.empty()) {
-			auto exit_bb = llvm::BasicBlock::Create(*context, "", current_function);
+			auto exit_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
 			if (!dom::isa<ast::TpNoRet>(*r.type))
 				builder->CreateBr(exit_bb);
 			auto r_bb = builder->GetInsertBlock();
@@ -1280,15 +1301,19 @@ struct Generator : ast::ActionScanner {
 			auto phi = builder->CreatePHI(to_llvm_type(*node.type()), node.breaks.size() + 1);
 			if (!dom::isa<ast::TpNoRet>(*r.type))
 				phi->addIncoming(r.data, r_bb);
-			for (auto& brk : node.breaks) {
-				auto& brk_info = active_breaks[brk.pinned()];
-				builder->SetInsertPoint(brk_info.first);
+			for (auto it = active_breaks.begin(); it != active_breaks.end();) {
+				auto& brk = *it;
+				if (brk.block != &node) {
+					++it;
+					continue;
+				}
+				builder->SetInsertPoint(brk.bb);
 				if (!result_temp_var)
-					brk_info.second = make_retained_or_non_ptr(move(brk_info.second));
-				dispose_block_params(brk_info.second);
+					brk.result = make_retained_or_non_ptr(move(brk.result));
+				dispose_block_params(brk.result);
 				builder->CreateBr(exit_bb);
-				phi->addIncoming(brk_info.second.data, brk_info.first);
-				active_breaks.erase(brk);
+				phi->addIncoming(brk.result.data, builder->GetInsertBlock());
+				it = active_breaks.erase(it);
 			}
 			r.data = phi;
 			r.type = node.type();
@@ -1304,7 +1329,19 @@ struct Generator : ast::ActionScanner {
 	void on_break(ast::Break& node) override {
 		auto r = compile(node.result);
 		persist_rfield(r);
-		active_breaks.insert({ &node, {builder->GetInsertBlock(), move(r)}});
+		if (node.x_var
+			|| (!dom::isa<ast::Block>(*node.block.pinned())
+				&& node.block.cast<ast::MkLambda>()->has_lambda_params)) {
+			auto t = ast->tp_optional(r.type);
+			r.type = t;
+			r.data = make_opt_val(r.data, t);
+		}
+		if (node.x_var) {
+			r = make_retained_or_non_ptr(move(r));
+			builder->CreateStore(r.data, get_data_ref(node.x_var));
+			r.data = make_opt_none(r.type.cast<ast::TpOptional>());
+		}
+		active_breaks.emplace_back(builder->GetInsertBlock(), move(r), &node);
 		builder->SetInsertPoint((llvm::BasicBlock*)nullptr);
 	}
 	void on_make_delegate(ast::MakeDelegate& node) override {
@@ -1338,10 +1375,10 @@ struct Generator : ast::ActionScanner {
 			llvm::Function::InternalLinkage,
 			ast::format_str("ag_dl_", node.module->name, "_", node.name),
 			module.get());
-		auto prev_fn = current_function;
-		current_function = dl_fn;
+		auto prev_fn = current_ll_fn;
+		current_ll_fn = dl_fn;
 		compile_fn_body(node, ast::format_str("ag_dl_", node.module->name, "_", node.name));
-		current_function = prev_fn;
+		current_ll_fn = prev_fn;
 		auto base = compile(node.base);
 		result->data = builder->CreateInsertValue(
 			builder->CreateInsertValue(
@@ -1428,9 +1465,12 @@ struct Generator : ast::ActionScanner {
 							result_type),
 						Val::NonPtr{} };
 					build_release_ptr_not_null(cast_to(retained_receiver_pin, ptr_type));
-					return move(r);
+					return r;
 				},
-				[&] { return Val{ result->type, make_opt_none(result_type), Val::NonPtr{} }; });
+				[&] {
+					auto opt_t = ast->tp_optional(result->type);
+					return Val{ opt_t, make_opt_val(make_opt_none(result_type), opt_t), Val::NonPtr{} };
+				});
 		} else {
 			bool is_fn = isa<ast::TpFunction>(*node.callee->type());
 			if (!is_fn)
@@ -1461,6 +1501,67 @@ struct Generator : ast::ActionScanner {
 			dispose_val(
 				move(to_dispose.back()),
 				true);
+		auto callee = node.callee->type().cast<ast::TpLambda>();
+		if (callee->has_lambda_params) {
+			unordered_set<pin<ast::Block>> x_targets;
+			bool has_outer_break = false;
+			for (auto& l : *node.possible_param_lambdas) {
+				if (!l) {
+					has_outer_break = true;
+					continue;
+				}
+				for (auto& b : l->xbreaks) {
+					if (b->x_var && captures.back().first == b->x_var->lexical_depth)
+						x_targets.insert(b->block);
+				}
+			}
+			auto opt_t = result->type.cast<ast::TpOptional>();
+			if (!x_targets.empty() || has_outer_break) {
+				auto norm_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
+				auto break_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
+				builder->CreateCondBr(
+					check_opt_has_val(result->data, opt_t),
+					norm_bb,
+					break_bb);
+				builder->SetInsertPoint(break_bb);
+				for (auto& b : x_targets) {
+					auto this_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
+					auto not_this_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
+					auto& var = b->names.front();
+					auto opt_t = var->type.cast<ast::TpOptional>();
+					auto val = remove_indirection(*var, get_data_ref(var.weaked()));
+					builder->CreateCondBr(
+						check_opt_has_val(val, opt_t),
+						this_bb,
+						not_this_bb);
+					builder->SetInsertPoint(this_bb);
+					active_breaks.emplace_back(
+						this_bb,
+						Val{
+							opt_t->wrapped,
+							extract_opt_val(val, opt_t),
+							Val::Temp{ var } },
+							b);
+					builder->SetInsertPoint(not_this_bb);
+				}
+				if (has_outer_break) {
+					auto fn_result_type = ast->tp_optional(
+						current_function->type().cast<ast::TpLambda>()->params.back());
+					active_breaks.emplace_back(
+						builder->GetInsertBlock(),
+						Val{
+							fn_result_type,
+							make_opt_none(fn_result_type),
+							Val::NonPtr{} },
+							current_function);
+				} else {
+					builder->CreateCall(fn_terminate, {});
+				}
+				builder->SetInsertPoint(norm_bb);
+			}
+			result->data = extract_opt_val(result->data, opt_t);
+			result->type = ast->get_wrapped(opt_t);
+		}
 	}
 
 	llvm::Function* build_trampoline(pin<ast::TpDelegate> type, size_t& params_size_out) {
@@ -1474,10 +1575,10 @@ struct Generator : ast::ActionScanner {
 			llvm::Function::InternalLinkage,
 			ast::format_str("ag_tr_", (void*)type),
 			module.get());
-		llvm::Function* prev = current_function;
-		current_function = tramp.first;
+		llvm::Function* prev = current_ll_fn;
+		current_ll_fn = tramp.first;
 		auto prev_builder = builder;
-		llvm::IRBuilder fn_bulder(llvm::BasicBlock::Create(*context, "", current_function));
+		llvm::IRBuilder fn_bulder(llvm::BasicBlock::Create(*context, "", current_ll_fn));
 		this->builder = &fn_bulder;
 		auto self = tramp.first->arg_begin();
 		auto entry_point = tramp.first->arg_begin() + 1;
@@ -1520,7 +1621,7 @@ struct Generator : ast::ActionScanner {
 					params.push_back(gen.builder->CreateCall(gen.fn_get_thread_param, { thread })); }
 				void on_double(ast::TpDouble& type) override { handle_64_bit(type); }
 				void on_function(ast::TpFunction& type) override { handle_64_bit(type); }
-				void on_lambda(ast::TpLambda& type) override { handle_pair(type); }
+				void on_lambda(ast::TpLambda& type) override { assert(false); }
 				void on_delegate(ast::TpDelegate& type) override { handle_pair(type); }
 				void on_cold_lambda(ast::TpColdLambda& type) override {}
 				void on_void(ast::TpVoid& type) override {
@@ -1549,8 +1650,8 @@ struct Generator : ast::ActionScanner {
 			(*pti)->match(td);
 		}
 		builder->CreateCall(fn_unlock_thread_queue, { thread });
-		auto bb_not_null = llvm::BasicBlock::Create(*context, "", current_function);
-		auto bb_null = llvm::BasicBlock::Create(*context, "", current_function);
+		auto bb_not_null = llvm::BasicBlock::Create(*context, "", current_ll_fn);
+		auto bb_null = llvm::BasicBlock::Create(*context, "", current_ll_fn);
 		builder->CreateCondBr(
 			builder->CreateCmp(llvm::CmpInst::Predicate::ICMP_EQ, self, const_null_ptr),
 			bb_null,
@@ -1575,7 +1676,7 @@ struct Generator : ast::ActionScanner {
 		for (auto pi = params.begin() + 1; pi != params.end(); ++pi)
 			build_release(*pi, *(pti++));
 		builder->CreateRetVoid();
-		swap(prev, current_function);
+		swap(prev, current_ll_fn);
 		builder = prev_builder;
 		tramp.second = params_size_out;
 		return tramp.first;
@@ -1746,8 +1847,8 @@ struct Generator : ast::ActionScanner {
 		auto class_fields = classes[ast->extract_class(node.base->type())->get_implementation()].fields;
 		auto base = comp_to_persistent(node.base);
 		auto val = compile(node.val);
-		auto bb_ok = llvm::BasicBlock::Create(*context, "", current_function);
-		auto bb_fail = llvm::BasicBlock::Create(*context, "", current_function);
+		auto bb_ok = llvm::BasicBlock::Create(*context, "", current_ll_fn);
+		auto bb_fail = llvm::BasicBlock::Create(*context, "", current_ll_fn);
 		result->data = builder->CreateCall(fn_splice, {
 				cast_to(val.data, ptr_type),
 				base.data });
@@ -1875,8 +1976,8 @@ struct Generator : ast::ActionScanner {
 					llvm::CmpInst::Predicate::ICMP_EQ,
 					gen.builder->CreateExtractValue(lhs, { 0 }),
 					gen.builder->CreateExtractValue(rhs, { 0 }));
-				auto on_eq = llvm::BasicBlock::Create(*gen.context, "", gen.current_function);
-				auto on_ne = llvm::BasicBlock::Create(*gen.context, "", gen.current_function);
+				auto on_eq = llvm::BasicBlock::Create(*gen.context, "", gen.current_ll_fn);
+				auto on_ne = llvm::BasicBlock::Create(*gen.context, "", gen.current_ll_fn);
 				auto prev_bb = gen.builder->GetInsertBlock();
 				gen.builder->CreateCondBr(cond1, on_eq, on_ne);
 				gen.builder->SetInsertPoint(on_eq);
@@ -2240,9 +2341,9 @@ struct Generator : ast::ActionScanner {
 		const std::function<Val ()>& then_action,
 		const std::function<Val ()>& else_action)
 	{
-		auto then_bb = llvm::BasicBlock::Create(*context, "", current_function);
-		auto else_bb = llvm::BasicBlock::Create(*context, "", current_function);
-		auto joined_bb = llvm::BasicBlock::Create(*context, "", current_function);
+		auto then_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
+		auto else_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
+		auto joined_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
 		builder->CreateCondBr(cond, then_bb, else_bb);
 		builder->SetInsertPoint(then_bb);
 		auto then_val = then_action();
@@ -2290,9 +2391,9 @@ struct Generator : ast::ActionScanner {
 		llvm::Value* cond,
 		const std::function<llvm::Value* ()>& then_action,
 		const std::function<llvm::Value* ()>& else_action) {
-		auto then_bb = llvm::BasicBlock::Create(*context, "", current_function);
-		auto else_bb = llvm::BasicBlock::Create(*context, "", current_function);
-		auto joined_bb = llvm::BasicBlock::Create(*context, "", current_function);
+		auto then_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
+		auto else_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
+		auto joined_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
 		builder->CreateCondBr(cond, then_bb, else_bb);
 		builder->SetInsertPoint(then_bb);
 		auto then_val = then_action();
@@ -2333,8 +2434,8 @@ struct Generator : ast::ActionScanner {
 					: compile(node.p[1]);
 			};
 			if (dom::isa<ast::TpNoRet>(*node.p[1]->type())) {
-				auto then_bb = llvm::BasicBlock::Create(*context, "", current_function);
-				auto else_bb = llvm::BasicBlock::Create(*context, "", current_function);
+				auto then_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
+				auto else_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
 				builder->CreateCondBr(check_opt_has_val(cond_opt_val.data, cond_type), then_bb, else_bb);
 				builder->SetInsertPoint(then_bb);
 				comp_then();
@@ -2375,8 +2476,8 @@ struct Generator : ast::ActionScanner {
 		auto cond_type = dom::strict_cast<ast::TpOptional>(node.p[0]->type());
 		auto cond_opt = compile(node.p[0]);
 		if (dom::isa<ast::TpNoRet>(*node.p[1]->type())) {
-			auto then_bb = llvm::BasicBlock::Create(*context, "", current_function);
-			auto else_bb = llvm::BasicBlock::Create(*context, "", current_function);
+			auto then_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
+			auto else_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
 			builder->CreateCondBr(check_opt_has_val(cond_opt.data, cond_type), then_bb, else_bb);
 			builder->SetInsertPoint(else_bb);
 			auto unused = compile(node.p[1]);
@@ -2403,13 +2504,13 @@ struct Generator : ast::ActionScanner {
 			[&] { return compile(node.p[1]); });
 	}
 	void on_loop(ast::Loop& node) override {
-		auto loop_body = llvm::BasicBlock::Create(*context, "", current_function);
+		auto loop_body = llvm::BasicBlock::Create(*context, "", current_ll_fn);
 		builder->CreateBr(loop_body);
 		builder->SetInsertPoint(loop_body);
 		*result = compile(node.p);
 		auto r_type = dom::strict_cast<ast::TpOptional>(node.p->type());
 		if (r_type) {
-			auto after_loop = llvm::BasicBlock::Create(*context, "", current_function);
+			auto after_loop = llvm::BasicBlock::Create(*context, "", current_ll_fn);
 			builder->CreateCondBr(
 				check_opt_has_val(result->data, r_type),
 				after_loop,
@@ -2453,7 +2554,10 @@ struct Generator : ast::ActionScanner {
 				vector<llvm::Type*> params{ ptr_type }; // closure struct or this
 				for (size_t i = 0; i < as_lambda->params.size() - 1; i++)
 					params.push_back(to_llvm_type(*as_lambda->params[i]));
-				fn = llvm::FunctionType::get(to_llvm_type(*as_lambda->params.back()), move(params), false);
+				auto result_type = as_lambda->params.back().pinned();
+				if (as_lambda->has_lambda_params)
+					result_type = ast->tp_optional(result_type);
+				fn = llvm::FunctionType::get(to_llvm_type(*result_type), move(params), false);
 			}
 			return fn;
 		}
@@ -2798,7 +2902,7 @@ struct Generator : ast::ActionScanner {
 			}
 			// Initializer
 			llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "", info.initializer));
-			current_function = info.initializer;
+			current_ll_fn = info.initializer;
 			this->builder = &builder;
 			if (base_info)
 				builder.CreateCall(base_info->initializer, { info.initializer->arg_begin() });
@@ -2812,7 +2916,7 @@ struct Generator : ast::ActionScanner {
 			builder.CreateRetVoid();
 			// Constructor
 			builder.SetInsertPoint(llvm::BasicBlock::Create(*context, "", info.constructor));
-			current_function = info.constructor;
+			current_ll_fn = info.constructor;
 			result = builder.CreateCall(fn_allocate, {
 				builder.getInt64(layout.getTypeAllocSize(info.fields)) });
 			builder.CreateCall(info.initializer, { result });
@@ -2822,7 +2926,7 @@ struct Generator : ast::ActionScanner {
 			// Disposer
 			if (special_copy_and_dispose.count(cls) == 0) {
 				builder.SetInsertPoint(llvm::BasicBlock::Create(*context, "", info.dispose));
-				current_function = info.dispose;
+				current_ll_fn = info.dispose;
 				if (auto manual_disposer_fn = cls->module->functions.find("dispose" + cls->name); manual_disposer_fn != cls->module->functions.end()) {
 					// TODO: check prototype
 					builder.CreateCall(
@@ -2851,7 +2955,7 @@ struct Generator : ast::ActionScanner {
 				ast::format_str("ag_visit_", cls->module->name, "_", cls->name), module.get());
 			if (special_copy_and_dispose.count(cls) == 0) {
 				builder.SetInsertPoint(llvm::BasicBlock::Create(*context, "", info.visit));
-				current_function = info.visit;
+				current_ll_fn = info.visit;
 				if (base_info)
 					builder.CreateCall(base_info->visit, { info.visit->getArg(0), info.visit->getArg(1), info.visit->getArg(2) });
 				result = builder.CreateBitOrPointerCast(info.visit->getArg(0), info.fields->getPointerTo());
@@ -2890,7 +2994,7 @@ struct Generator : ast::ActionScanner {
 				ast::format_str("ag_copy_", cls->get_name()), module.get());
 			if (special_copy_and_dispose.count(cls) == 0) {
 				builder.SetInsertPoint(llvm::BasicBlock::Create(*context, "", info.copier));
-				current_function = info.copier;
+				current_ll_fn = info.copier;
 				if (auto manual_fixer_fn = cls->module->functions.find("afterCopy" + cls->name); manual_fixer_fn != cls->module->functions.end()) {
 					// TODO: check prototype
 					builder.CreateCall(
@@ -3015,12 +3119,12 @@ struct Generator : ast::ActionScanner {
 		for (auto& m : ast->modules) {
 			for (auto& fn : m.second->functions) {
 				if (!fn.second->is_platform) {
-					current_function = functions[fn.second];
+					current_ll_fn = functions[fn.second];
 					compile_fn_body(*fn.second, ast::format_str("ag_fn_", m.first, "_", fn.first));
 				}
 			}
 		}
-		current_function = llvm::Function::Create(
+		current_ll_fn = llvm::Function::Create(
 			llvm::FunctionType::get(int_type, {}, false),
 			llvm::Function::ExternalLinkage,
 			"main", module.get());
@@ -3033,7 +3137,7 @@ struct Generator : ast::ActionScanner {
 					llvm::Function::ExternalLinkage,
 					ast::format_str("ag_test_", m.first, "_", test.first),
 					module.get());
-				current_function = fn;
+				current_ll_fn = fn;
 				compile_fn_body(*test.second, ast::format_str("ag_test_", m.first, "_", test.first));
 			}
 		}
