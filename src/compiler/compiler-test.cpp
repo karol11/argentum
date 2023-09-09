@@ -918,4 +918,59 @@ TEST(Parser, Break) {
     )-");
 }
 
+TEST(Parser, Unwind) {
+    execute(R"-(
+        fn forRange(from int, to int, body(int)) {
+            loop !(from < to ? {
+                    body(from);
+                    from += 1
+                })
+        }
+        x = {
+                forRange(1, 100, (i){
+                    i == 11 ? ^x=42
+                });
+                0
+            };
+        sys_assert(42, x)
+    )-");
+    /*
+        fn forRange(from int, to int, body(int)>>>bool<<<) >>>bool<<< { // for all callable having lambda paramters (CHLP) - one optional level added
+            loop !(from < to ? {
+                    body(from) >>> : ^forRange=false <<<;  // for all call inside CHLP if it is not proven that all lambdas are not cross-breaking: check_for_null ? ret_null : unwrap
+                    from += 1                              // but if it is proven that all lambdas are not cross-breaking, add unconditional unwrap 
+                })
+            >>> true <<<  // for all CHLP adds wrap to all normal rets
+        }
+        x = >>>{  // for all blocks that are cross-break targets (BT): add captured optional var
+            v = false; <<<
+            forRange(1, 100, (i)>>>bool<<<{                 // for all crossbreaking lambdas (CL), one optional level
+                i == 11 ? >>>{ v = 42; ^forRange=false }<<<  // crossbreaks assign to BT var and breaks nullopt from CL
+                >>>true<<<             // CL adds wrap to all normal rets
+            }) : v ? ^x= _ : ^main; // BT adds to adds to all CHLP calls check for result and BT var
+            >>>
+            0
+        };<<<
+        sys_assert(42, x)
+
+        modified are:
+            *crossbreaks target blocks: add var
+            *callables having lambda params: add +opt to result, and wrap in each normal return
+            *cross-breaks: assign to var, return nullopt from the current fn.
+            calls with lambda params:
+                if all lambdas don't cross-break: forcefully unwrap result
+                else:
+                    check result for not null and unwrap
+                    for each break in each lambda:
+                        check its var and break its block
+                    if has lambda params, return from current fn
+                    if no breaks and the current callable has no lambda params, error
+        attributes:
+            blocks*: is_xbreak_target
+            lambda*: list_of xbreaks
+            callable*: has_lambda_params
+            callsite*: list of lambdas that can be parameters 
+    */
+}
+
 }  // namespace
