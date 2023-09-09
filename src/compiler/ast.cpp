@@ -592,10 +592,22 @@ pin<ClassInstance> Ast::get_class_instance(vector<weak<AbstractClass>>&& params)
 	class_instances_.insert({ &r->params, r });
 	return r;
 }
+bool has_lambda_param(const vector<own<Type>>& params) {
+	for (auto i = params.begin(), n = params.end() - 1; i != n; ++i) {
+		auto t = i->pinned();
+		if (auto as_opt = dom::strict_cast<TpOptional>(t))
+			t = as_opt->wrapped;
+		if (dom::isa<TpLambda>(*t))
+			return true;
+	}
+	return false;
+}
 pin<TpFunction> Ast::tp_function(vector<own<Type>>&& params) {
-	if (auto at = function_types_.find(&params); at != function_types_.end())
+	if (auto at = function_types_.find(&params); at != function_types_.end()) {
 		return at->second;
+	}
 	auto r = pin<TpFunction>::make();
+	r->has_lambda_params = has_lambda_param(params);
 	r->params = move(params);
 	function_types_.insert({ &r->params, r });
 	return r;
@@ -605,6 +617,7 @@ pin<TpLambda> Ast::tp_lambda(vector<own<Type>>&& params) {
 	if (at != lambda_types_.end())
 		return at->second;
 	auto r = pin<TpLambda>::make();
+	r->has_lambda_params = has_lambda_param(params);
 	r->params = move(params);
 	lambda_types_.insert({&r->params, r});
 	return r;
@@ -614,6 +627,7 @@ pin<TpDelegate> Ast::tp_delegate(vector<own<Type>>&& params) {
 	if (at != delegate_types_.end())
 		return at->second;
 	auto r = pin<TpDelegate>::make();
+	r->has_lambda_params = has_lambda_param(params);
 	r->params = move(params);
 	delegate_types_.insert({ &r->params, r });
 	return r;

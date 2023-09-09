@@ -113,6 +113,7 @@ struct TpDouble : Type {
 };
 struct TpFunction : Type {
 	vector<own<Type>> params;  //+result
+	bool has_lambda_params = false;
 	void match(TypeMatcher& matcher) override;
 	DECLARE_DOM_CLASS(TpFunction);
 };
@@ -442,6 +443,7 @@ struct Break : Action {
 	weak<Block> block;
 	own<Action> result;
 	string block_name;
+	weak<Var> x_var;  // if not null, this is the opt.var that holds the result
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(Break);
 };
@@ -451,7 +453,7 @@ struct Block : Action {
 	string break_name;
 	vector<own<Var>> names; // locals or params
 	vector<own<Action>> body;
-	vector<weak<Break>> breaks;
+	unordered_set<weak<Break>> breaks;
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(Block);
 };
@@ -461,6 +463,8 @@ struct MkLambda : Block {  // MkLambda locals are params
 	size_t lexical_depth = 0;  // its nesting level
 	vector<weak<Var>> captured_locals;  // its params and its nested blocks' locals that were captured by nested lambdas
 	vector<weak<Var>> mutables;  // its params and its nested blocks locals that were not captured but were modified by Set actions
+	vector<weak<Break>> xbreaks; // all its breaks that go outside of this lambda
+	bool has_lambda_params;      // if `names` contains a parameter of type lambda
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(MkLambda);
 };
@@ -493,6 +497,7 @@ struct Method : Function {  // Cannot be in the tree of ops. Resides in TpClass:
 struct Call : Action {
 	own<Action> callee;  // returns lambda
 	vector<own<Action>> params;
+	std::shared_ptr<unordered_set<weak<ast::MkLambda>>> possible_param_lambdas;  // null entry means dep. on fn. param
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(Call);
 };
