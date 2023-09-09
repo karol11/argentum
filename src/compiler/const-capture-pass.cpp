@@ -4,11 +4,16 @@
 #include <unordered_set>
 #include <cassert>
 #include <unordered_set>
+#include <variant>
 
 using std::unordered_map;
 using std::unordered_set;
 using std::vector;
 using std::move;
+using std::variant;
+using std::get_if;
+using std::function;
+using std::shared_ptr;
 using ltm::pin;
 using ltm::weak;
 using ltm::own;
@@ -16,19 +21,60 @@ using ast::Node;
 
 namespace {
 
+struct LambdaDep : ltm::Object {
+	using tp_direct = weak<ast::MkLambda>;
+	using tp_pull = unordered_set<weak<LambdaDep>>;
+	using type = variant<tp_direct, tp_pull>;
+	type val;
+	LambdaDep(type&& v) : val(v) { make_shared(); }
+
+	LTM_COPYABLE(LambdaDep);
+};
+
 struct ConstCapturePass : ast::ActionScanner {
 	pin<dom::Dom> dom;
 	pin<ast::Ast> ast;
 	vector<pin<ast::MkLambda>> lambda_levels;
+	unordered_map<pin<ast::Node>, own<LambdaDep>> node_lambdas;
+	vector<weak<ast::Call>> calls_to_fix;
 
 	ConstCapturePass(pin<ast::Ast> ast, pin<dom::Dom> dom)
 		: dom(dom)
 		, ast(ast) {}
 
+	void fix_calls() {
+		for (auto& c : calls_to_fix) {
+			unordered_set<pin<LambdaDep>> seen;
+			auto possible_param_lambdas = std::make_shared<unordered_set<weak<ast::MkLambda>>>();
+			function<void(LambdaDep*)> scan = [&](LambdaDep* n) {
+				if (auto as_direct = get_if<LambdaDep::tp_direct>(&n->val)) {
+					possible_param_lambdas->insert(*as_direct);
+				} else if (auto as_pull = get_if<LambdaDep::tp_pull>(&n->val)) {
+					if (seen.insert(n).second) {
+						for (auto& p : *as_pull) {
+							scan(&*p.pinned());
+						}
+					}
+				}
+			};
+			for (auto& p : c->params) {
+				if (auto it = node_lambdas.find(p); it != node_lambdas.end()) {
+					scan(&*it->second);
+				}
+			}
+			if (!possible_param_lambdas->empty())
+				c->possible_param_lambdas = possible_param_lambdas;
+		}
+		calls_to_fix.clear();
+		node_lambdas.clear();
+	}
+
 	void fix_globals() {
 		for (auto& c : ast->classes_in_order) {
-			for (auto& f : c->fields)
+			for (auto& f : c->fields) {
 				fix(f->initializer);
+				fix_calls();
+			}
 			for (auto& m : c->new_methods)
 				fix_fn(*m);
 			for (auto& b : c->overloads)
@@ -47,18 +93,30 @@ struct ConstCapturePass : ast::ActionScanner {
 	void fix_fn(ast::MkLambda& fn) {
 		fn.lexical_depth = lambda_levels.size();
 		lambda_levels.push_back(&fn);
-		fix_block(fn);
+		fn.has_lambda_params = fix_block(fn, true);
+		fix_calls();
 		lambda_levels.pop_back();
 	}
-	void fix_block(ast::Block& b) {
+	bool fix_block(ast::Block& b, bool is_fn = false) {
+		bool has_lambda_names = false;
 		b.lexical_depth = lambda_levels.size() - 1;
 		for (auto& p : b.names) {
 			if (p->initializer)
 				fix(p->initializer);
 			p->lexical_depth = lambda_levels.size() - 1;
+			if (auto& l = node_lambdas[p->initializer]) {
+				has_lambda_names = true;
+				node_lambdas.insert({
+					p,
+					is_fn
+						? new LambdaDep(weak<ast::MkLambda>(nullptr))
+						: new LambdaDep(unordered_set{ l.weaked() })
+				});
+			}
 		}
 		for (auto& b : b.body)
 			fix(b);
+		return has_lambda_names;
 	}
 
 	void fix_var_depth(pin<ast::Var> var) {
@@ -74,13 +132,46 @@ struct ConstCapturePass : ast::ActionScanner {
 		}
 	}
 
+	void on_bin_op(ast::BinaryOp& node) override {
+		ast::ActionScanner::on_bin_op(node);
+		auto& l = node_lambdas[node.p[0]];
+		auto& r = node_lambdas[node.p[1]];
+		if (l || r) {
+			if (l && r) {
+				node_lambdas.insert({
+					&node,
+					new LambdaDep(unordered_set{
+						l.weaked(),
+						r.weaked() })
+					});
+			} else {
+				node_lambdas.insert({ &node, l ? l : r });
+			}
+		}
+	}
+
 	void on_get(ast::Get& node) override {
 		fix_var_depth(node.var);
+		if (dom::isa<ast::TpLambda>(*node.type())) {
+			node_lambdas.insert({ &node, node_lambdas[&node]});
+		}
 	}
 
 	void on_break(ast::Break& node) override {
-		if (node.block->lexical_depth != lambda_levels.size() - 1)
-			node.error("internal: break through lambdas aren't supported yet");
+		if (node.block->lexical_depth != lambda_levels.size() - 1) {
+			if (node.block->names.empty() || node.block->names[0]->name != "_x_break") {
+				auto x_var = pin<ast::Var>::make();
+				x_var->name = "_x_break";
+				x_var->is_mutable = true;
+				x_var->type = ast->tp_optional(node.result->type());
+				fix_var_depth(x_var);
+				node.block->names.push_back(x_var);
+			}
+			node.x_var = node.block->names[0];
+			for (int i = lambda_levels.size() - 1; i > node.block->lexical_depth; --i) {
+				lambda_levels[i]->xbreaks.push_back(&node);
+			}
+		}
 	}
 
 	void on_set(ast::Set& node) override {
@@ -90,6 +181,10 @@ struct ConstCapturePass : ast::ActionScanner {
 			node.var->is_mutable = true;
 			lambda_levels[node.var->lexical_depth]->mutables.push_back(node.var);
 		}
+		if (auto& l = node_lambdas[node.var]) {
+			get_if<LambdaDep::tp_pull>(&l->val)->insert(node_lambdas[node.val]);
+			node_lambdas.insert({ &node, l });
+		}
 	}
 
 	void on_block(ast::Block& node) override {
@@ -98,6 +193,16 @@ struct ConstCapturePass : ast::ActionScanner {
  
 	void on_mk_lambda(ast::MkLambda& node) override {
 		fix_fn(node);
+		node_lambdas.insert({ &node, new LambdaDep(pin<ast::MkLambda>(&node).weaked()) });
+	}
+
+	void on_call(ast::Call& node) override {
+		ast::ActionScanner::on_call(node);
+		auto type = node.type();
+		if (auto as_opt = dom::strict_cast<ast::TpOptional>(type))
+			type = as_opt->wrapped;
+		if (dom::isa<ast::TpLambda>(*type))
+			calls_to_fix.push_back(&node);
 	}
 
 	void on_immediate_delegate(ast::ImmediateDelegate& node) override {
