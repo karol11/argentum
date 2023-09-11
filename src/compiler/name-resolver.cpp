@@ -386,7 +386,7 @@ struct NameResolver : ast::ActionScanner {
 			if (auto *as_block = std::get_if<pin<ast::Block>>(&*it)) {
 				if ((*as_block)->break_name == node.block_name) {
 					node.block = (*as_block);
-					(*as_block)->breaks.push_back(&node);
+					(*as_block)->breaks.insert(&node);
 					fix(node.result);
 					return;
 				}

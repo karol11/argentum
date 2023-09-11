@@ -113,7 +113,7 @@ struct TpDouble : Type {
 };
 struct TpFunction : Type {
 	vector<own<Type>> params;  //+result
-	bool has_lambda_params = false;
+	bool can_x_break = false;  // has has cross-breaks or has lambda params, so its result has opt-wrapper
 	void match(TypeMatcher& matcher) override;
 	DECLARE_DOM_CLASS(TpFunction);
 };
@@ -464,7 +464,7 @@ struct MkLambda : Block {  // MkLambda locals are params
 	vector<weak<Var>> captured_locals;  // its params and its nested blocks' locals that were captured by nested lambdas
 	vector<weak<Var>> mutables;  // its params and its nested blocks locals that were not captured but were modified by Set actions
 	vector<weak<Break>> xbreaks; // all its breaks that go outside of this lambda
-	bool has_lambda_params;      // if `names` contains a parameter of type lambda
+	bool can_x_break;            // if has xbreaks or has a parameter of type lambda
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(MkLambda);
 };

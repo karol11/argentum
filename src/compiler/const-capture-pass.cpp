@@ -114,15 +114,13 @@ struct ConstCapturePass : ast::ActionScanner {
 				path_set.erase(n);
 			}
 		};
-		for (auto& n : node_lambdas)
+		for (auto& n : node_lambdas)	
 			find_loops(n.second);
 		while (!loops.empty()) {
 			auto star = new LambdaDep(unordered_set<weak<LambdaDep>>());
 			auto l = loops.begin()->second;
-
-
+			// turn loops to stars
 		}
-		// turn loops to stars
 		// DFS node_lambdas calls to fix
 	}*/
 
@@ -150,7 +148,7 @@ struct ConstCapturePass : ast::ActionScanner {
 	void fix_fn(ast::MkLambda& fn) {
 		fn.lexical_depth = lambda_levels.size();
 		lambda_levels.push_back(&fn);
-		fn.has_lambda_params = fix_block(fn, true);
+		fn.can_x_break = fix_block(fn, true) || !fn.xbreaks.empty();
 		fix_calls();
 		lambda_levels.pop_back();
 	}
@@ -225,7 +223,7 @@ struct ConstCapturePass : ast::ActionScanner {
 				node.block->names.push_back(x_var);
 			}
 			node.x_var = node.block->names[0];
-			for (int i = lambda_levels.size() - 1; i > node.block->lexical_depth; --i) {
+			for (size_t i = lambda_levels.size() - 1; i > node.block->lexical_depth; --i) {
 				lambda_levels[i]->xbreaks.push_back(&node);
 			}
 		}
@@ -255,10 +253,7 @@ struct ConstCapturePass : ast::ActionScanner {
 
 	void on_call(ast::Call& node) override {
 		ast::ActionScanner::on_call(node);
-		auto type = node.type();
-		if (auto as_opt = dom::strict_cast<ast::TpOptional>(type))
-			type = as_opt->wrapped;
-		if (dom::isa<ast::TpLambda>(*type))
+		if (node.callee->type().cast<ast::TpLambda>()->can_x_break)
 			calls_to_fix.push_back(&node);
 	}
 

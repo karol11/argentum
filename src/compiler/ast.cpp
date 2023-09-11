@@ -607,7 +607,7 @@ pin<TpFunction> Ast::tp_function(vector<own<Type>>&& params) {
 		return at->second;
 	}
 	auto r = pin<TpFunction>::make();
-	r->has_lambda_params = has_lambda_param(params);
+	r->can_x_break = has_lambda_param(params);
 	r->params = move(params);
 	function_types_.insert({ &r->params, r });
 	return r;
@@ -617,7 +617,7 @@ pin<TpLambda> Ast::tp_lambda(vector<own<Type>>&& params) {
 	if (at != lambda_types_.end())
 		return at->second;
 	auto r = pin<TpLambda>::make();
-	r->has_lambda_params = has_lambda_param(params);
+	r->can_x_break = true;
 	r->params = move(params);
 	lambda_types_.insert({&r->params, r});
 	return r;
@@ -627,7 +627,7 @@ pin<TpDelegate> Ast::tp_delegate(vector<own<Type>>&& params) {
 	if (at != delegate_types_.end())
 		return at->second;
 	auto r = pin<TpDelegate>::make();
-	r->has_lambda_params = has_lambda_param(params);
+	r->can_x_break = has_lambda_param(params);
 	r->params = move(params);
 	delegate_types_.insert({ &r->params, r });
 	return r;
