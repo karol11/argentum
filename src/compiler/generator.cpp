@@ -1107,7 +1107,7 @@ struct Generator : ast::ActionScanner {
 		}
 		auto fn_result = compile(node.body.back());
 		persist_rfield(fn_result);
-		if (node.can_x_break) {
+		if (node.type().cast<ast::TpLambda>()->can_x_break) {
 			auto t = ast->tp_optional(fn_result.type);
 			fn_result.type = t;
 			fn_result.data = make_opt_val(fn_result.data, t);
@@ -1143,13 +1143,11 @@ struct Generator : ast::ActionScanner {
 			builder->CreateBr(exit_bb);
 			builder->SetInsertPoint(exit_bb);
 			auto phi = builder->CreatePHI(to_llvm_type(*fn_result.type), node.breaks.size() + 1);
-			DUMP(fn_result.data);
 			phi->addIncoming(fn_result.data, result_bb);
 			for (auto& brk : active_breaks) {
 				builder->SetInsertPoint(brk.bb);
 				release_params(brk.result);
 				builder->CreateBr(exit_bb);
-				DUMP(brk.result.data);
 				phi->addIncoming(brk.result.data, builder->GetInsertBlock());
 			}
 			active_breaks.clear();
@@ -1341,7 +1339,7 @@ struct Generator : ast::ActionScanner {
 		persist_rfield(r);
 		if (node.x_var
 			|| (!dom::isa<ast::Block>(*node.block.pinned())
-				&& node.block.cast<ast::MkLambda>()->can_x_break)) {
+				&& node.block->type().cast<ast::TpLambda>()->can_x_break)) {
 			auto t = ast->tp_optional(r.type);
 			r.type = t;
 			r.data = make_opt_val(r.data, t);
@@ -1468,7 +1466,7 @@ struct Generator : ast::ActionScanner {
 					llvm::ConstantInt::get(tp_int_ptr, 0)),
 				[&] {
 					Val r{
-						result->type,
+						result_type,
 						make_opt_val(
 							builder->CreateCall(
 								llvm::FunctionCallee(
@@ -1481,7 +1479,7 @@ struct Generator : ast::ActionScanner {
 					return r;
 				},
 				[&] {
-					auto opt_t = ast->tp_optional(result->type);
+					auto opt_t = ast->tp_optional(result_type);
 					return Val{ opt_t, make_opt_val(make_opt_none(result_type), opt_t), Val::NonPtr{} };
 				});
 		} else {
@@ -1518,19 +1516,15 @@ struct Generator : ast::ActionScanner {
 		if (callee->can_x_break) {
 			unordered_set<pin<ast::Block>> x_targets;
 			bool has_outer_break = false;
-			if (node.possible_param_lambdas) {
-				for (auto& l : *node.possible_param_lambdas) {
-					if (!l) {
-						has_outer_break = true;
-						continue;
-					}
-					for (auto& b : l->xbreaks) {
-						if (b->x_var && captures.back().first == b->x_var->lexical_depth)
-							x_targets.insert(b->block);
-					}
+			for (auto& l : node.activates_lambdas) {
+				if (!l) {
+					has_outer_break = true;
+					continue;
 				}
-			} else {
-				has_outer_break = true;
+				for (auto& b : l->x_targets) {
+					if (captures.back().first == b->lexical_depth)
+						x_targets.insert(b);
+				}
 			}
 			auto opt_t = ast->tp_optional(node.type());
 			if (!x_targets.empty() || has_outer_break) {
