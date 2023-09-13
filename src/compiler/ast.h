@@ -113,7 +113,7 @@ struct TpDouble : Type {
 };
 struct TpFunction : Type {
 	vector<own<Type>> params;  //+result
-	bool can_x_break = false;  // has has cross-breaks or has lambda params, so its result has opt-wrapper
+	bool can_x_break = false;  // is lambda or has lambda params, so its result has opt-wrapper
 	void match(TypeMatcher& matcher) override;
 	DECLARE_DOM_CLASS(TpFunction);
 };
@@ -463,8 +463,7 @@ struct MkLambda : Block {  // MkLambda locals are params
 	size_t lexical_depth = 0;  // its nesting level
 	vector<weak<Var>> captured_locals;  // its params and its nested blocks' locals that were captured by nested lambdas
 	vector<weak<Var>> mutables;  // its params and its nested blocks locals that were not captured but were modified by Set actions
-	vector<weak<Break>> xbreaks; // all its breaks that go outside of this lambda
-	bool can_x_break;            // if has xbreaks or has a parameter of type lambda
+	unordered_set<weak<Block>> x_targets; // all its break targets, and targets of called lambdas, that go outside of this lambda
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(MkLambda);
 };
@@ -497,7 +496,7 @@ struct Method : Function {  // Cannot be in the tree of ops. Resides in TpClass:
 struct Call : Action {
 	own<Action> callee;  // returns lambda
 	vector<own<Action>> params;
-	std::shared_ptr<unordered_set<weak<ast::MkLambda>>> possible_param_lambdas;  // null entry means dep. on fn. param
+	unordered_set<weak<ast::MkLambda>> activates_lambdas;  // null entry means dep. on fn. param
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(Call);
 };
