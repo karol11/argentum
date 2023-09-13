@@ -27,47 +27,20 @@ struct LambdaDep : ltm::Object {
 	using type = variant<tp_direct, tp_pull>;
 	type val;
 	LambdaDep(type&& v) : val(v) { make_shared(); }
-
 	LTM_COPYABLE(LambdaDep);
 };
 
 struct ConstCapturePass : ast::ActionScanner {
 	pin<dom::Dom> dom;
 	pin<ast::Ast> ast;
-	vector<pin<ast::MkLambda>> lambda_levels;
-	unordered_map<pin<ast::Node>, own<LambdaDep>> node_lambdas;
-	vector<weak<ast::Call>> calls_to_fix;
+	vector<pin<ast::MkLambda>> lambda_levels;   // Nested lambdas, `back` is the current lambda
+	unordered_map<pin<ast::Node>, own<LambdaDep>> node_lambdas;  // lambda dependency graph holding data on what lambdas a given node can return, can have cycles. built per-callable
+	vector<weak<ast::Call>> calls_to_fix; // calls of the current function which `activates_lambdas` to fill by tracing the `node_lambdas`
 
 	ConstCapturePass(pin<ast::Ast> ast, pin<dom::Dom> dom)
 		: dom(dom)
 		, ast(ast) {}
 
-	void fix_calls() {
-		for (auto& c : calls_to_fix) {
-			unordered_set<pin<LambdaDep>> seen;
-			auto possible_param_lambdas = std::make_shared<unordered_set<weak<ast::MkLambda>>>();
-			function<void(LambdaDep*)> scan = [&](LambdaDep* n) {
-				if (auto as_direct = get_if<LambdaDep::tp_direct>(&n->val)) {
-					possible_param_lambdas->insert(*as_direct);
-				} else if (auto as_pull = get_if<LambdaDep::tp_pull>(&n->val)) {
-					if (seen.insert(n).second) {
-						for (auto& p : *as_pull) {
-							scan(&*p.pinned());
-						}
-					}
-				}
-			};
-			for (auto& p : c->params) {
-				if (auto it = node_lambdas.find(p); it != node_lambdas.end()) {
-					scan(&*it->second);
-				}
-			}
-			if (!possible_param_lambdas->empty())
-				c->possible_param_lambdas = possible_param_lambdas;
-		}
-		calls_to_fix.clear();
-		node_lambdas.clear();
-	}
 /*  // Todo Assess if a Loop->Star and full scan approach works better than multiple DFS
 	void fix_calls() {
 		unordered_set<pin<LambdaDep>> seen;
@@ -128,7 +101,6 @@ struct ConstCapturePass : ast::ActionScanner {
 		for (auto& c : ast->classes_in_order) {
 			for (auto& f : c->fields) {
 				fix(f->initializer);
-				fix_calls();
 			}
 			for (auto& m : c->new_methods)
 				fix_fn(*m);
@@ -146,32 +118,64 @@ struct ConstCapturePass : ast::ActionScanner {
 		}
 	}
 	void fix_fn(ast::MkLambda& fn) {
+		auto prev_calls_to_fix = move(calls_to_fix);
+		auto prev_node_lambdas = move(node_lambdas);
 		fn.lexical_depth = lambda_levels.size();
 		lambda_levels.push_back(&fn);
-		fn.can_x_break = fix_block(fn, true) || !fn.xbreaks.empty();
-		fix_calls();
+		fix_block(fn, true);
+		for (auto& c : calls_to_fix) {
+			unordered_set<pin<LambdaDep>> seen;
+			function<void(LambdaDep*)> scan = [&](LambdaDep* n) {
+				if (auto as_direct = get_if<LambdaDep::tp_direct>(&n->val)) {
+					if (&fn != *as_direct) {
+						c->activates_lambdas.insert(*as_direct);
+						if (!as_direct) {
+							for (auto& t : (*as_direct)->x_targets) {
+								if (t->lexical_depth < fn.lexical_depth)
+									fn.x_targets.insert(t);
+							}
+						}
+					}
+				} else if (auto as_pull = get_if<LambdaDep::tp_pull>(&n->val)) {
+					if (seen.insert(n).second) {
+						for (auto& p : *as_pull) {
+							scan(&*p.pinned());
+						}
+					}
+				}
+			};
+			if (auto it = node_lambdas.find(c->callee); it != node_lambdas.end()) {
+				scan(&*it->second);
+			}
+			for (auto& p : c->params) {
+				if (auto it = node_lambdas.find(p); it != node_lambdas.end()) {
+					scan(&*it->second);
+				}
+			}
+		}
 		lambda_levels.pop_back();
+		calls_to_fix = move(prev_calls_to_fix);
+		node_lambdas = move(prev_node_lambdas);
 	}
-	bool fix_block(ast::Block& b, bool is_fn = false) {
+	void fix_block(ast::Block& b, bool is_fn = false) {
 		bool has_lambda_names = false;
 		b.lexical_depth = lambda_levels.size() - 1;
 		for (auto& p : b.names) {
 			if (p->initializer)
 				fix(p->initializer);
 			p->lexical_depth = lambda_levels.size() - 1;
-			if (auto& l = node_lambdas[p->initializer]) {
+			if (auto it_l = node_lambdas.find(p->initializer); it_l != node_lambdas.end()) {
 				has_lambda_names = true;
 				node_lambdas.insert({
 					p,
 					is_fn
 						? new LambdaDep(weak<ast::MkLambda>(nullptr))
-						: new LambdaDep(unordered_set{ l.weaked() })
+						: new LambdaDep(unordered_set{ it_l->second.weaked() })
 				});
 			}
 		}
 		for (auto& b : b.body)
 			fix(b);
-		return has_lambda_names;
 	}
 
 	void fix_var_depth(pin<ast::Var> var) {
@@ -189,26 +193,29 @@ struct ConstCapturePass : ast::ActionScanner {
 
 	void on_bin_op(ast::BinaryOp& node) override {
 		ast::ActionScanner::on_bin_op(node);
-		auto& l = node_lambdas[node.p[0]];
-		auto& r = node_lambdas[node.p[1]];
-		if (l || r) {
-			if (l && r) {
+		auto l_it = node_lambdas.find(node.p[0]);
+		auto r_it = node_lambdas.find(node.p[1]);
+		if (l_it != node_lambdas.end()) {
+			if (r_it != node_lambdas.end()) {
 				node_lambdas.insert({
 					&node,
 					new LambdaDep(unordered_set{
-						l.weaked(),
-						r.weaked() })
+						l_it->second.weaked(),
+						r_it->second.weaked() })
 					});
 			} else {
-				node_lambdas.insert({ &node, l ? l : r });
+				node_lambdas.insert({ &node, l_it->second });
 			}
+		} else if (r_it != node_lambdas.end()) {
+			node_lambdas.insert({ &node, r_it->second });
 		}
 	}
 
 	void on_get(ast::Get& node) override {
 		fix_var_depth(node.var);
 		if (dom::isa<ast::TpLambda>(*node.type())) {
-			node_lambdas.insert({ &node, node_lambdas[&node]});
+			if (auto it = node_lambdas.find(node.var); it != node_lambdas.end())
+				node_lambdas.insert({ &node, it->second });
 		}
 	}
 
@@ -224,7 +231,7 @@ struct ConstCapturePass : ast::ActionScanner {
 			}
 			node.x_var = node.block->names[0];
 			for (size_t i = lambda_levels.size() - 1; i > node.block->lexical_depth; --i) {
-				lambda_levels[i]->xbreaks.push_back(&node);
+				lambda_levels[i]->x_targets.insert(node.block);
 			}
 		}
 	}
@@ -236,9 +243,12 @@ struct ConstCapturePass : ast::ActionScanner {
 			node.var->is_mutable = true;
 			lambda_levels[node.var->lexical_depth]->mutables.push_back(node.var);
 		}
-		if (auto& l = node_lambdas[node.var]) {
-			get_if<LambdaDep::tp_pull>(&l->val)->insert(node_lambdas[node.val]);
-			node_lambdas.insert({ &node, l });
+		if (auto var_it = node_lambdas.find(node.var); var_it != node_lambdas.end()) {
+			if (auto val_it = node_lambdas.find(node.val); val_it != node_lambdas.end())
+				get_if<LambdaDep::tp_pull>(&var_it->second->val)->insert(val_it->second);
+			else
+				node.error("internal: inconsistent lambdas at assignment");
+			node_lambdas.insert({ &node, var_it->second });
 		}
 	}
 
@@ -253,8 +263,20 @@ struct ConstCapturePass : ast::ActionScanner {
 
 	void on_call(ast::Call& node) override {
 		ast::ActionScanner::on_call(node);
-		if (node.callee->type().cast<ast::TpLambda>()->can_x_break)
+		if (node.callee->type().cast<ast::TpLambda>()->can_x_break) {
+			LambdaDep::tp_pull set;
 			calls_to_fix.push_back(&node);
+			auto add_dep = [&](own<ast::Action>& n) {
+				if (auto it = node_lambdas.find(n); it != node_lambdas.end())
+					set.insert(it->second);
+			};
+			add_dep(node.callee);
+			for (auto& p : node.params)
+				add_dep(p);
+			node_lambdas.insert({
+				&node,
+				new LambdaDep(move(set))});
+		}
 	}
 
 	void on_immediate_delegate(ast::ImmediateDelegate& node) override {
