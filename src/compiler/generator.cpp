@@ -193,7 +193,7 @@ struct Generator : ast::ActionScanner {
 	llvm::Type* tp_opt_int = nullptr;
 	llvm::Type* tp_opt_double = nullptr;
 	llvm::Type* tp_bool = nullptr;
-	llvm::Type* tp_opt_bool = nullptr;
+	llvm::IntegerType* tp_opt_bool = nullptr;
 	llvm::Type* tp_opt_lambda = nullptr;
 	llvm::Type* tp_opt_delegate = nullptr;
 	llvm::Type* tp_int_ptr = nullptr;
@@ -2155,7 +2155,7 @@ struct Generator : ast::ActionScanner {
 			void on_void(ast::TpVoid& type) override {
 				val = depth > 1 ? val
 					: depth == 0 ? gen->builder->getInt1(true)
-					: gen->builder->getInt8(1);
+					: gen->builder->CreateIntCast(val, gen->tp_opt_bool, false);
 			}
 			void on_optional(ast::TpOptional& type) override { assert(false); }
 			void handle_ptr() {
@@ -2206,7 +2206,11 @@ struct Generator : ast::ActionScanner {
 			void on_lambda(ast::TpLambda& type) override { make_int_ptr_pair(); }
 			void on_delegate(ast::TpDelegate& type) override { make_int_ptr_pair(); }
 			void on_cold_lambda(ast::TpColdLambda& type) override { val = gen->builder->getInt8(depth ? depth + 1 : 0); }
-			void on_void(ast::TpVoid& type) override { val = depth == 0 ? gen->builder->getInt1(false) : gen->builder->getInt8(depth + 1); }
+			void on_void(ast::TpVoid& type) override {
+				val = depth == 0 
+					? gen->builder->getInt1(false)
+					: gen->builder->getInt8(depth + 1);
+			}
 			void on_optional(ast::TpOptional& type) override { assert(false); }
 			void on_own(ast::TpOwn& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
 			void on_ref(ast::TpRef& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
@@ -2325,9 +2329,9 @@ struct Generator : ast::ActionScanner {
 					: llvm::UndefValue::get(gen->void_type);
 			}
 			void on_void(ast::TpVoid& type) override {
-				val = depth > 1 ? val
-					: depth == 1 ? gen->cast_to(val, gen->tp_bool)
-					: gen->builder->getInt8(1);
+				val = depth == 0 ? llvm::UndefValue::get(gen->void_type)
+					: depth == 1 ? gen->builder->CreateTrunc(val, gen->tp_bool)
+					: val;
 			}
 			void on_optional(ast::TpOptional& type) override { assert(false); }
 			void handle_ptr(ast::Type& type) {
