@@ -23,7 +23,6 @@ See: [Project site](https://aglang.org)
 * Site: [aglang.org](aglang.org)
 * Hackaday: [project page](https://hackaday.io/project/190397-argentum-programming-language)
 * Presentation slides: [here](https://docs.google.com/presentation/d/1Cqbh30gTnfoFL3xJh3hhW4Hqhdk9tHw4akZExtiSivA/edit?usp=share_link)
-* Documentaion: [here](https://docs.google.com/document/d/1QCvxUGr2kce67jht8PLH822ZuZSXHvMIFgsACsbV4Y4/edit?usp=sharing)
 
 ## Examples
 
@@ -136,10 +135,10 @@ I have a working prototype of the 2nd milestone that includes:
 * Parameterized classes and interfaces
 * String interpolation
 * Frozen-mutable object hierrarchies
+* Fast unwind and direct `breaks` from nested levels of lambdas
 
 Within the next couple of months I plan to extend the language:
 
-* Fast unwind and direct `breaks` from nested levels of lambdas
 * Standard container library
 * Port to some platforms (Linux, Wasm, Android)
 * Standard UI library
