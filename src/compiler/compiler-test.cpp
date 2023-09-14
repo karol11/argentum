@@ -63,6 +63,13 @@ void execute(const char* source_text, bool dump_all = false) {
     generate_and_execute(ast, false, dump_all);
 }
 
+TEST(Parser, BoolLambda) {
+    execute(R"(
+        fn f(l()bool) bool { l() }
+        sys_assert(1, f((){false}) ? 0:1)
+    )");
+}
+
 TEST(Parser, Ints) {
     execute("sys_assert(7, (2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1)))");
 }
