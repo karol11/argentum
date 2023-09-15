@@ -1,6 +1,8 @@
 #ifndef _VMT_UTIL_H_
 #define _VMT_UTIL_H_
 
+#include <stdint.h>
+
 #include <unordered_map>
 #include <bitset>
 

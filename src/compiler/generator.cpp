@@ -751,7 +751,7 @@ struct Generator : ast::ActionScanner {
 			builder->SetInsertPoint(common_bb);
 		}
 	}
-	void dispose_val(Val& val, bool is_local = true) {
+	void dispose_val(Val val, bool is_local = true) {
 		dispose_val_in_current_bb(val, is_local);
 		if (!active_breaks.empty()) {
 			auto cur_bb = builder->GetInsertBlock();
@@ -2811,7 +2811,7 @@ struct Generator : ast::ActionScanner {
 				continue;
 			vector<llvm::Type*> fields;
 			if (cls->base_class) {
-				auto& base_fields = classes[cls->base_class].fields->elements();
+				auto base_fields = classes[cls->base_class].fields->elements();
 				for (auto& f : base_fields)
 					fields.push_back(f);
 			} else {

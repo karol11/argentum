@@ -1,3 +1,6 @@
+#include <iostream>
+#include <iomanip>
+
 #include <list>
 #include "utils/fake-gunit.h"
 
@@ -44,8 +47,11 @@ int main() {
 	std::list<testing::TestRegRecord*> tests;
 	for (testing::TestRegRecord* trr = testing::tests; trr; trr = trr->next)
 		tests.push_front(trr);
+	std::cout << "Total " << tests.size() << " tests to run." << std::endl;
+	int test_no = 0;
 	for (auto trr : tests) {
-		std::cout << "Test:" << trr->name << std::endl;
+		std::cout << "Test["<< std::setw(3) << std::setfill('0') <<  (++test_no) << "]: "
+		  << trr->name << std::endl;
 		::testing::Test* t = trr->fn();
 		::testing::current_failed = false;
 		t->SetUp();

@@ -6,16 +6,41 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 project ("argentum")
 
-find_package(LLVM REQUIRED CONFIG PATHS ../llvm12.0.1r/lib/cmake/llvm NO_DEFAULT_PATH)
+find_package(LLVM REQUIRED CONFIG PATHS /usr/lib/llvm-16/lib/cmake/llvm NO_DEFAULT_PATH)
 #find_package(LLVM REQUIRED CONFIG PATHS ../llvm-15-lib/lib/cmake/llvm NO_DEFAULT_PATH)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 include_directories(${LLVM_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
-llvm_map_components_to_libnames(llvm_libs support core nativecodegen orcjit)
+llvm_map_components_to_libnames(llvm_libs support core nativecodegen orcjit 
+    AArch64
+    AMDGPU
+    ARM
+    AVR
+    BPF
+    Hexagon
+    Lanai
+    LoongArch
+    Mips
+    MSP430
+    NVPTX
+    PowerPC
+    RISCV
+    Sparc
+    SystemZ
+    VE
+    WebAssembly
+    X86
+    XCore
+    M68k
+    Xtensa
+)
 
-find_package(SDL2 REQUIRED)
-find_package(SDL2_image REQUIRED)
+#find_package(SDL2 REQUIRED)
+#find_package(SDL2_image REQUIRED)
+include(FindPkgConfig)
+pkg_search_module(SDL2_IMAGE REQUIRED SDL2_image>=2.0.0)
+
 include_directories(${CMAKE_CURRENT_LIST_DIR}/src ${SDL2_INCLUDE_DIRS} ${SDL2_IMAGE_INCLUDE_DIRS})
 set(CMAKE_CXX_FLAGS_RELEASE "/MT")
 

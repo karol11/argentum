@@ -1,7 +1,7 @@
 #ifndef AK_UTF8_H__
 #define AK_UTF8_H__
 
-inline int get_utf8_no_surrogates(const char** ptr) {
+static inline int get_utf8_no_surrogates(const char** ptr) {
 	int r, n;
 restart_and_reload:
 	r = **ptr;
@@ -27,7 +27,7 @@ restart:
 	return r;
 }
 
-inline int get_utf8(const char** ptr) {
+static inline int get_utf8(const char** ptr) {
 	int r = get_utf8_no_surrogates(ptr);
 	for (;;) {
 		if (r < 0xD800 || r > 0xDFFF)

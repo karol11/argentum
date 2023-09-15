@@ -5,6 +5,7 @@
 #include <cassert>
 #include <unordered_set>
 #include <variant>
+#include <memory>
 
 using std::unordered_map;
 using std::unordered_set;

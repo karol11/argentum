@@ -368,7 +368,7 @@ struct Typer : ast::ActionMatcher {
 		} else {
 			node.type_ = ast->convert_maybe_optional(node.var->type, [&](auto tp) {
 				if (auto as_own = dom::strict_cast<ast::TpOwn>(tp))
-					return ast->get_ref(as_own->target).cast<ast::Type>();
+					return ast->get_ref(as_own->target).template cast<ast::Type>();
 				return tp;
 			});
 		}
@@ -427,7 +427,7 @@ struct Typer : ast::ActionMatcher {
 		auto type_as_weak = dom::strict_cast<ast::TpWeak>(node_type);
 		auto cls = type_as_weak && include_week
 			? type_as_weak->target
-			: ast->extract_class(node_type);
+			: (weak<ast::AbstractClass>) ast->extract_class(node_type);
 		if (!cls)
 			node->error("Expected pointer to class, not ", node->type().pinned());
 		return cls;
@@ -456,24 +456,24 @@ struct Typer : ast::ActionMatcher {
 		if (dom::isa<ast::TpConformRef>(*node.base->type())) {
 			node.type_ = ast->convert_maybe_optional(node.type(), [&](auto tp) {
 				if (auto as_own = dom::strict_cast<ast::TpOwn>(tp))
-					return ast->get_conform_ref(as_own->target).cast<ast::Type>();
+					return ast->get_conform_ref(as_own->target).template cast<ast::Type>();
 				if (auto as_weak = dom::strict_cast<ast::TpWeak>(tp))
-					return ast->get_conform_weak(as_weak->target).cast<ast::Type>();
+					return ast->get_conform_weak(as_weak->target).template cast<ast::Type>();
 				return tp;
 			});
 
 		} else if (dom::isa<ast::TpShared>(*node.base->type())) {
 			node.type_ = ast->convert_maybe_optional(node.type(), [&](auto tp) {
 				if (auto as_own = dom::strict_cast<ast::TpOwn>(tp))
-					return ast->get_shared(as_own->target).cast<ast::Type>();
+					return ast->get_shared(as_own->target).template cast<ast::Type>();
 				if (auto as_weak = dom::strict_cast<ast::TpWeak>(tp))
-					return ast->get_frozen_weak(as_weak->target).cast<ast::Type>();
+					return ast->get_frozen_weak(as_weak->target).template cast<ast::Type>();
 				return tp;
 			});
 		} else {
 			node.type_ = ast->convert_maybe_optional(node.type(), [&](auto tp) {
 				if (auto as_own = dom::strict_cast<ast::TpOwn>(tp))
-					return ast->get_ref(as_own->target).cast<ast::Type>();
+					return ast->get_ref(as_own->target).template cast<ast::Type>();
 				return tp;
 			});
 		}
@@ -562,7 +562,7 @@ struct Typer : ast::ActionMatcher {
 			find_type(node.field->initializer)->type());
 		node.type_ = ast->convert_maybe_optional(node.type(), [&](auto tp) {
 			if (auto as_own = dom::strict_cast<ast::TpOwn>(tp))
-				return ast->get_ref(as_own->target).cast<ast::Type>();
+				return ast->get_ref(as_own->target).template cast<ast::Type>();
 			return tp;
 		});
 	}
