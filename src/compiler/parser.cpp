@@ -552,6 +552,13 @@ struct Parser {
 				break;
 			expect(",");
 		}
+		if (match("{")) {
+			auto lambda = make<ast::MkLambda>();
+			parse_lambda_body_as_block(lambda);
+			call->params.push_back(lambda);
+		} else if (is_id_head(*cur)) {
+			call->params.push_back(parse_lambda_with_params(make<ast::MkLambda>()));
+		}
 		return call;
 	}
 	pin<Action> parse_unar() {
@@ -658,11 +665,50 @@ struct Parser {
 					r = parse_call(r, make<ast::AsyncCall>());
 				else
 					r = fill(make<ast::CastOp>(), r, parse_unar_head());
+			} else if (match("\\")) {
+				auto lambda = make_lambda_with_param(r, "\\");
+				lambda->body.push_back(parse_expression());
+				r = lambda;
+			} else if (match("{")) {
+				auto lambda = make_lambda_with_param(r, "{");
+				parse_lambda_body_as_block(lambda);
+				r = lambda;
+			} else if (is_id_head(*cur)) {
+				r = parse_lambda_with_params(make_lambda_with_param(r, "parameter name"));
 			} else
 				return r;
 		}
 	}
-
+	void parse_lambda_body_as_block(pin<ast::Block> block) {
+		if (match("="))
+			block->break_name = expect_id("name for breaks");
+		parse_statement_sequence(block->body);
+		expect("}");
+	}
+	pin<ast::MkLambda> parse_lambda_with_params(pin<ast::MkLambda> lambda){
+		while (is_id_head(*cur)) {
+			lambda->names.push_back(make<ast::Var>());
+			lambda->names.back()->name = expect_id("parameter name");
+		}
+		if (match("\\"))
+			lambda->body.push_back(parse_expression());
+		else if (match("{"))
+			parse_lambda_body_as_block(lambda);
+		else
+			error("expected '\\' or '{' after lamda parameters list");
+		return lambda;
+	}
+	pin<ast::MkLambda> make_lambda_with_param(pin<ast::Action> act, string context) {
+		auto as_get = dom::strict_cast<ast::Get>(act);
+		if (!as_get)
+			error("Expected parameter name before ", context);
+		if (as_get->var_module)
+			error("Parameter name before ", context, " should not contain '_'");
+		auto lambda = make_at_location<ast::MkLambda>(*act);
+		lambda->names.push_back(make<ast::Var>());
+		lambda->names.back()->name = as_get->var_name;
+		return lambda;
+	}
 	pin<Action> parse_unar_head() {
 		if (match("(")) {
 			pin<Action> start_expr;
@@ -684,8 +730,7 @@ struct Parser {
 						start_expr->error("lambda definition requires parameter name");
 					}
 				}
-				parse_statement_sequence(lambda->body);
-				expect("}");
+				parse_lambda_body_as_block(lambda);
 				return lambda;
 			} else if (lambda->names.empty() && start_expr){
 				return start_expr;
@@ -723,11 +768,13 @@ struct Parser {
 		}
 		if (match("{")) {
 			auto r = make<ast::Block>();
-			if (match("="))
-				r->break_name = expect_id("block name");
-			parse_statement_sequence(r->body);
-			expect("}");
+			parse_lambda_body_as_block(r);
 			return r;
+		}
+		if (match("\\")) {
+			auto lambda = make<ast::MkLambda>();
+			lambda->body.push_back(parse_expression());
+			return lambda;
 		}
 		bool matched_true = match("+");
 		if (matched_true || match("?")) {
