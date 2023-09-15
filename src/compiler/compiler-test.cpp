@@ -92,18 +92,16 @@ TEST(Parser, Functions) {
 }
 
 TEST(Parser, LambdaWithParams) {
-    execute("sys_assert(40, (a){1+a}(3)*10)");
+    execute("sys_assert(40, a{1+a}(3)*10)");
 }
 
 TEST(Parser, PassingLambdaToLambda) {
     execute(R"-( sys_assert(99,
-      (a, b, xfn) {
-            xfn((t) {
-                a + b + t
-            })
-      } (2, 4, (vfn) {
+      a b xfn {
+            xfn(t\ a + b + t)
+      } (2, 4) vfn {
             vfn(3) * vfn(5)
-      }))
+      })
     )-");
 }
 
@@ -934,9 +932,9 @@ TEST(Parser, Unwind) {
                 })
         }
         x = {
-                forRange(0, 3, (i){
+                forRange(0, 3) i {
                     i == 1 ? ^x=42
-                });
+                };
                 0
             };
         sys_assert(42, x)
