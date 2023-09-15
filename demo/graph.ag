@@ -11,7 +11,7 @@ class Node {
     hasLoop() bool {
         isActive || (!isVisited && {
             isVisited := isActive := true;
-            r = connections.contain((n){ n.hasLoop() });
+            r = connections.contain(n \ n.hasLoop());
             isActive := false;
             r
         })
@@ -38,10 +38,10 @@ class Graph {
         }
     }    
     hasLoop() bool {    
-        nodes.contain((n){ n.hasLoop() })
+        nodes.contain(n \ n.hasLoop())
     }
 }
 
 log(Graph.fromStr("a>b b>c c>d e>f b>e e>a c>c").hasLoop()
-    ? "has some loop"
-    : "has no loops")
+    ? "has some loop\n"
+    : "has no loops\n")

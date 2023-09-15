@@ -16,7 +16,7 @@ class Sdl {
         sdlFfi_sdlInit(xInitEverything) == 0 &&
         sdlFfi_imgInit(xImgJpg | xImgPng) != 0
     }
-    eventLoop(handler (Event)void) {
+    eventLoop(handler (Event)) {
         e = Event;
         loop{
             sdlFfi_pollEvent(e);

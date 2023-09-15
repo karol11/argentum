@@ -2,13 +2,11 @@ using sys {String, log}
 using utils {forRange}
 using string;
 
-forRange(-99, 1, (count){
-    bottles = (c, n){
-        c == 0 ? "{}
-            {n}o more bottles
-        " : "{}
-            {c} bottle{c != 1 ? "s"}
-        "
+forRange(-99, 1) count {
+    bottles = c n {
+        c == 0
+            ? `${n}o more bottles`
+            : `${c} bottle${c != 1 ? `s`}`
     };
     log("{}/
         {bottles(-count, "N")} of beer on the wall, {bottles(-count, "n")} of beer.
@@ -17,4 +15,4 @@ forRange(-99, 1, (count){
             : "Take one down and pass it around"
         }, {bottles((99 - count) % 100, "n")} of beer on the wall.
     ");
-})
+}

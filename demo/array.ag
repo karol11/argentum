@@ -6,7 +6,7 @@ class Array {
 
     -size() int { itemsCount }
 
-    -each(handler (T)void) {
+    -each(handler (T)) {
         i = 0;
         loop!{
             i < itemsCount ? {
@@ -16,9 +16,9 @@ class Array {
         }
     }
     -contain(predicate (T)bool) bool {
-        existsInRange(0, itemsCount, (i){
+        existsInRange(0, itemsCount) i {
             this[i] && predicate(_)
-        })
+        }
     }
     plow(filter (T)bool) {
         i = 0;
@@ -37,7 +37,7 @@ class Array {
     }
     allocate(count int) {
         itemsCount + count >= capacity()
-            ? insertItems(itemsCount, (itemsCount + count + 20) / 4);
+            ? insertItems(itemsCount, (itemsCount + 20) / 4 + count);
     }
     push(n int, generator ()@T) {
         allocate(n);
@@ -63,8 +63,7 @@ class WeakArray {
         this[n] := item
     }
     -contain(predicate (T)bool) bool {
-        existsInRange(0, capacity(), (i){
-            this[i] && predicate(_)
-        })
+        existsInRange(0, capacity())
+            i \ this[i] && predicate(_)
     }
 }

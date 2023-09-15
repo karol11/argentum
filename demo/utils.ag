@@ -7,14 +7,7 @@ class Random {
     }
 }
 
-fn forRangeWhile(from int, to int, body (int)bool) {
-    loop !(
-        from < to && body(from) ?
-            from += 1
-    )
-}
-
-fn forRange(from int, to int, body (int)void) {
+fn forRange(from int, to int, body (int)) {
     loop !(from < to ? {
         body(from);
         from += 1
@@ -23,7 +16,8 @@ fn forRange(from int, to int, body (int)void) {
 
 fn existsInRange(from int, to int, predicate (int)bool) bool {
     loop !(
-        from < to && !predicate(from) ? from += 1
+        from < to && !predicate(from) ?
+            from += 1
     );
     from != to
 }

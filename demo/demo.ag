@@ -28,8 +28,8 @@ class Scene{
             paint(w);
             w.blt(foreground, 0, 0, 800, 600, 0, 0, 800, 600);
             w.flip();
-            rnd.get(0, 30) == 0 ?
-                push(1, Flare.initAtBottom(this));
+            rnd.get(0, (size() / 2) + 1) == 0 ?
+                append(Flare.initAtBottom(this));
             tick(1000/30);
         });
     }
@@ -50,13 +50,13 @@ class Flare {
             y += dy;
             dy += 1 << 13;
             scene ?=sc sc.rnd.get(0, 2) == 0 ?
-                sc.push(1, Sparkles.init(sc, x >> 16, y >> 16, color));
+                sc.append(Sparkles.init(sc, x >> 16, y >> 16, color));
             fade += dFade;
             dFade -= 140;
             fade == 0 && scene &&=s s.rnd.get(0, generation) == 0 ?
-                distributeInCircle(s.rnd, s.rnd.get(6, 15), 10 << 16, (dx, dy) {
-                    s.push(1, Flare.initAtFlare(this, dx, dy));
-                });
+                distributeInCircle(s.rnd, s.rnd.get(6, 15), 10 << 16) dx dy {
+                    s.append(Flare.initAtFlare(this, dx, dy));
+                };
             y > -100 << 16 && y <= 600 << 16 && x > 0 && x < 800 << 16 && fade >= 0
         }
     }
@@ -94,9 +94,9 @@ class Flare {
 class Sparkles {
     +Actor {
         paint(dst Window) {
-            scene? distributeInCircle(_.rnd, r, r, (x, y){
+            scene? distributeInCircle(_.rnd, r, r) x y {
                 dst.fillRect(this.x + x, this.y + y, 1, 1, color);
-            })
+            }
         }
         tick(milliseconds int) bool { (r -= 1) > 0 }
     }
@@ -120,12 +120,12 @@ fn makeBrightColor(rnd Random) int {
     r == 0 ? 0x0ffffff : r
 }
 
-fn distributeInCircle(rnd Random, count int, r int, callback (int, int)void) {
-    forRange(0, count, (i){
+fn distributeInCircle(rnd Random, count int, r int, callback (int, int)) {
+    forRange(0, count) i {
         x = rnd.get(-r, r);
         y = rnd.get(-r, r);
         x*x + y*y < r*r ? callback(x, y);
-    });
+    };
 }
 
 Scene.init()?_.run();
