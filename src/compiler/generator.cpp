@@ -1105,6 +1105,9 @@ struct Generator : ast::ActionScanner {
 			if (a != node.body.back())
 				comp_to_void(a);
 		}
+		auto result_type = node.type().cast<ast::TpLambda>()->params.back();
+		if (node.type().cast<ast::TpLambda>()->can_x_break)
+			result_type = ast->tp_optional(result_type);
 		auto fn_result = compile(node.body.back());
 		persist_rfield(fn_result);
 		if (node.type().cast<ast::TpLambda>()->can_x_break) {
@@ -1142,8 +1145,9 @@ struct Generator : ast::ActionScanner {
 			auto exit_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
 			builder->CreateBr(exit_bb);
 			builder->SetInsertPoint(exit_bb);
-			auto phi = builder->CreatePHI(to_llvm_type(*fn_result.type), node.breaks.size() + 1);
-			phi->addIncoming(fn_result.data, result_bb);
+			auto phi = builder->CreatePHI(to_llvm_type(*result_type), node.breaks.size() + (dom::isa<ast::TpNoRet>(*fn_result.type) ? 1 : 0));
+			if (!dom::isa<ast::TpNoRet>(*fn_result.type))
+				phi->addIncoming(fn_result.data, result_bb);
 			for (auto& brk : active_breaks) {
 				builder->SetInsertPoint(brk.bb);
 				release_params(brk.result);
@@ -2500,7 +2504,7 @@ struct Generator : ast::ActionScanner {
 			builder->SetInsertPoint(else_bb);
 			auto unused = compile(node.p[1]);
 			builder->SetInsertPoint(then_bb);
-			*result = Val{ node.p[1]->type(), extract_opt_val(cond_opt.data, cond_type), cond_opt.lifetime };
+			*result = Val{ node.type(), extract_opt_val(cond_opt.data, cond_type), cond_opt.lifetime };
 		} else {
 			*result = compile_if(
 				*node.type(),
@@ -2837,7 +2841,10 @@ struct Generator : ast::ActionScanner {
 					params.push_back(to_llvm_type(*p->type));
 				params[0] = ptr_type;  // this
 				auto& m_info = methods[m];
-				m_info.type = llvm::FunctionType::get(to_llvm_type(*m->type_expression->type()), move(params), false);
+				auto result_type = m->type_expression->type();
+				if (m->type().cast<ast::TpLambda>()->can_x_break)
+					result_type = ast->tp_optional(result_type);
+				m_info.type = llvm::FunctionType::get(to_llvm_type(*result_type), move(params), false);
 				m_info.ordinal = vmt_content.size();
 				vmt_content.push_back(m_info.type->getPointerTo());
 			}
