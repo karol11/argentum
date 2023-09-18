@@ -57,7 +57,7 @@ int main(int argc, char* argv[]) {
         bool output_bitcode = false;
         bool output_asm = false;
         bool add_debug_info = false;
-        string src_dir_name, start_module_name, out_file_name;
+        string src_dir_name, start_module_name, out_file_name, opt_level;
         for (auto arg = argv + 1, end = argv + argc; arg != end; arg++) {
             auto param = [&] {
                 if (++arg == end) {
@@ -68,15 +68,16 @@ int main(int argc, char* argv[]) {
             };
             if (strcmp(*arg, "--help") == 0) {
                 llvm::outs() <<
-                    "Flags\n  "
-                    "  -src directory : where sources of all modules are located.\n"
+                    "Flags\n"
+                    "  -src directory     : where sources of all modules are located.\n"
                     "  -start module_name : what module is a start module.\n"
-                    "  -o out_file : file to store object file or asm or bitcode.\n"
+                    "  -o out_file        : file to store object file or asm or bitcode.\n"
                     "  -target <arch><sub>-<vendor>-<sys>-<abi>\n"
                     "          Example: x86_64-unknown-linux-gnu\n"
                     "                or x86_64-w64-microsoft-windows\n"
-                    "  -g : generate debug info\n"
+                    "  -g         : generate debug info\n"
                     "  -emit-llvm : output bitcode\n"
+                    "  -ON        : optimize 0-none, 1-less, 2-default, 4-aggressive\n"
                     "  -S         : output asm file\n";
                 return 0;
             } else if (strcmp(*arg, "-S") == 0) {
@@ -85,6 +86,8 @@ int main(int argc, char* argv[]) {
                 output_bitcode = true;
             } else if (strcmp(*arg, "-g") == 0) {
                 add_debug_info = true;
+            } else if (strncmp(*arg, "-O", 2) == 0) {
+                opt_level = (*arg) + 2;
             } else if (strcmp(*arg, "-target") == 0) {
                 target_triple = param();
             } else if (strcmp(*arg, "-o") == 0) {
@@ -148,8 +151,14 @@ int main(int argc, char* argv[]) {
                     "",         // features
                     llvm::TargetOptions(),
                     std::optional<llvm::Reloc::Model>());
-                if (add_debug_info)
-                    target_machine->setOptLevel(llvm::CodeGenOpt::Level::None);
+                if (add_debug_info && opt_level.empty())
+                    opt_level = "0";
+                if (!opt_level.empty())
+                    target_machine->setOptLevel(
+                        opt_level == "0" ? llvm::CodeGenOpt::Level::None :
+                        opt_level == "1" ? llvm::CodeGenOpt::Level::Less :
+                        opt_level == "4" ? llvm::CodeGenOpt::Level::Aggressive :
+                        llvm::CodeGenOpt::Level::Default);
                 module.setDataLayout(target_machine->createDataLayout());
                 llvm::legacy::PassManager pass_manager;
                 if (target_machine->addPassesToEmitFile(pass_manager, out_file, nullptr, output_asm
