@@ -221,13 +221,25 @@ struct ConstCapturePass : ast::ActionScanner {
 
 	void on_break(ast::Break& node) override {
 		if (node.block->lexical_depth != lambda_levels.size() - 1) {
+			if (!dom::isa<ast::Block>(*node.block.pinned())) {
+				if (node.block->body.size() == 1 && dom::isa<ast::Block>(*node.block->body.back())) {
+					node.block = node.block->body.back().cast<ast::Block>();
+				} else {
+					auto block = ast::make_at_location<ast::Block>(*node.block.pinned());
+					std::swap(block->body, node.block->body);
+					node.block->body.push_back(block);
+					block->type_ = node.result->type();
+					block->lexical_depth = node.block->lexical_depth;
+					node.block = block;
+				}
+			}
 			if (node.block->names.empty() || node.block->names[0]->name != "_x_break") {
 				auto x_var = pin<ast::Var>::make();
 				x_var->name = "_x_break";
 				x_var->is_mutable = true;
 				x_var->type = ast->tp_optional(node.result->type());
 				fix_var_depth(x_var);
-				node.block->names.push_back(x_var);
+				node.block->names.insert(node.block->names.begin(), x_var);
 			}
 			node.x_var = node.block->names[0];
 			for (size_t i = lambda_levels.size() - 1; i > node.block->lexical_depth; --i) {
