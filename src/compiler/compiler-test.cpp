@@ -67,6 +67,18 @@ void execute(const char* source_text, bool dump_all = false) {
     generate_and_execute(ast, false, dump_all);
 }
 
+TEST(Parser, BreakSkipsCallWithPartialParams) {
+    execute(R"(
+        using sys{ String }
+        fn f(a String, b String) {
+            sys_assert(false, "shouldn't be called");
+        }
+        {=block
+           f("asdf", ?"" : ^block);
+        }
+    )");
+}
+
 TEST(Parser, BoolLambda) {
     execute(R"(
         fn f(l()bool) bool { l() }
