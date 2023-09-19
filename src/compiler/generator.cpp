@@ -1225,6 +1225,7 @@ struct Generator : ast::ActionScanner {
 	}
 
 	Val handle_block(ast::Block& node, Val parameter) {
+		size_t initial_acive_breaks = active_breaks.size();
 		auto prev_di_scope = current_di_scope;
 		current_di_scope = current_di_scope
 			? di_builder->createLexicalBlock(current_di_scope, current_di_scope->getFile(), node.line, node.pos)
@@ -1280,7 +1281,7 @@ struct Generator : ast::ActionScanner {
 			weak<ast::Var> temp_var = result_as_temp ? result_as_temp->var : nullptr;
 			auto val_iter = to_dispose.begin();
 			for (auto& p : node.names) {
-				if (val_iter->second >= break_mark) {
+				if (val_iter->second <= break_mark) {
 					if (temp_var == p) { // result is locked by the dying temp ptr.
 						if (!get_if<Val::Retained>(&val_iter->first.lifetime))
 							build_retain(result.data, p->type);
@@ -1302,7 +1303,7 @@ struct Generator : ast::ActionScanner {
 		weak<ast::Var> result_temp_var;
 		if (!dom::isa<ast::TpNoRet>(*r.type)) {
 			persist_rfield(r);
-			result_temp_var = dispose_block_params(r, 0);
+			result_temp_var = dispose_block_params(r, initial_acive_breaks);
 		}
 		auto body_bb = builder->GetInsertBlock();
 		for (size_t i = active_breaks.size(); i;) {

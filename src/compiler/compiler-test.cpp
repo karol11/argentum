@@ -67,14 +67,14 @@ void execute(const char* source_text, bool dump_all = false) {
     generate_and_execute(ast, false, dump_all);
 }
 
-TEST(Parser, BreakSkipsCallWithPartialParams) {
+TEST(Parser, BreakFromLocalInitializer) {
     execute(R"(
         using sys{ String }
-        fn f(a String, b String) {
-            sys_assert(false, "shouldn't be called");
-        }
         {=block
-           f("asdf", ?"" : ^block);
+           a = "asdf";
+           b = ?"" : ^block;
+           c = "zxcv";
+           a := "";
         }
     )");
 }
@@ -937,6 +937,18 @@ TEST(Parser, Break) {
         }
         sys_assertIEq(42, myFunction())
     )-");
+}
+
+TEST(Parser, BreakSkipsCallWithPartialParams) {
+    execute(R"(
+        using sys{ String }
+        fn f(a String, b String) {
+            sys_assert(false, "shouldn't be called");
+        }
+        {=block
+           f("asdf", ?"" : ^block);
+        }
+    )");
 }
 
 TEST(Parser, Unwind) {
