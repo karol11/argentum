@@ -164,7 +164,7 @@ struct Generator : ast::ActionScanner {
 		Val result;
 		weak<ast::Block> block;
 	};
-	list<BreakTrace> active_breaks;
+	vector<BreakTrace> active_breaks;
 	
 	llvm::DICompileUnit* di_cu = nullptr;
 	unordered_map<string, llvm::DIFile*> di_files;
@@ -751,11 +751,11 @@ struct Generator : ast::ActionScanner {
 			builder->SetInsertPoint(common_bb);
 		}
 	}
-	void dispose_val(Val& val, bool is_local = true) {
-		dispose_val_in_current_bb(val, is_local);
+	void dispose_in_active_breaks(Val& val, size_t newer_than_break, bool is_local = true) {
 		if (!active_breaks.empty()) {
 			auto cur_bb = builder->GetInsertBlock();
-			for (auto& brk : active_breaks) {
+			for (size_t i = active_breaks.size(); --i > newer_than_break;) {
+				auto& brk = active_breaks[i];
 				builder->SetInsertPoint(brk.bb);
 				dispose_val_in_current_bb(val, is_local);
 				brk.bb = builder->GetInsertBlock();
@@ -763,9 +763,13 @@ struct Generator : ast::ActionScanner {
 			builder->SetInsertPoint(cur_bb);
 		}
 	}
+	void dispose_val(Val& val, size_t newer_than_break, bool is_local = true) {
+		dispose_val_in_current_bb(val, is_local);
+		dispose_in_active_breaks(val, newer_than_break, is_local);
+	}
 
 	void comp_to_void(own<ast::Action>& action) {
-		dispose_val(compile(action));
+		dispose_val(compile(action), active_breaks.size());
 	}
 
 	void remove_branches(Val& val) {
@@ -1225,17 +1229,21 @@ struct Generator : ast::ActionScanner {
 		current_di_scope = current_di_scope
 			? di_builder->createLexicalBlock(current_di_scope, current_di_scope->getFile(), node.line, node.pos)
 			: nullptr;
-		vector<Val> to_dispose; // mutable ? addr : initializer_value
+		vector<pair<
+			Val,                  // mutable ? addr : value
+			size_t>> to_dispose;  // active_breaks marker
 		for (auto& l : node.names) {
-			to_dispose.push_back(
+			to_dispose.push_back({
 				l->initializer ? comp_to_persistent(l->initializer) :
 				parameter.data ? parameter :
 				Val{
 					l->type,
 					make_opt_none(l->type.cast<ast::TpOptional>()),
-					Val::NonPtr{} 
-				});
-			auto& initializer = to_dispose.back();
+					Val::NonPtr{}
+				},
+				0 });
+			to_dispose.back().second = active_breaks.size();
+			auto& initializer = to_dispose.back().first;
 			if (l->is_mutable || l->captured) {
 				auto& addr = locals[l];
 				if (l->is_mutable)
@@ -1267,22 +1275,24 @@ struct Generator : ast::ActionScanner {
 				comp_to_void(a);
 		}
 		auto r = compile(node.body.back());
-		auto dispose_block_params = [&](Val& result) {
+		auto dispose_block_params = [&](Val& result, size_t break_mark) {
 			auto result_as_temp = get_if<Val::Temp>(&result.lifetime);
 			weak<ast::Var> temp_var = result_as_temp ? result_as_temp->var : nullptr;
 			auto val_iter = to_dispose.begin();
 			for (auto& p : node.names) {
-				if (temp_var == p) { // result is locked by the dying temp ptr.
-					if (!get_if<Val::Retained>(&val_iter->lifetime))
-						build_retain(result.data, p->type);
-					result.type = node.type();  // revert own->pin cohersion
-					result.lifetime = Val::Retained{};
-					temp_var = nullptr;
-				} else if (is_ptr(p->type)) {
-					if (p->is_mutable) {
-						build_release(builder->CreateLoad(to_llvm_type(*p->type), val_iter->data), p->type);
-					} else {
-						dispose_val_in_current_bb(*val_iter);
+				if (val_iter->second >= break_mark) {
+					if (temp_var == p) { // result is locked by the dying temp ptr.
+						if (!get_if<Val::Retained>(&val_iter->first.lifetime))
+							build_retain(result.data, p->type);
+						result.type = node.type();  // revert own->pin cohersion
+						result.lifetime = Val::Retained{};
+						temp_var = nullptr;
+					} else if (is_ptr(p->type)) {
+						if (p->is_mutable) {
+							build_release(builder->CreateLoad(to_llvm_type(*p->type), val_iter->first.data), p->type);
+						} else {
+							dispose_val_in_current_bb(val_iter->first);
+						}
 					}
 				}
 				val_iter++;
@@ -1292,12 +1302,13 @@ struct Generator : ast::ActionScanner {
 		weak<ast::Var> result_temp_var;
 		if (!dom::isa<ast::TpNoRet>(*r.type)) {
 			persist_rfield(r);
-			result_temp_var = dispose_block_params(r);
+			result_temp_var = dispose_block_params(r, 0);
 		}
 		auto body_bb = builder->GetInsertBlock();
-		for (auto& brk : active_breaks) {
+		for (size_t i = active_breaks.size(); i;) {
+			auto& brk = active_breaks[--i];
 			builder->SetInsertPoint(brk.bb);
-			auto brk_temp_var = dispose_block_params(brk.result);
+			auto brk_temp_var = dispose_block_params(brk.result, i);
 			brk.bb = builder->GetInsertBlock();
 			if (brk.block == &node && result_temp_var != brk_temp_var)
 				result_temp_var = nullptr;  // different vars, retain is needed
@@ -1322,7 +1333,6 @@ struct Generator : ast::ActionScanner {
 				builder->SetInsertPoint(brk.bb);
 				if (!result_temp_var)
 					brk.result = make_retained_or_non_ptr(move(brk.result));
-				dispose_block_params(brk.result);
 				builder->CreateBr(exit_bb);
 				phi->addIncoming(brk.result.data, builder->GetInsertBlock());
 				it = active_breaks.erase(it);
@@ -1380,7 +1390,7 @@ struct Generator : ast::ActionScanner {
 				{ 0 }),
 			build_non_null_pin_to_entry_point_code(base.data),
 			{ 1 });
-		dispose_val(move(base));
+		dispose_val(move(base), active_breaks.size());
 		result->lifetime = Val::Retained{};
 	}
 
@@ -1405,7 +1415,7 @@ struct Generator : ast::ActionScanner {
 			dl_fn,
 			{ 1 });
 		result->lifetime = Val::Retained{};
-		dispose_val(move(base));
+		dispose_val(move(base), active_breaks.size());
 	}
 
 	void on_make_fn_ptr(ast::MakeFnPtr& node) {
@@ -1414,20 +1424,26 @@ struct Generator : ast::ActionScanner {
 
 	void on_call(ast::Call& node) override {
 		vector<llvm::Value*> params;
-		vector<Val> to_dispose;
+		vector<pair<Val, size_t>> to_dispose; // val and active_breaks_mark at the moment val is succeeded
+		auto reg_disposable = [&](Val&& val) {
+			to_dispose.push_back({ move(val), active_breaks.size() });
+			return to_dispose.back().first;
+		};
 		if (auto calle_as_method = dom::strict_cast<ast::MakeDelegate>(node.callee)) {
 			params.push_back(nullptr);
 			auto method = calle_as_method->method->base.pinned();
 			auto& m_info = methods[method];
 			auto pt = m_info.type->params().begin() + 1;
 			for (auto& p : node.params) {
-				to_dispose.push_back(comp_to_persistent(p));
-				params.push_back(cast_to(to_dispose.back().data, *pt++));
+				params.push_back(cast_to(
+					reg_disposable(comp_to_persistent(p)).data,
+					*pt++));
 			}
-			to_dispose.push_back(comp_to_persistent(
-				calle_as_method->base,
-				false ));  // perist_mutable_locals
-			auto receiver = to_dispose.back().data;
+			auto receiver = reg_disposable(
+				comp_to_persistent(
+					calle_as_method->base,
+					false)) // perist_mutable_locals
+				.data;
 			params.front() = cast_to(receiver, ptr_type);
 			if (method->cls->is_interface) {
 				auto entry_point = builder->CreateCall(
@@ -1454,14 +1470,15 @@ struct Generator : ast::ActionScanner {
 			}
 		} else if (auto as_delegate_type = dom::strict_cast<ast::TpDelegate>(node.callee->type())) {
 			auto result_type = dom::strict_cast<ast::TpOptional>(node.type());
-			to_dispose.push_back(compile(node.callee));
+			reg_disposable(compile(node.callee));
 			llvm::Value* retained_receiver_pin = builder->CreateCall(fn_deref_weak,
-				{ builder->CreateExtractValue(to_dispose.front().data, {0}) });
+				{ builder->CreateExtractValue(to_dispose.front().first.data, {0}) });
 			params.push_back(cast_to(retained_receiver_pin, ptr_type)); 
 			auto pt = as_delegate_type->params.begin();
 			for (auto& p : node.params) {
-				to_dispose.push_back(comp_to_persistent(p));
-				params.push_back(cast_to(to_dispose.back().data, to_llvm_type(**(pt++))));
+				params.push_back(cast_to(
+					reg_disposable(comp_to_persistent(p)).data,
+					to_llvm_type(**(pt++))));
 			}
 			*result = compile_if(
 				*result_type,
@@ -1475,7 +1492,7 @@ struct Generator : ast::ActionScanner {
 							builder->CreateCall(
 								llvm::FunctionCallee(
 									lambda_to_llvm_fn(*node.callee, node.callee->type()),
-									builder->CreateExtractValue(to_dispose.front().data, {1})),
+									builder->CreateExtractValue(to_dispose.front().first.data, {1})),
 								move(params)),
 							result_type),
 						Val::NonPtr{} };
@@ -1495,8 +1512,9 @@ struct Generator : ast::ActionScanner {
 					: lambda_to_llvm_fn(*node.callee, node.callee->type());
 			auto pt = function_type->params().begin() + (is_fn ? 0 : 1);
 			for (auto& p : node.params) {
-				to_dispose.push_back(comp_to_persistent(p));
-				params.push_back(cast_to(to_dispose.back().data, *pt++));
+				params.push_back(cast_to(
+					reg_disposable(comp_to_persistent(p)).data,
+					*pt++));
 			}
 			auto callee = compile(node.callee);
 			assert(get_if<Val::NonPtr>(&callee.lifetime));
@@ -1514,7 +1532,8 @@ struct Generator : ast::ActionScanner {
 			result->lifetime = Val::Retained{};
 		for (; !to_dispose.empty(); to_dispose.pop_back())
 			dispose_val(
-				move(to_dispose.back()),
+				move(to_dispose.back().first),
+				to_dispose.back().second,
 				true);
 		auto callee = node.callee->type().cast<ast::TpLambda>();
 		if (callee->can_x_break) {
@@ -1826,13 +1845,14 @@ struct Generator : ast::ActionScanner {
 				result->lifetime = Val::Temp{};
 			}
 		} else { // leave lifetime = Val::NonPtr
-			dispose_val(move(base));
+			dispose_val(move(base), active_breaks.size());
 		}
 	}
 	void on_set_field(ast::SetField& node) override {
 		auto class_fields = classes[ast->extract_class(node.base->type())->get_implementation()].fields;
 		if (is_ptr(node.type())) {
 			auto base = comp_to_persistent(node.base);
+			size_t breaks_after_base = active_breaks.size();
 			*result = make_retained_or_non_ptr(compile(node.val), base.data);
 			result->type = node.type();  // @T->T and base-dependent conversions
 			auto addr = builder->CreateStructGEP(class_fields, base.data, node.field->offset);
@@ -1845,9 +1865,10 @@ struct Generator : ast::ActionScanner {
 				result->lifetime = Val::RField{ base.data };
 			} else if (auto base_as_rfield = get_if<Val::RField>(&base.lifetime)) {
 				result->lifetime = Val::RField{ base_as_rfield->to_release };
+				dispose_in_active_breaks(base, breaks_after_base);
 			} else {
 				result->lifetime = Val::Temp{};
-				dispose_val(move(base));
+				dispose_val(move(base), breaks_after_base);
 			}
 		} else {
 			*result = make_retained_or_non_ptr(compile(node.val));
@@ -1858,12 +1879,13 @@ struct Generator : ast::ActionScanner {
 					class_fields,
 					base.data,
 					node.field->offset));
-			dispose_val(move(base));
+			dispose_val(move(base), active_breaks.size());
 		}
 	}
 	void on_splice_field(ast::SpliceField& node) override {
 		auto class_fields = classes[ast->extract_class(node.base->type())->get_implementation()].fields;
 		auto base = comp_to_persistent(node.base);
+		size_t breaks_after_base = active_breaks.size();
 		auto val = compile(node.val);
 		auto bb_ok = llvm::BasicBlock::Create(*context, "", current_ll_fn);
 		auto bb_fail = llvm::BasicBlock::Create(*context, "", current_ll_fn);
@@ -1880,8 +1902,8 @@ struct Generator : ast::ActionScanner {
 		builder->CreateStore(val.data, addr);
 		builder->CreateBr(bb_fail);
 		builder->SetInsertPoint(bb_fail);
-		dispose_val(move(val));
-		dispose_val(move(base));
+		dispose_val(move(val), active_breaks.size());
+		dispose_val(move(base), breaks_after_base);
 	}
 	void on_mk_instance(ast::MkInstance& node) override {
 		result->data = builder->CreateCall(classes[node.cls->get_implementation()].constructor, {});
@@ -1899,7 +1921,7 @@ struct Generator : ast::ActionScanner {
 			check_opt_has_val(
 				param.data,
 				dom::strict_cast<ast::TpOptional>(node.p->type())));
-		dispose_val(move(param));
+		dispose_val(move(param), active_breaks.size());
 	}
 	void on_neg(ast::NegOp& node) override {
 		result->data = builder->CreateNeg(comp_non_ptr(node.p));
@@ -1911,7 +1933,7 @@ struct Generator : ast::ActionScanner {
 		auto src = compile(node.p);
 		result->data = builder->CreateCall(fn_freeze, { src.data });
 		result->lifetime = Val::Retained{};
-		dispose_val(move(src));
+		dispose_val(move(src), active_breaks.size());
 	}
 	void on_cast(ast::CastOp& node) override {
 		if (!node.p[1]) {
@@ -2052,10 +2074,12 @@ struct Generator : ast::ActionScanner {
 			void on_no_ret(ast::TpNoRet& type) override { assert(false); }
 		};
 		auto lhs = compile(node.p[0]);
+		size_t break_mark_after_lhs = active_breaks.size();
 		auto rhs = compile(node.p[1]);
 		Comparer comparer{ lhs.data, rhs.data, *this };
 		node.p[0]->type()->match(comparer);
-
+		dispose_val(rhs, active_breaks.size());
+		dispose_val(lhs, break_mark_after_lhs);
 	}
 	void on_sub(ast::SubOp& node) override {
 		auto lhs = comp_non_ptr(node.p[0]);
@@ -2549,7 +2573,7 @@ struct Generator : ast::ActionScanner {
 		auto src = compile(node.p);
 		result->data = builder->CreateCall(fn_copy, { src.data });
 		result->lifetime = Val::Retained{};
-		dispose_val(move(src));
+		dispose_val(move(src), active_breaks.size());
 	}
 	void on_mk_weak(ast::MkWeakOp& node) override {
 		if (dom::strict_cast<ast::MkInstance>(node.p)) {
@@ -2559,13 +2583,13 @@ struct Generator : ast::ActionScanner {
 		auto src = compile(node.p);
 		result->data = builder->CreateCall(fn_mk_weak, { src.data });
 		result->lifetime = Val::Retained{};
-		dispose_val(move(src));
+		dispose_val(move(src), active_breaks.size());
 	}
 	void on_deref_weak(ast::DerefWeakOp& node) override {
 		auto src = compile(node.p);
 		result->data = builder->CreateCall(fn_deref_weak, { src.data });
 		result->lifetime = Val::Retained{};
-		dispose_val(move(src));
+		dispose_val(move(src), active_breaks.size());
 	}
 
 	llvm::FunctionType* lambda_to_llvm_fn(ast::Node& n, pin<ast::Type> tp) {  // also delegate and method
