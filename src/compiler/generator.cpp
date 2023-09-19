@@ -754,8 +754,8 @@ struct Generator : ast::ActionScanner {
 	void dispose_in_active_breaks(Val& val, size_t newer_than_break, bool is_local = true) {
 		if (!active_breaks.empty()) {
 			auto cur_bb = builder->GetInsertBlock();
-			for (size_t i = active_breaks.size(); --i > newer_than_break;) {
-				auto& brk = active_breaks[i];
+			for (size_t i = active_breaks.size(); i > newer_than_break;) {
+				auto& brk = active_breaks[--i];
 				builder->SetInsertPoint(brk.bb);
 				dispose_val_in_current_bb(val, is_local);
 				brk.bb = builder->GetInsertBlock();
