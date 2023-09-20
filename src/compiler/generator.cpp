@@ -75,7 +75,8 @@ struct Val {
 	struct RField { llvm::Value* to_release; };  // temp raw, that represents child subobject, of Retained temp. It must be locked and converted to Retained if needed, it must destroy its protector in the end. 
 	// nonptr fields become NonPtr
 	// ptr fields of Retained become RField, other ptr's fields become Temp{null}
-	std::variant<NonPtr, Temp, Retained, RField> lifetime;
+	using lifetime_t = std::variant<NonPtr, Temp, Retained, RField>;
+	lifetime_t lifetime;
 	// If set, this value is optional and returned as branches.
 	// Current branch holds presented value (in wrapped or unwrapped),
 	// the optional_br->none_bb is for not present value.
@@ -1147,10 +1148,11 @@ struct Generator : ast::ActionScanner {
 		if (!active_breaks.empty()) {
 			auto result_bb = builder->GetInsertBlock();
 			auto exit_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
-			builder->CreateBr(exit_bb);
+			if (result_bb)
+				builder->CreateBr(exit_bb);
 			builder->SetInsertPoint(exit_bb);
-			auto phi = builder->CreatePHI(to_llvm_type(*result_type), node.breaks.size() + (dom::isa<ast::TpNoRet>(*fn_result.type) ? 1 : 0));
-			if (!dom::isa<ast::TpNoRet>(*fn_result.type))
+			auto phi = builder->CreatePHI(to_llvm_type(*result_type), node.breaks.size() + (result_bb ? 1 : 0));
+			if (result_bb)
 				phi->addIncoming(fn_result.data, result_bb);
 			for (auto& brk : active_breaks) {
 				builder->SetInsertPoint(brk.bb);
@@ -1240,7 +1242,9 @@ struct Generator : ast::ActionScanner {
 				Val{
 					l->type,
 					make_opt_none(l->type.cast<ast::TpOptional>()),
-					Val::NonPtr{}
+					is_ptr(l->type)
+						? Val::lifetime_t(Val::Retained{})
+						: Val::lifetime_t(Val::NonPtr{})
 				},
 				0 });
 			to_dispose.back().second = active_breaks.size();

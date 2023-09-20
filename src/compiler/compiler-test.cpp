@@ -67,15 +67,14 @@ void execute(const char* source_text, bool dump_all = false) {
     generate_and_execute(ast, false, dump_all);
 }
 
-TEST(Parser, BreakFromLocalInitializer) {
+TEST(Parser, BreakFromInnerLambda) {
     execute(R"(
         using sys{ String }
-        {=block
-           a = "asdf";
-           b = ?"" : ^block;
-           c = "zxcv";
-           a := "";
-        }
+        fn func(l()) String { l(); "Normal" }
+        x = func(\{
+              ^x = "From break"
+           });
+        sys_assertIEq(x.getCh(), 'F')
     )");
 }
 
@@ -947,6 +946,18 @@ TEST(Parser, BreakSkipsCallWithPartialParams) {
         }
         {=block
            f("asdf", ?"" : ^block);
+        }
+    )");
+}
+
+TEST(Parser, BreakFromLocalInitializer) {
+    execute(R"(
+        using sys{ String }
+        {=block
+           a = "asdf";
+           b = ?"" : ^block;
+           c = "zxcv";
+           a := "";
         }
     )");
 }
