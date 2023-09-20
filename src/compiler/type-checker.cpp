@@ -83,6 +83,7 @@ struct Typer : ast::ActionMatcher {
 			if (prev && dom::isa<ast::TpNoRet>(*prev->type()))
 				node.error("unreachable code");
 			find_type(a);
+			prev = a;
 		}
 		if (auto ret_as_get = dom::strict_cast<ast::Get>(node.body.back())) {
 			if (std::find(node.names.begin(), node.names.end(), ret_as_get->var) != node.names.end()) {
