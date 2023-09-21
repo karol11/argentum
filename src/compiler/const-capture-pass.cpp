@@ -228,7 +228,7 @@ struct ConstCapturePass : ast::ActionScanner {
 					auto block = ast::make_at_location<ast::Block>(*node.block.pinned());
 					std::swap(block->body, node.block->body);
 					node.block->body.push_back(block);
-					block->type_ = node.result->type();
+					block->type_ = node.block->type().cast<ast::TpLambda>()->params.back();
 					block->lexical_depth = node.block->lexical_depth;
 					node.block = block;
 				}

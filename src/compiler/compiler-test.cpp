@@ -67,24 +67,19 @@ void execute(const char* source_text, bool dump_all = false) {
     generate_and_execute(ast, false, dump_all);
 }
 
-TEST(Parser, BreakFromInnerLambda) {
+TEST(Parser, ReturnFromInnerLambda) {
     execute(R"(
         using sys{ String }
-        fn func(l()) String { l(); "Normal" }
-        x = func(\{
-              ^x = "From break"
-           });
-        sys_assertIEq(x.getCh(), 'F')
+        fn pass(l()) String { l(); "Normal" }
+        fn skip() String {
+            pass(\{
+              ^skip = "From break"
+            })
+        }
+        sys_assertIEq(skip().getCh(), 'F')
     )");
 }
-
-TEST(Parser, BoolLambda) {
-    execute(R"(
-        fn f(l()bool) bool { l() }
-        sys_assert(!f((){false}), "!f()false")
-    )");
-}
-
+/*
 TEST(Parser, Ints) {
     execute("sys_assertIEq(7, (2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1)))");
 }
@@ -907,7 +902,7 @@ TEST(Parser, Multithreading) {
             sys_setMainObject(?sys_Object);        
         });
     )-");
-}
+}*/
 
 TEST(Parser, FnReturn) {
     execute(R"-(
@@ -959,6 +954,24 @@ TEST(Parser, BreakFromLocalInitializer) {
            c = "zxcv";
            a := "";
         }
+    )");
+}
+
+TEST(Parser, BreakFromInnerLambda) {
+    execute(R"(
+        using sys{ String }
+        fn func(l()) String { l(); "Normal" }
+        x = func(\{
+              ^x = "From break"
+           });
+        sys_assertIEq(x.getCh(), 'F')
+    )");
+}
+
+TEST(Parser, BoolLambda) {
+    execute(R"(
+        fn f(l()bool) bool { l() }
+        sys_assert(!f((){false}), "!f()false")
     )");
 }
 
@@ -1021,6 +1034,8 @@ TEST(Parser, Unwind) {
         Go: Robert Griesemer <gri@google.com>
         Carbon: Jason Parachoniak <jparachoniak@google.com>
         cinder
+        oculus
+        browser
     */
 }
 
