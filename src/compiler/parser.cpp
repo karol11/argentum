@@ -988,7 +988,7 @@ struct Parser {
 
 	template<typename T, typename VT>
 	pin<Action> mk_const(VT&& v) {
-		auto r = pin<T>::make();
+		auto r = make<T>();
 		r->value = v;
 		return r;
 	}
