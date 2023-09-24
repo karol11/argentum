@@ -67,19 +67,6 @@ void execute(const char* source_text, bool dump_all = false) {
     generate_and_execute(ast, false, dump_all);
 }
 
-TEST(Parser, ReturnFromInnerLambda) {
-    execute(R"(
-        using sys{ String }
-        fn pass(l()) String { l(); "Normal" }
-        fn skip() String {
-            pass(\{
-              ^skip = "From break"
-            })
-        }
-        sys_assertIEq(skip().getCh(), 'F')
-    )");
-}
-/*
 TEST(Parser, Ints) {
     execute("sys_assertIEq(7, (2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1)))");
 }
@@ -902,7 +889,7 @@ TEST(Parser, Multithreading) {
             sys_setMainObject(?sys_Object);        
         });
     )-");
-}*/
+}
 
 TEST(Parser, FnReturn) {
     execute(R"-(
@@ -972,6 +959,42 @@ TEST(Parser, BoolLambda) {
     execute(R"(
         fn f(l()bool) bool { l() }
         sys_assert(!f((){false}), "!f()false")
+    )");
+}
+
+TEST(Parser, ReturnFromLambdaParam) {
+    execute(R"(
+        using sys{ Array, String }
+        class Array {
+            append(t()@T) {
+                c = capacity();
+                insertItems(c, 1);
+                this[c] := t();
+            }
+        }
+        class String {
+            getOne() ?@String { getCh() != 0 ? "A" }
+            split() @Array(String) {
+                res = Array(String);
+                loop {
+                    res.append(getOne() : ^split=res);
+                }
+            }
+        }
+        sys_assertIEq("B".split().capacity(), 2) // ["A", null]
+    )");
+}
+
+TEST(Parser, ReturnFromInnerLambda) {
+    execute(R"(
+        using sys{ String }
+        fn pass(l()) String { l(); "Normal" }
+        fn skip() String {
+            pass(\{
+              ^skip = "From break"
+            })
+        }
+        sys_assertIEq(skip().getCh(), 'F')
     )");
 }
 
