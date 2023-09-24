@@ -770,7 +770,8 @@ struct Generator : ast::ActionScanner {
 	}
 
 	void comp_to_void(own<ast::Action>& action) {
-		dispose_val(compile(action), active_breaks.size());
+		auto val = compile(action);
+		dispose_val(val, active_breaks.size());
 	}
 
 	void remove_branches(Val& val) {
