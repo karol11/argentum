@@ -220,6 +220,7 @@ struct ConstCapturePass : ast::ActionScanner {
 	}
 
 	void on_break(ast::Break& node) override {
+		fix(node.result);
 		if (node.block->lexical_depth != lambda_levels.size() - 1) {
 			if (!dom::isa<ast::Block>(*node.block.pinned())) {
 				if (node.block->body.size() == 1 && dom::isa<ast::Block>(*node.block->body.back())) {
@@ -236,7 +237,7 @@ struct ConstCapturePass : ast::ActionScanner {
 			if (node.block->names.empty() || node.block->names[0]->name != "_x_break") {
 				auto x_var = pin<ast::Var>::make();
 				x_var->name = "_x_break";
-				x_var->is_mutable = true;
+				x_var->is_mutable = true; // it'll be marked as captured in `fix_var_depth`
 				x_var->type = ast->tp_optional(node.result->type());
 				fix_var_depth(x_var);
 				node.block->names.insert(node.block->names.begin(), x_var);
