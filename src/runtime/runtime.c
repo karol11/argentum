@@ -1,5 +1,5 @@
 #include <stddef.h> // size_t
-#include <stdint.h> // int32_t
+#include <stdint.h> // int32_t int64_t
 #include <stdio.h> // puts
 #include <assert.h>
 #include <time.h>  // timespec, timespec_get
@@ -932,6 +932,11 @@ void ag_fn_sys_terminate(int result) {
 
 void ag_fn_sys_log(AgString* s) {
 	fputs(s->ptr, stdout);
+}
+
+int64_t ag_fn_sys_hash(AgObject* s) {
+	int64_t r = (int64_t) s;
+	return r ^ (r >> 14) ^ (r << 16);
 }
 
 void ag_make_blob_fit(AgBlob* b, size_t required_size) {

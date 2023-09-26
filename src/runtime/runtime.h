@@ -178,6 +178,7 @@ void      ag_m_sys_WeakArray_delete(AgBlob* b, uint64_t index, uint64_t count);
 void      ag_fn_sys_terminate     (int);
 bool      ag_fn_sys_setMainObject (AgObject* root); // root must be not owned, returns true on success
 void      ag_fn_sys_log           (AgString* s);
+int64_t   ag_fn_sys_hash          (AgObject* s);
 
 //
 // Thread
