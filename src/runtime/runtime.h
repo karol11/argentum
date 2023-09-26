@@ -100,7 +100,6 @@ void      ag_retain_shared      (AgObject* obj);
 void      ag_dispose_obj        (AgObject* src);
 AgObject* ag_allocate_obj       (size_t size);
 AgObject* ag_copy_object_field  (AgObject* src, AgObject* parent);
-void      ag_fn_sys_make_shared (AgObject* obj);
 void      ag_reg_copy_fixer     (AgObject* object, void (*fixer)(AgObject*));
 AgObject* ag_fn_sys_getParent   (AgObject* obj);   // obj not null
 

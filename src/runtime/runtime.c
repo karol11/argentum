@@ -490,15 +490,6 @@ AgObject* ag_copy_object_field(AgObject* src, AgObject* parent) {
 	return (AgObject*)(dh + AG_HEAD_SIZE);
 }
 
-void ag_fn_sys_make_shared(AgObject* obj) {  // TODO: implement hierarchy freeze
-	if ((ag_head(obj)->wb_p & AG_F_PARENT) != 0) {
-		ag_head(obj)->wb_p = (uintptr_t)AG_SHARED | AG_F_PARENT;
-	} else {
-		AgWeak* wb = (AgWeak*)(ag_head(obj)->wb_p);
-		wb->org_pointer_to_parent = AG_SHARED;
-	}
-}
-
 void ag_copy_weak_field(void** dst, AgWeak* src) {
 	if (!src || (size_t)src < 256) {
 		*dst = src;
