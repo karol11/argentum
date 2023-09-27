@@ -571,6 +571,12 @@ int32_t ag_m_sys_String_getCh(AgString* s) {
 		? get_utf8(&s->ptr)
 		: 0;
 }
+int32_t ag_m_sys_String_peekCh(AgString* s) {
+	const char* pos = s->ptr;
+	return pos && *pos
+		? get_utf8(&pos)
+		: 0;
+}
 
 void ag_copy_sys_String(AgString* d, AgString* s) {
 	d->ptr = s->ptr;

@@ -95,7 +95,8 @@ void register_runtime_content(struct ast::Ast& ast) {
 		ast.mk_field("_buffer", new ast::ConstInt64) });
 	ast.mk_method(mut::MUTATING, ast.string_cls, "fromBlob", FN(ag_m_sys_String_fromBlob), new ast::ConstBool, { ast.get_conform_ref(ast.blob), ast.tp_int64(), ast.tp_int64() });
 	ast.mk_method(mut::MUTATING, ast.string_cls, "getCh", FN(ag_m_sys_String_getCh), new ast::ConstInt64, {});
-	
+	ast.mk_method(mut::ANY, ast.string_cls, "peekCh", FN(ag_m_sys_String_peekCh), new ast::ConstInt64, {});
+
 	ast.mk_fn("getParent", FN(ag_fn_sys_getParent), opt_ref_to_object, { ast.get_conform_ref(ast.object) });
 	ast.mk_fn("log", FN(ag_fn_sys_log), new ast::ConstVoid, { ast.get_conform_ref(ast.string_cls) });
 	ast.mk_fn("hash", FN(ag_fn_sys_hash), new ast::ConstInt64, { ast.get_conform_ref(ast.object) });

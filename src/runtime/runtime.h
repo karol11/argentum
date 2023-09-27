@@ -119,6 +119,7 @@ void      ag_copy_sys_String        (AgString* dst, AgString* src);
 void      ag_dtor_sys_String        (AgString* str);
 void      ag_visit_sys_String       (AgString* ptr, void(*visitor)(void*, int, void*), void* ctx);
 int32_t   ag_m_sys_String_getCh     (AgString* s);
+int32_t   ag_m_sys_String_peekCh    (AgString* s);
 bool      ag_m_sys_String_fromBlob  (AgString* s, AgBlob* b, int at, int count);
 int64_t   ag_m_sys_Blob_putChAt     (AgBlob* b, int at, int codepoint);
 
