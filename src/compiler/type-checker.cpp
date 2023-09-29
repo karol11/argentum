@@ -539,7 +539,7 @@ struct Typer : ast::ActionMatcher {
 			void on_shared(ast::TpShared& type) override { r = ast.get_shared(ast.resolve_params(type.target, ctx)); }
 			void on_weak(ast::TpWeak& type) override { r = ast.get_weak(ast.resolve_params(type.target, ctx)); }
 			void on_frozen_weak(ast::TpFrozenWeak& type) override { r = ast.get_frozen_weak(ast.resolve_params(type.target, ctx)); }
-			void on_conform_ref(ast::TpConformRef& type) override { r = ast.get_conform_weak(ast.resolve_params(type.target, ctx)); }
+			void on_conform_ref(ast::TpConformRef& type) override { r = ast.get_conform_ref(ast.resolve_params(type.target, ctx)); }
 			void on_conform_weak(ast::TpConformWeak& type) override { r = ast.get_conform_weak(ast.resolve_params(type.target, ctx)); }
 		};
 		ParamRemover pr(move(context), ast);
