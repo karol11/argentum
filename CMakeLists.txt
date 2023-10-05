@@ -72,12 +72,16 @@ add_executable(ag-tests
     ${ag_sources}
     src/runtime/runtime.h
     src/runtime/runtime.c
+    src/runtime/map.h
+    src/runtime/map.c
+    src/runtime/map-test.cpp
     src/utils/fake-gunit.h
     src/utils/fake-gunit.cpp
     src/ltm/ltm-test.cpp
     src/dom/dom-test.cpp
     src/compiler/compiler-test.cpp
     src/utils/vmt_util-test.cpp
+    src/runtime/map-test.cpp
 )
 target_link_libraries(ag-tests ${llvm_libs})
 

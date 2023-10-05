@@ -99,25 +99,8 @@ inline int cnd_wait(cnd_t* cond, mtx_t* mutex) {
 
 #endif
 
-#ifdef NO_DEFAULT_LIB
-void ag_zero_mem(void*, size_t);
-void ag_memcpy(void*, void*, size_t);
-void ag_memmove(void*, void*, size_t);
-#else
-#include <string.h>
-#define ag_zero_mem(P, S) memset(P, 0, S)
-#define ag_memcpy memcpy
-#define ag_memmove memmove
-#endif
-
 #include "../utils/utf8.h"
 #include "../runtime/runtime.h"
-
-#ifndef AG_ALLOC
-#include <stdlib.h>
-#define AG_ALLOC malloc
-#define AG_FREE free
-#endif
 
 #ifndef __cplusplus
 #define true 1
@@ -169,11 +152,15 @@ void ag_free(void* data) {
 		AG_FREE(r - 1);
 	}
 }
-
 #else
 
-#define ag_alloc AG_ALLOC
-#define ag_free AG_FREE
+void* ag_alloc(size_t size) {
+	size_t* r = (size_t*)AG_ALLOC(size);
+	if (!r) {  // todo: add more handling
+		exit(-42);
+	}
+	return r;
+}
 
 #endif
 
@@ -286,7 +273,7 @@ void ag_release_pin(AgObject * obj) {
 			ag_dispose_obj(obj);
 	}
 }
-inline AgObject* ag_retain_pin(AgObject* obj) {
+AgObject* ag_retain_pin(AgObject* obj) {
 	if (ag_not_null(obj)) {
 		assert((ag_head(obj)->ctr_mt & AG_CTR_MT) == 0);  // pin cannot be shared and as such mt
 		ag_head(obj)->ctr_mt += AG_CTR_STEP;
@@ -394,9 +381,6 @@ void ag_dispose_obj(AgObject* obj) {
 
 AgObject* ag_allocate_obj(size_t size) {
 	AgObject* r = (AgObject*) ag_alloc(size + AG_HEAD_SIZE);
-	if (!r) {  // todo: add more handling
-		exit(-42);
-	}
 	ag_zero_mem(r, size);
 	r->ctr_mt = AG_CTR_STEP;
 	r->wb_p = AG_IN_STACK | AG_F_PARENT;
@@ -453,7 +437,6 @@ AgObject* ag_copy_object_field(AgObject* src, AgObject* parent) {
 		return src;
 	AgVmt* vmt = ((AgVmt*)(ag_head(src)->dispatcher)) - 1;
 	AgObject* dh = (AgObject*) ag_alloc(vmt->instance_alloc_size + AG_HEAD_SIZE);
-	if (!dh) { exit(-42); }
 	ag_memcpy(dh, ag_head(src), vmt->instance_alloc_size + AG_HEAD_SIZE);
 	dh->ctr_mt = AG_CTR_STEP;
 	dh->wb_p = (uintptr_t) AG_TAG_PTR(AgObject, parent, AG_F_PARENT);  //NO_WEAK also makes it AG_TG_NOWEAK_DST

@@ -9,6 +9,35 @@ extern "C" {
 typedef int bool;
 #endif
 
+#ifndef AG_ALLOC
+#include <stdlib.h>
+#define AG_ALLOC malloc
+#define AG_FREE free
+#endif
+
+void* ag_alloc(size_t size);
+
+#ifdef _DEBUG
+void ag_free(void* data);
+#else
+#define ag_free AG_FREE
+#endif
+
+#ifdef NO_DEFAULT_LIB
+
+void ag_zero_mem(void*, size_t);
+void ag_memcpy(void*, void*, size_t);
+void ag_memmove(void*, void*, size_t);
+
+#else
+
+#include <string.h>
+#define ag_zero_mem(P, S) memset(P, 0, S)
+#define ag_memcpy memcpy
+#define ag_memmove memmove
+
+#endif
+
 //
 // Tags in `parent` field
 // When not in copy op, all not shared obj->wb pointers have to have 0b00 in two LSB bits
@@ -45,10 +74,11 @@ typedef struct {
 	size_t vmt_size;
 } AgVmt;
 
+typedef void** (*ag_dispatcher_t) (uint64_t interface_and_method_ordinal);
 typedef struct {
-	void**    (*dispatcher) (uint64_t interface_and_method_ordinal);
-	uintptr_t ctr_mt;      // number_of_owns_and_refs point here << 2 | 1 if mt
-	uintptr_t wb_p;        // pointer_to_weak_block || (pointer_to_parent|AG_F_PARENT)
+	ag_dispatcher_t dispatcher;
+	uintptr_t       ctr_mt;      // number_of_owns_and_refs point here << 2 | 1 if mt
+	uintptr_t       wb_p;        // pointer_to_weak_block || (pointer_to_parent|AG_F_PARENT)
 } AgObject;
 
 typedef struct {
@@ -94,7 +124,7 @@ bool      ag_splice             (AgObject* object, AgObject* parent);  // checks
 AgObject* ag_copy               (AgObject* src);
 AgObject* ag_freeze             (AgObject* src);
 void      ag_release_pin        (AgObject* obj);
-// void   ag_retain_pin         (AgObject* obj); // inlined
+AgObject* ag_retain_pin         (AgObject* obj); // inlined in the generated code
 void      ag_release_shared     (AgObject* obj);
 void      ag_retain_shared      (AgObject* obj);
 void      ag_dispose_obj        (AgObject* src);
