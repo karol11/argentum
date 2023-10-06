@@ -2767,7 +2767,8 @@ struct Generator : ast::ActionScanner {
 			ast->own_array,
 			ast->weak_array,
 			ast->string_cls,
-			ast->modules["sys"]->peek_class("Thread")};
+			ast->modules["sys"]->peek_class("Thread"),
+			ast->modules["sys"]->peek_class("Map") };
 		dispatcher_fn_type = llvm::FunctionType::get(ptr_type, { int_type }, false);
 		auto dispose_fn_type = llvm::FunctionType::get(void_type, { ptr_type }, false);
 		auto copier_fn_type = llvm::FunctionType::get(

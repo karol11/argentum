@@ -59,6 +59,8 @@ add_executable(ag-jit-sdl
     src/driver/jit-sdl.cpp
     src/runtime/runtime.h
     src/runtime/runtime.c
+    src/runtime/map.h
+    src/runtime/map.c
     src/runtime/sdl-bindings.h
     src/runtime/sdl-bindings.c
 )
@@ -95,6 +97,8 @@ target_link_libraries(agc ${llvm_libs})
 add_library (ag_runtime STATIC
     src/runtime/runtime.h
     src/runtime/runtime.c
+    src/runtime/map.h
+    src/runtime/map.c
     src/runtime/sdl-bindings.h
     src/runtime/sdl-bindings.c
 )

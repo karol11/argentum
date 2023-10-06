@@ -61,6 +61,8 @@ typedef struct ag_thread_tag ag_thread;
 #define AG_VMT_FIELD_INST_SIZE 3
 #define AG_VMT_FIELD_VMT_SIZE  4
 
+#define ag_not_null(OBJ) ((OBJ) && (size_t)(OBJ) >= 256)
+
 typedef struct {
 	void   (*copy_ref_fields)  (void* dst, void* src);
 	void   (*dispose)          (void* ptr);

@@ -105,7 +105,7 @@ static inline size_t find_index(AgMap* map, AgObject* key, size_t hash) { // ret
     }
 }
 
-AgObject* ag_m_sys_Map_get(AgMap* map, AgObject* key) {
+AgObject* ag_m_sys_Map_getAt(AgMap* map, AgObject* key) {
     size_t i = find_index(map, key, get_hash(map, key));
     if (i == ~0u)
         return 0;
@@ -113,7 +113,7 @@ AgObject* ag_m_sys_Map_get(AgMap* map, AgObject* key) {
     return map->buckets[i].val;
 }
 
-AgObject* ag_m_sys_Map_set(AgMap* map, AgObject* key, AgObject* value) {
+AgObject* ag_m_sys_Map_setAt(AgMap* map, AgObject* key, AgObject* value) {
     if (map->size >= map->capacity * 3 / 4) {  // rehash
         size_t old_cap = map->capacity;
         AgMapBucket* old_buckets = map->buckets;
@@ -206,7 +206,7 @@ AgObject* ag_m_sys_Map_delete(AgMap* map, AgObject* key) {
 }
 
 void ag_copy_sys_Map(void* dst, AgMap* src) {
-    AgMap* s = (AgMap*)s;
+    AgMap* s = (AgMap*)src;
     AgMap* d = (AgMap*)dst;
     d->hasher = s->hasher;
     d->comparer = s->comparer;
@@ -222,4 +222,21 @@ void ag_copy_sys_Map(void* dst, AgMap* src) {
 
 void ag_dtor_sys_Map(void* map) {
     ag_m_sys_Map_clear((AgMap*)map);
+}
+
+void ag_visit_sys_Map(
+    AgMap* map,
+    void   (*visitor)(void*, int, void*),
+    void*  ctx)
+{
+    if (ag_not_null(map) && map->buckets) {
+        AgMapBucket* i = map->buckets;
+        AgMapBucket* term = i + map->capacity;
+        for (; i < term; i++) {
+            if (i->key)
+                visitor(i->key, AG_VISIT_OWN, ctx);
+            if (i->val)
+                visitor(i->val, AG_VISIT_OWN, ctx);
+        }
+    }
 }

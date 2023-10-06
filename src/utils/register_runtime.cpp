@@ -5,6 +5,7 @@
 
 #include "compiler/ast.h"
 #include "runtime/runtime.h"
+#include "runtime/map.h"
 
 void register_runtime_content(struct ast::Ast& ast) {
 	if (ast.object)
@@ -49,11 +50,11 @@ void register_runtime_content(struct ast::Ast& ast) {
 	opt_ref_to_object->p[1] = ref_to_object;
 	auto weak_to_object = new ast::MkWeakOp;
 	weak_to_object->p = inst;
-	auto add_class_param = [&](ltm::pin<ast::Class> cls) {
+	auto add_class_param = [&](ltm::pin<ast::Class> cls, const char* name = "T") {
 		auto param = ltm::pin<ast::ClassParam>::make();
 		cls->params.push_back(param);
 		param->base = ast.object;
-		param->name = "T";
+		param->name = name;
 		return param;
 	};
 	auto make_ptr_result = [&](ltm::pin<ast::UnaryOp> typer, ltm::pin<ast::AbstractClass> cls) {
@@ -96,6 +97,28 @@ void register_runtime_content(struct ast::Ast& ast) {
 	ast.mk_method(mut::MUTATING, ast.string_cls, "fromBlob", FN(ag_m_sys_String_fromBlob), new ast::ConstBool, { ast.get_conform_ref(ast.blob), ast.tp_int64(), ast.tp_int64() });
 	ast.mk_method(mut::MUTATING, ast.string_cls, "getCh", FN(ag_m_sys_String_getCh), new ast::ConstInt64, {});
 	ast.mk_method(mut::ANY, ast.string_cls, "peekCh", FN(ag_m_sys_String_peekCh), new ast::ConstInt64, {});
+	{
+		auto map_cls = ast.mk_class("Map", {
+			ast.mk_field("_hasher", new ast::ConstInt64),
+			ast.mk_field("_comparer", new ast::ConstInt64),
+			ast.mk_field("_buckets", new ast::ConstInt64),
+			ast.mk_field("_capacity", new ast::ConstInt64),
+			ast.mk_field("_size", new ast::ConstInt64) });
+		auto val_cls = add_class_param(map_cls, "V");
+		auto ref_to_val_res = make_ptr_result(new ast::RefOp, val_cls);
+		auto opt_ref_to_val_res = make_opt_result(ref_to_val_res);
+		auto key_cls = add_class_param(map_cls, "K");
+		auto opt_shared_to_key_res = make_opt_result(
+			make_ptr_result(new ast::FreezeOp, key_cls));
+		ast.mk_method(mut::ANY, map_cls, "size", FN(ag_m_sys_Map_size), new ast::ConstInt64, {});
+		ast.mk_method(mut::ANY, map_cls, "capacity", FN(ag_m_sys_Map_capacity), new ast::ConstInt64, {});
+		ast.mk_method(mut::ANY, map_cls, "clear", FN(ag_m_sys_Map_clear), new ast::ConstVoid, {});
+		ast.mk_method(mut::ANY, map_cls, "delete", FN(ag_m_sys_Map_delete), opt_ref_to_val_res, { ast.get_shared(key_cls) });
+		ast.mk_method(mut::ANY, map_cls, "getAt", FN(ag_m_sys_Map_getAt), opt_ref_to_val_res, { ast.get_shared(key_cls) });
+		ast.mk_method(mut::ANY, map_cls, "setAt", FN(ag_m_sys_Map_setAt), opt_ref_to_val_res, { ast.get_shared(key_cls), ast.get_own(val_cls) });
+		ast.mk_method(mut::ANY, map_cls, "keyAt", FN(ag_m_sys_Map_keyAt), opt_shared_to_key_res, { ast.tp_int64() });
+		ast.mk_method(mut::ANY, map_cls, "valAt", FN(ag_m_sys_Map_valAt), opt_ref_to_val_res, { ast.tp_int64() });
+	}
 
 	ast.mk_fn("getParent", FN(ag_fn_sys_getParent), opt_ref_to_object, { ast.get_conform_ref(ast.object) });
 	ast.mk_fn("log", FN(ag_fn_sys_log), new ast::ConstVoid, { ast.get_conform_ref(ast.string_cls) });
@@ -152,6 +175,9 @@ void register_runtime_content(struct ast::Ast& ast) {
 		{ "ag_copy_sys_Blob", FN(ag_copy_sys_Blob) },
 		{ "ag_dtor_sys_Blob", FN(ag_dtor_sys_Blob) },
 		{ "ag_visit_sys_Blob", FN(ag_visit_sys_Blob) },
+		{ "ag_copy_sys_Map", FN(ag_copy_sys_Map) },
+		{ "ag_dtor_sys_Map",FN(ag_dtor_sys_Map) },
+		{ "ag_visit_sys_Map", FN(ag_visit_sys_Map) },
 		{ "ag_copy_sys_Array", FN(ag_copy_sys_Array) },
 		{ "ag_dtor_sys_Array",FN(ag_dtor_sys_Array) },
 		{ "ag_visit_sys_Array",FN(ag_visit_sys_Array) },

@@ -38,10 +38,10 @@ TEST(Map, Simple) {
 	AgObject* k1 = mk_object();
 	AgObject* k2 = mk_object();
 	AgObject* v1 = mk_object();
-	ag_m_sys_Map_set(map, k1, v1);
-	ASSERT_EQ(ag_m_sys_Map_get(map, k1), v1);
+	ag_m_sys_Map_setAt(map, k1, v1);
+	ASSERT_EQ(ag_m_sys_Map_getAt(map, k1), v1);
 	ag_release_pin(v1);
-	ASSERT_EQ(ag_m_sys_Map_get(map, k2), nullptr);
+	ASSERT_EQ(ag_m_sys_Map_getAt(map, k2), nullptr);
 	ag_release_pin(k1);
 	ag_release_pin(k2);
 	ag_release_pin(v1);

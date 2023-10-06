@@ -123,7 +123,6 @@ inline int cnd_wait(cnd_t* cond, mtx_t* mutex) {
 #define AG_UNTAG_PTR(TYPE, PTR)    ((TYPE*)(((uintptr_t)(PTR)) & ~3))
 
 #define ag_head(OBJ) ((AgObject*)(OBJ))
-#define ag_not_null(OBJ) ((OBJ) && (size_t)(OBJ) >= 256)
 
 #define AG_HEAD_SIZE 0
 
@@ -797,15 +796,10 @@ void ag_visit_sys_Array(
 	void* ctx)
 {
 	if (ag_not_null(arr)) {
-		for (AgObject
-				** from = (AgObject**)(arr->data),
-				** to = (AgObject**)(arr->data),
-				** term = from + arr->size;
-			from < term;
-			from++, to++)
-		{
-			visitor(from, AG_VISIT_OWN, ctx);
-		}
+		AgObject** i = (AgObject**)(arr->data);
+		AgObject** term = i + arr->size;
+		while (i < term)
+			visitor(i++, AG_VISIT_OWN, ctx);
 	}
 }
 
@@ -828,14 +822,10 @@ void ag_visit_sys_WeakArray(
 	void(*visitor)(void*, int, void*),
 	void* ctx) {
 	if (ag_not_null(arr)) {
-		for (AgObject
-			** from = (AgObject**)(arr->data),
-			**to = (AgObject**)(arr->data),
-			**term = from + arr->size;
-			from < term;
-			from++, to++) {
-			visitor(from, AG_VISIT_WEAK, ctx);
-		}
+		AgObject** i = (AgObject**)(arr->data);
+		AgObject** term = i + arr->size;
+		while (i < term)
+			visitor(i++, AG_VISIT_WEAK, ctx);
 	}
 }
 
