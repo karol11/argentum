@@ -67,6 +67,15 @@ void execute(const char* source_text, bool dump_all = false) {
     generate_and_execute(ast, false, dump_all);
 }
 
+TEST(Parser, Map) {
+    execute(R"-(
+      m = sys_Map(sys_String, sys_String);
+      k = *"One";
+      m[k] := "Hello"; // const shared string
+      sys_assertIEq(m[k]?_.getCh():0, 'H')
+    )-");
+}
+
 TEST(Parser, Ints) {
     execute("sys_assertIEq(7, (2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1)))");
 }
