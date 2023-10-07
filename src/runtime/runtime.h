@@ -79,13 +79,13 @@ typedef struct {
 typedef void** (*ag_dispatcher_t) (uint64_t interface_and_method_ordinal);
 typedef struct {
 	ag_dispatcher_t dispatcher;
-	uintptr_t       ctr_mt;      // number_of_owns_and_refs point here << 2 | 1 if mt
+	uintptr_t       ctr_mt;      // number_of_owns_and_refs point here << 4 | 1 if mt
 	uintptr_t       wb_p;        // pointer_to_weak_block || (pointer_to_parent|AG_F_PARENT)
 } AgObject;
 
 typedef struct {
 	AgObject*  target;
-	uintptr_t  wb_ctr_mt;    // number_of_weaks pointing here << 2 | 1 if mt | 2 to indicate weak
+	uintptr_t  wb_ctr_mt;    // number_of_weaks pointing here << 4 | 1 if mt | 2 to indicate weak
 	uintptr_t  org_pointer_to_parent;  // copy of obj->parent
 	ag_thread* thread;       // pointer to ag_thread struct
 } AgWeak;
