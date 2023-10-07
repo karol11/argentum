@@ -246,6 +246,7 @@ struct Generator : ast::ActionScanner {
 	llvm::Constant* const_256 = nullptr;
 	llvm::Constant* const_ctr_step = nullptr;
 	llvm::Constant* const_null_ptr = nullptr;
+	unordered_map<string, llvm::GlobalVariable*> string_literals;
 	unordered_map<
 		vector<llvm::Constant*>,
 		llvm::Constant*,
@@ -864,11 +865,27 @@ struct Generator : ast::ActionScanner {
 	void on_const_void(ast::ConstVoid&) override { result->data = llvm::UndefValue::get(void_type); }
 	void on_const_bool(ast::ConstBool& node) override { result->data = builder->getInt1(node.value); }
 	void on_const_string(ast::ConstString& node) override {
-		auto& str = classes[ast->string_cls];
-		result->data = builder->CreateCall(str.constructor, {});
-		builder->CreateStore(
-			builder->CreateGlobalStringPtr(node.value),
-			builder->CreateStructGEP(str.fields, result->data, 3));
+		auto& str = string_literals[node.value];
+		if (!str) {
+			auto& cls = classes[ast->string_cls];
+			auto str_name = ast::format_str("ag_str_", &node);
+			module->getOrInsertGlobal(str_name, cls.fields);
+			str = module->getGlobalVariable(str_name);
+			DUMP(cls.fields);
+			vector<llvm::Constant*> fields = {
+				llvm::ConstantExpr::getBitCast(cls.dispatcher, ptr_type),
+				const_ctr_step, // ctr_mt
+				const_1,        // parent/weak todo:hash
+				llvm::ConstantExpr::getPointerCast(builder->CreateGlobalStringPtr(node.value), tp_int_ptr),
+				const_0 };  // buffer
+			for (auto& f : fields) {
+				DUMP(f);
+			}
+			str->setInitializer(llvm::ConstantStruct::get(cls.fields, fields));
+			str->setLinkage(llvm::GlobalValue::InternalLinkage);
+		}
+		result->data = str;
+		builder->CreateCall(fn_retain_shared, str);
 		result->lifetime = Val::Retained{};
 	}
 

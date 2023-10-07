@@ -67,7 +67,7 @@ struct Typer : ast::ActionMatcher {
 		node.type_ = ast->tp_lambda(move(params));
 	}
 	void on_const_string(ast::ConstString& node) override {
-		node.type_ = ast->get_own(ast->string_cls.pinned());
+		node.type_ = ast->get_shared(ast->string_cls.pinned());
 	}
 	void on_block(ast::Block& node) override {
 		if (node.body.empty()) {
