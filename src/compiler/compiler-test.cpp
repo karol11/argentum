@@ -52,7 +52,7 @@ void execute(const char* source_text, bool dump_all = false) {
     ast->platform_exports.insert({ "ag_fn_akTest_foreignTestFunction", (void(*)())(foreign_test_function) });
     ast->platform_exports.insert({ "ag_fn_akTest_callbackInvoker", (void(*)())(callback_invoker) });
     ast->mk_fn("assertIEq", (void(*)())(ag_assert_i_eq), new ast::ConstVoid, { ast->tp_int64(), ast->tp_int64() });
-    ast->mk_fn("assert", (void(*)())(ag_assert), new ast::ConstVoid, { ast->tp_optional(ast->tp_void()), ast->get_ref(ast->string_cls) });
+    ast->mk_fn("assert", (void(*)())(ag_assert), new ast::ConstVoid, { ast->tp_optional(ast->tp_void()), ast->get_conform_ref(ast->string_cls) });
     auto start_module_name = "akTest";
     unordered_map<string, string> texts{ {start_module_name, source_text} };
     parse(ast, start_module_name, [&](string name) {
@@ -70,9 +70,8 @@ void execute(const char* source_text, bool dump_all = false) {
 TEST(Parser, Map) {
     execute(R"-(
       m = sys_Map(sys_String, sys_String);
-      k = *"One";
-      m[k] := "Hello"; // const shared string
-      sys_assertIEq(m[k]?_.getCh():0, 'H')
+      m["One"] := @"Hello";
+      sys_assertIEq(m["One"]?_.getCh():0, 'H')
     )-");
 }
 
@@ -585,14 +584,14 @@ TEST(Parser, StringOperations) {
                 r
             }
         }
-        a = OString.put('<').append("Hello there").put('>').str();
+        a = OString.put('<').append(@"Hello there").put('>').str();
         sys_assertIEq(13, a.length())
     )");
 }
 
 TEST(Parser, LiteralStrings) {
     execute(R"(
-        a = "Hi";
+        a = @"Hi";
         a.getCh(); // a="i"
         b = @a;
         a.getCh(); // a=""   b"i"
@@ -603,7 +602,7 @@ TEST(Parser, LiteralStrings) {
 TEST(Parser, StringEscapes) {
     execute(R"-(
         using sys { assertIEq }
-        s = "\n\t\r\"\\\1090e\\65\!";
+        s = @"\n\t\r\"\\\1090e\\65\!";
         assertIEq(0x0a, s.getCh());
         assertIEq(9, s.getCh());
         assertIEq(0x0d, s.getCh());
@@ -704,7 +703,7 @@ TEST(Parser, Shared) {
       class Point {
          x = 0;
          y = 0;
-         z = *"";
+         z = "";
          at(x int, y int) this {
             this.x := x;
             this.y := y
@@ -723,7 +722,7 @@ TEST(Parser, Consts) {
       using sys{assertIEq}
       const xDefPoint = *Point;
       const xCount = 4;
-      const xHello = *"Hello world";
+      const xHello = "Hello world";
 
       class Point {
          x = 0;
@@ -759,7 +758,8 @@ TEST(Parser, StringInterpolation) {
                     insertItems(size, growStep);
                 pos := putChAt(pos, codePoint)
             }
-            putStr(s String) this {
+            putStr(x -String) this {
+                s = @x;
                 loop !{
                     c = s.getCh();
                     c != 0 ? put(c)
@@ -790,11 +790,11 @@ TEST(Parser, Generics) {
     execute(R"-(
       using sys { String, log }
       class Pair(X) {
-          a = ?X;
-          b = ?X;
-          set(a X, b X) this {
-            this.a := @a;
-            this.b := @b;
+          a = ?*X;
+          b = ?*X;
+          set(a *X, b *X) this {
+            this.a := a;
+            this.b := b;
           }
       }
       p = Pair(String).set("Hello", "World");
@@ -849,7 +849,7 @@ TEST(Parser, GenericInstAsType) {
         myFn({
            a = Array(String);
            a.insertItems(0, 1);
-           a[0] := "Aloha";
+           a[0] := @"Aloha";
            a
         })
     )-");
@@ -932,7 +932,7 @@ TEST(Parser, Break) {
 TEST(Parser, BreakSkipsCallWithPartialParams) {
     execute(R"(
         using sys{ String }
-        fn f(a String, b String) {
+        fn f(a -String, b -String) {
             sys_assert(false, "shouldn't be called");
         }
         {=block
@@ -956,11 +956,11 @@ TEST(Parser, BreakFromLocalInitializer) {
 TEST(Parser, BreakFromInnerLambda) {
     execute(R"(
         using sys{ String }
-        fn func(l()) String { l(); "Normal" }
+        fn func(l()) *String { l(); "Normal" }
         x = func(\{
               ^x = "From break"
            });
-        sys_assertIEq(x.getCh(), 'F')
+        sys_assertIEq(x.peekCh(), 'F')
     )");
 }
 
@@ -982,7 +982,7 @@ TEST(Parser, ReturnFromLambdaParam) {
             }
         }
         class String {
-            getOne() ?@String { getCh() != 0 ? "A" }
+            getOne() ?@String { getCh() != 0 ? @"A" }
             split() @Array(String) {
                 res = Array(String);
                 loop {
@@ -990,17 +990,17 @@ TEST(Parser, ReturnFromLambdaParam) {
                 }
             }
         }
-        sys_assertIEq("B".split().capacity(), 2) // ["A", null]
+        sys_assertIEq((@"B").split().capacity(), 2) // ["A", null]
     )");
 }
 
 TEST(Parser, ReturnFromInnerLambda) {
     execute(R"(
         using sys{ String }
-        fn pass(l()) String { l(); "Normal" }
+        fn pass(l()) String { l(); @"Normal" }
         fn skip() String {
             pass(\{
-              ^skip = "From break"
+              ^skip = @"From break"
             })
         }
         sys_assertIEq(skip().getCh(), 'F')
