@@ -871,16 +871,12 @@ struct Generator : ast::ActionScanner {
 			auto str_name = ast::format_str("ag_str_", &node);
 			module->getOrInsertGlobal(str_name, cls.fields);
 			str = module->getGlobalVariable(str_name);
-			DUMP(cls.fields);
 			vector<llvm::Constant*> fields = {
 				llvm::ConstantExpr::getBitCast(cls.dispatcher, ptr_type),
 				const_ctr_step, // ctr_mt
 				const_1,        // parent/weak todo:hash
 				llvm::ConstantExpr::getPointerCast(builder->CreateGlobalStringPtr(node.value), tp_int_ptr),
 				const_0 };  // buffer
-			for (auto& f : fields) {
-				DUMP(f);
-			}
 			str->setInitializer(llvm::ConstantStruct::get(cls.fields, fields));
 			str->setLinkage(llvm::GlobalValue::InternalLinkage);
 		}
@@ -2681,9 +2677,9 @@ struct Generator : ast::ActionScanner {
 					void on_ref(ast::TpRef& type) override { result = gen->tp_int_ptr; }
 					void on_shared(ast::TpShared& type) override { result = gen->tp_int_ptr; }
 					void on_weak(ast::TpWeak& type) override { result = gen->tp_int_ptr; }
-					void on_frozen_weak(ast::TpFrozenWeak& type) override { result = gen->ptr_type; }
-					void on_conform_ref(ast::TpConformRef& type) override { result = gen->ptr_type; }
-					void on_conform_weak(ast::TpConformWeak& type) override { result = gen->ptr_type; }
+					void on_frozen_weak(ast::TpFrozenWeak& type) override { result = gen->tp_int_ptr; }
+					void on_conform_ref(ast::TpConformRef& type) override { result = gen->tp_int_ptr; }
+					void on_conform_weak(ast::TpConformWeak& type) override { result = gen->tp_int_ptr; }
 					void on_no_ret(ast::TpNoRet& type) override { result = gen->void_type; }
 				};
 				OptionalMatcher matcher(gen, type.depth);
@@ -2842,6 +2838,32 @@ struct Generator : ast::ActionScanner {
 				assigned_interface_ids.insert(id);
 				info.interface_ordinal = id;
 				continue;
+			} else {
+				auto disp_name = ast::format_str("ag_disp_", cls->get_name());
+				info.dispatcher = llvm::Function::Create(dispatcher_fn_type, llvm::Function::InternalLinkage,
+					disp_name, module.get());
+				if (di_builder) {
+					info.dispatcher->setSubprogram(
+						di_builder->createFunction(
+							di_cu,
+							disp_name,
+							disp_name,  // linkage name
+							nullptr,
+							0,
+							di_fn_type,
+							0,
+							llvm::DINode::FlagPrototyped,
+							llvm::DISubprogram::SPFlagDefinition));
+					/*
+					di_builder->createGlobalVariableExpression(
+						di_cu,
+						disp_name,
+						disp_name,
+						di_files[cls->module->name],
+						cls->line,
+						di_int,
+						false); // is_local  */
+				}
 			}
 			info.fields = llvm::StructType::create(*context, c_name);
 			info.constructor = llvm::Function::Create(
@@ -2951,31 +2973,6 @@ struct Generator : ast::ActionScanner {
 					? llvm::Function::InternalLinkage
 					: llvm::Function::ExternalLinkage,
 				ast::format_str("ag_dtor_", cls->module->name, "_", cls->name), module.get());
-			auto disp_name = ast::format_str("ag_disp_", cls->get_name());
-			info.dispatcher = llvm::Function::Create(dispatcher_fn_type, llvm::Function::InternalLinkage,
-				disp_name, module.get());
-			if (di_builder) {
-				info.dispatcher->setSubprogram(
-					di_builder->createFunction(
-						di_cu,
-						disp_name,
-						disp_name,  // linkage name
-						nullptr,
-						0,
-						di_fn_type,
-						0,
-						llvm::DINode::FlagPrototyped,
-						llvm::DISubprogram::SPFlagDefinition));
-				/*
-				di_builder->createGlobalVariableExpression(
-					di_cu,
-					disp_name,
-					disp_name,
-					di_files[cls->module->name],
-					cls->line,
-					di_int,
-					false); // is_local  */
-			}
 			// Initializer
 			llvm::IRBuilder<> builder(llvm::BasicBlock::Create(*context, "", info.initializer));
 			current_ll_fn = info.initializer;
