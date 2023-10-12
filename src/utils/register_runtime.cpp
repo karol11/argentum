@@ -5,6 +5,10 @@
 
 #include "compiler/ast.h"
 #include "runtime/runtime.h"
+#include "runtime/blob.h"
+#include "runtime/own-array.h"
+#include "runtime/weak-array.h"
+#include "runtime/shared-array.h"
 #include "runtime/map.h"
 
 void register_runtime_content(struct ast::Ast& ast) {
@@ -78,8 +82,8 @@ void register_runtime_content(struct ast::Ast& ast) {
 		auto own_to_t = ast.get_own(t_cls);
 		auto opt_own_to_t = ast.tp_optional(own_to_t);
 		ast.mk_method(mut::ANY, ast.own_array, "getAt", FN(ag_m_sys_Array_getAt), opt_ref_to_t_res, { ast.tp_int64() });
-		ast.mk_method(mut::MUTATING, ast.own_array, "setAt", FN(ag_m_sys_Array_setAt), ref_to_t_res, { ast.tp_int64(), own_to_t });
-		ast.mk_method(mut::MUTATING, ast.own_array, "setOptAt", FN(ag_m_sys_Array_setOptAt), new ast::ConstVoid, { ast.tp_int64(), opt_own_to_t });
+		ast.mk_method(mut::MUTATING, ast.own_array, "setAt", FN(ag_m_sys_Array_setAt), new ast::ConstVoid, { ast.tp_int64(), own_to_t });
+		ast.mk_method(mut::MUTATING, ast.own_array, "setOptAt", FN(ag_m_sys_Array_setOptAt), opt_ref_to_t_res, { ast.tp_int64(), opt_own_to_t });
 		ast.mk_method(mut::MUTATING, ast.own_array, "delete", FN(ag_m_sys_Array_delete), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
 		ast.mk_method(mut::MUTATING, ast.own_array, "spliceAt", FN(ag_m_sys_Array_spliceAt), new ast::ConstBool, { ast.tp_int64(), ast.tp_optional(ast.get_ref(t_cls)) });
 	}
@@ -115,7 +119,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 		ast.mk_method(mut::ANY, map_cls, "clear", FN(ag_m_sys_Map_clear), new ast::ConstVoid, {});
 		ast.mk_method(mut::ANY, map_cls, "delete", FN(ag_m_sys_Map_delete), opt_ref_to_val_res, { ast.get_shared(key_cls) });
 		ast.mk_method(mut::ANY, map_cls, "getAt", FN(ag_m_sys_Map_getAt), opt_ref_to_val_res, { ast.get_shared(key_cls) });
-		ast.mk_method(mut::ANY, map_cls, "setAt", FN(ag_m_sys_Map_setAt), opt_ref_to_val_res, { ast.get_shared(key_cls), ast.get_own(val_cls) });
+		ast.mk_method(mut::ANY, map_cls, "setAt", FN(ag_m_sys_Map_setAt), new ast::ConstVoid, { ast.get_shared(key_cls), ast.get_own(val_cls) });
 		ast.mk_method(mut::ANY, map_cls, "keyAt", FN(ag_m_sys_Map_keyAt), opt_shared_to_key_res, { ast.tp_int64() });
 		ast.mk_method(mut::ANY, map_cls, "valAt", FN(ag_m_sys_Map_valAt), opt_ref_to_val_res, { ast.tp_int64() });
 	}
