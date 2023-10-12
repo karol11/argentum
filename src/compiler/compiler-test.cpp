@@ -664,22 +664,23 @@ TEST(Parser, GetParentArray) {
             Array,
             Object,
             assertIEq,
+            assert,
             par = getParent,
             getParent
         }
         a = Array(Object);
         a.insertItems(0, 10);
         a[0] := Object;
-        assertIEq(a[0] && par(_) && _==a ? 1:0, 1);
+        assert(a[0] && par(_) && _==a, "a[0].p==a");
         v = a[0];
         a.delete(0, 1);
-        assertIEq(v && !par(_) ? 1 : 0, 1);
+        assert(v && !par(_), "!v.p");
         a[0] := Object;
-        assertIEq(a[0] && par(_) && _==a ? 1:0, 1);
+        assert(a[0] && par(_) && _==a, "recreated a[0].p==a");
         v := a[0];
         a.setOptAt(0, ?Object);
-        assertIEq(v && !getParent(_) ? 1 : 0, 1);
-        assertIEq(!getParent(a) ? 1 : 0, 1)
+        assert(v && !getParent(_), "removed !v.p");
+        assert(!getParent(a), "!a.p")
     )");
 }
 
