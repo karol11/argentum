@@ -4,9 +4,15 @@
 #include <stdint.h>
 
 #ifdef __cplusplus
+
 extern "C" {
+
 #else
+
 typedef int bool;
+#define true 1
+#define false 0
+
 #endif
 
 #ifndef AG_ALLOC
@@ -16,12 +22,7 @@ typedef int bool;
 #endif
 
 void* ag_alloc(size_t size);
-
-#ifdef _DEBUG
 void ag_free(void* data);
-#else
-#define ag_free AG_FREE
-#endif
 
 #ifdef NO_DEFAULT_LIB
 
@@ -91,6 +92,12 @@ typedef struct {
 } AgWeak;
 
 typedef struct {
+	AgObject head;
+	uint64_t size;
+	int64_t* data;
+} AgBlob;
+
+typedef struct {
 	size_t counter_mt; // number_of_strings pointing here << 1 | 1 if mt
 	char   data[1];
 } AgStringBuffer;
@@ -100,12 +107,6 @@ typedef struct {
 	const char*     ptr;    // points to current char
 	AgStringBuffer* buffer; // 0 for literals
 } AgString;
-
-typedef struct {
-	AgObject head;
-	uint64_t size;
-	int64_t* data;
-} AgBlob;
 
 typedef struct {
 	AgObject              head;
@@ -121,6 +122,7 @@ void ag_init();
 //
 void      ag_release_own        (AgObject* obj);
 void      ag_retain_own         (AgObject* obj, AgObject* parent);
+void      ag_retain_own_nn      (AgObject* obj, AgObject* parent);
 void      ag_set_parent         (AgObject* obj, AgObject* parent);
 bool      ag_splice             (AgObject* object, AgObject* parent);  // checks if parent is not already in object hierarchy, sets parent, retains
 AgObject* ag_copy               (AgObject* src);
@@ -129,6 +131,7 @@ void      ag_release_pin        (AgObject* obj);
 AgObject* ag_retain_pin         (AgObject* obj); // inlined in the generated code
 void      ag_release_shared     (AgObject* obj);
 void      ag_retain_shared      (AgObject* obj);
+void      ag_retain_shared_nn   (AgObject* obj);
 void      ag_dispose_obj        (AgObject* src);
 AgObject* ag_allocate_obj       (size_t size);
 AgObject* ag_copy_object_field  (AgObject* src, AgObject* parent);
@@ -141,6 +144,7 @@ AgObject* ag_fn_sys_getParent   (AgObject* obj);   // obj not null
 void      ag_copy_weak_field (void** dst, AgWeak* src);
 void      ag_release_weak    (AgWeak* obj);
 void      ag_retain_weak     (AgWeak* obj);
+AgWeak*   ag_retain_weak_nn  (AgWeak* obj);
 AgWeak*   ag_mk_weak         (AgObject* obj);
 AgObject* ag_deref_weak      (AgWeak* w);
 
@@ -154,56 +158,6 @@ int32_t   ag_m_sys_String_getCh     (AgString* s);
 int32_t   ag_m_sys_String_peekCh    (AgString* s);
 bool      ag_m_sys_String_fromBlob  (AgString* s, AgBlob* b, int at, int count);
 int64_t   ag_m_sys_Blob_putChAt     (AgBlob* b, int at, int codepoint);
-
-//
-// AgContainer support (both Blobs and Arrays)
-//
-int64_t ag_m_sys_Container_capacity    (AgBlob* b);
-void    ag_m_sys_Container_insertItems (AgBlob* b, uint64_t index, uint64_t count);
-bool    ag_m_sys_Container_moveItems   (AgBlob* blob, uint64_t a, uint64_t b, uint64_t c);
-
-//
-// AgBlob support
-//
-void    ag_copy_sys_Container    (AgBlob* dst, AgBlob* src);
-void    ag_dtor_sys_Container    (AgBlob* ptr);
-void    ag_visit_sys_Container   (void* ptr, void(*visitor)(void*, int, void*), void* ctx);
-void    ag_copy_sys_Blob         (AgBlob* dst, AgBlob* src);
-void    ag_dtor_sys_Blob         (AgBlob* ptr);
-void    ag_visit_sys_Blob        (void* ptr, void(*visitor)(void*, int, void*), void* ctx);
-int64_t ag_m_sys_Blob_get8At     (AgBlob* b, uint64_t index);
-void    ag_m_sys_Blob_set8At     (AgBlob* b, uint64_t index, int64_t val);
-int64_t ag_m_sys_Blob_get16At    (AgBlob* b, uint64_t index);
-void    ag_m_sys_Blob_set16At    (AgBlob* b, uint64_t index, int64_t val);
-int64_t ag_m_sys_Blob_get32At    (AgBlob* b, uint64_t index);
-void    ag_m_sys_Blob_set32At    (AgBlob* b, uint64_t index, int64_t val);
-int64_t ag_m_sys_Blob_get64At    (AgBlob* b, uint64_t index);
-void    ag_m_sys_Blob_set64At    (AgBlob* b, uint64_t index, int64_t val);
-bool    ag_m_sys_Blob_copyBytesTo(AgBlob* dst, uint64_t dst_index, AgBlob* src, uint64_t src_index, uint64_t bytes);
-void    ag_m_sys_Blob_deleteBytes(AgBlob* b, uint64_t index, uint64_t count);
-void    ag_make_blob_fit         (AgBlob* b, size_t required_size);
-
-//
-// AgArray support
-//
-void	  ag_copy_sys_Array       (AgBlob* dst, AgBlob* src);
-void      ag_dtor_sys_Array       (AgBlob* ptr);
-void      ag_visit_sys_Array      (AgBlob* ptr, void(*visitor)(void*, int, void*), void* ctx);
-AgObject* ag_m_sys_Array_getAt    (AgBlob* b, uint64_t index);
-AgObject* ag_m_sys_Array_setAt    (AgBlob* b, uint64_t index, AgObject* val);
-void      ag_m_sys_Array_setOptAt (AgBlob* b, uint64_t index, AgObject* val);
-bool      ag_m_sys_Array_spliceAt (AgBlob* b, uint64_t index, AgObject* val);
-void      ag_m_sys_Array_delete   (AgBlob* b, uint64_t index, uint64_t count);
-
-//
-// AgWeakArray support
-//
-void      ag_copy_sys_WeakArray    (AgBlob* dst, AgBlob* src);
-void      ag_dtor_sys_WeakArray    (AgBlob* ptr);
-void      ag_visit_sys_WeakArray   (AgBlob* ptr, void(*visitor)(void*, int, void*), void* ctx);
-AgWeak*   ag_m_sys_WeakArray_getAt (AgBlob* b, uint64_t index);
-void      ag_m_sys_WeakArray_setAt (AgBlob* b, uint64_t index, AgWeak* val);
-void      ag_m_sys_WeakArray_delete(AgBlob* b, uint64_t index, uint64_t count);
 
 //
 // System
