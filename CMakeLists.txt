@@ -19,8 +19,26 @@ find_package(SDL2_image REQUIRED)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/src ${SDL2_INCLUDE_DIRS} ${SDL2_IMAGE_INCLUDE_DIRS})
 set(CMAKE_CXX_FLAGS_RELEASE "/MT")
 
+set(ag_rtl_sources
+    src/runtime/runtime.h
+    src/runtime/runtime.c
+    src/runtime/blob.h
+    src/runtime/blob.c
+    src/runtime/own-array.h
+    src/runtime/own-array.c
+    src/runtime/weak-array.h
+    src/runtime/weak-array.c
+    src/runtime/shared-array.h
+    src/runtime/shared-array.c
+    src/runtime/map.h
+    src/runtime/map.c
+    src/runtime/array-base.inc
+    src/utils/utf8.h
+    src/utils/utf8.c
+)
 set(ag_sources
     src/utils/utf8.h
+    src/utils/utf8.c
     src/ltm/ltm.h
     src/ltm/ltm.cpp
 
@@ -57,10 +75,7 @@ set(ag_sources
 add_executable(ag-jit-sdl
     ${ag_sources}
     src/driver/jit-sdl.cpp
-    src/runtime/runtime.h
-    src/runtime/runtime.c
-    src/runtime/map.h
-    src/runtime/map.c
+    ${ag_rtl_sources}
     src/runtime/sdl-bindings.h
     src/runtime/sdl-bindings.c
 )
@@ -72,11 +87,7 @@ target_link_libraries(ag-jit-sdl
 
 add_executable(ag-tests
     ${ag_sources}
-    src/runtime/runtime.h
-    src/runtime/runtime.c
-    src/runtime/map.h
-    src/runtime/map.c
-    src/runtime/map-test.cpp
+    ${ag_rtl_sources}
     src/utils/fake-gunit.h
     src/utils/fake-gunit.cpp
     src/ltm/ltm-test.cpp
@@ -95,10 +106,7 @@ target_compile_definitions(agc PRIVATE AG_STANDALONE_COMPILER_MODE)
 target_link_libraries(agc ${llvm_libs})
 
 add_library (ag_runtime STATIC
-    src/runtime/runtime.h
-    src/runtime/runtime.c
-    src/runtime/map.h
-    src/runtime/map.c
+    ${ag_rtl_sources}
     src/runtime/sdl-bindings.h
     src/runtime/sdl-bindings.c
 )
