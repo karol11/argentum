@@ -1,4 +1,6 @@
 #include "../runtime/runtime.h"
+#include "../runtime/blob.h"
+#include "../runtime/sdl-bindings.h"
 
 #include "SDL.h"
 #include "SDL_image.h"
