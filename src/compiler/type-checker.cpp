@@ -165,6 +165,11 @@ struct Typer : ast::ActionMatcher {
 			if (as_mk_delegate->method->is_factory)
 				node.type_ = as_mk_delegate->base->type();  // preserve both own/ref and actual this type.
 		}
+		node.returns_last_param_if_void = node.returns_last_param_if_void
+			&& dom::isa<ast::TpVoid>(*node.type())
+			&& !node.params.empty();
+		if (node.returns_last_param_if_void)
+			node.type_ = node.params.back()->type();
 	}
 	void on_async_call(ast::AsyncCall& node) override {
 		for (auto& p : node.params)
@@ -184,6 +189,7 @@ struct Typer : ast::ActionMatcher {
 				auto r = ast::make_at_location<ast::Call>(node).owned();
 				auto callee = ast::make_at_location<ast::MakeDelegate>(node);
 				r->callee = callee;
+				r->returns_last_param_if_void = opt_value != nullptr;
 				callee->base = move(node.indexed);
 				callee->method = method;
 				r->params = move(node.indexes);
@@ -199,6 +205,7 @@ struct Typer : ast::ActionMatcher {
 			auto fnref = ast::make_at_location<ast::MakeFnPtr>(node);
 			fnref->fn = fn;
 			auto r = ast::make_at_location<ast::Call>(node).owned();
+			r->returns_last_param_if_void = opt_value != nullptr;
 			r->callee = fnref;
 			r->params = move(node.indexes);
 			r->params.insert(r->params.begin(), move(node.indexed));

@@ -1444,7 +1444,10 @@ struct Generator : ast::ActionScanner {
 	void on_call(ast::Call& node) override {
 		vector<llvm::Value*> params;
 		vector<pair<Val, size_t>> to_dispose; // val and active_breaks_mark at the moment val is succeeded
-		auto reg_disposable = [&](Val&& val) {
+		llvm::Value* last_param_to_return = nullptr;
+		auto reg_disposable = [&](pin<ast::Action> src, Val&& val) {
+			if (node.returns_last_param_if_void && src == node.params.back().pinned())
+				last_param_to_return = val.data;
 			to_dispose.push_back({ move(val), active_breaks.size() });
 			return to_dispose.back().first;
 		};
@@ -1455,10 +1458,11 @@ struct Generator : ast::ActionScanner {
 			auto pt = m_info.type->params().begin() + 1;
 			for (auto& p : node.params) {
 				params.push_back(cast_to(
-					reg_disposable(comp_to_persistent(p)).data,
+					reg_disposable(p, comp_to_persistent(p)).data,
 					*pt++));
 			}
 			auto receiver = reg_disposable(
+				calle_as_method->base,
 				comp_to_persistent(
 					calle_as_method->base,
 					false)) // perist_mutable_locals
@@ -1489,14 +1493,14 @@ struct Generator : ast::ActionScanner {
 			}
 		} else if (auto as_delegate_type = dom::strict_cast<ast::TpDelegate>(node.callee->type())) {
 			auto result_type = dom::strict_cast<ast::TpOptional>(node.type());
-			reg_disposable(compile(node.callee));
+			reg_disposable(node.callee, compile(node.callee));
 			llvm::Value* retained_receiver_pin = builder->CreateCall(fn_deref_weak,
 				{ builder->CreateExtractValue(to_dispose.front().first.data, {0}) });
 			params.push_back(cast_to(retained_receiver_pin, ptr_type)); 
 			auto pt = as_delegate_type->params.begin();
 			for (auto& p : node.params) {
 				params.push_back(cast_to(
-					reg_disposable(comp_to_persistent(p)).data,
+					reg_disposable(p, comp_to_persistent(p)).data,
 					to_llvm_type(**(pt++))));
 			}
 			*result = compile_if(
@@ -1532,7 +1536,7 @@ struct Generator : ast::ActionScanner {
 			auto pt = function_type->params().begin() + (is_fn ? 0 : 1);
 			for (auto& p : node.params) {
 				params.push_back(cast_to(
-					reg_disposable(comp_to_persistent(p)).data,
+					reg_disposable(p, comp_to_persistent(p)).data,
 					*pt++));
 			}
 			auto callee = compile(node.callee);
@@ -1549,11 +1553,16 @@ struct Generator : ast::ActionScanner {
 		}
 		if (is_ptr(node.type()))
 			result->lifetime = Val::Retained{};
-		for (; !to_dispose.empty(); to_dispose.pop_back())
-			dispose_val(
-				move(to_dispose.back().first),
-				to_dispose.back().second,
-				true);
+		for (; !to_dispose.empty(); to_dispose.pop_back()) {
+			if (to_dispose.back().first.data == last_param_to_return) {
+				result->data = last_param_to_return;
+			} else {
+				dispose_val(
+					move(to_dispose.back().first),
+					to_dispose.back().second,
+					true);
+			}
+		}
 		auto callee = node.callee->type().cast<ast::TpLambda>();
 		if (callee->can_x_break) {
 			unordered_set<pin<ast::Block>> x_targets;
