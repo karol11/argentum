@@ -43,7 +43,7 @@ void ag_assert_i_eq(int64_t expected, int64_t actual) {
     ASSERT_EQ(expected, actual);
 }
 void ag_assert(bool cond, AgString* message) {
-    ASSERT_TRUE(cond) << message->ptr;
+    ASSERT_TRUE(cond) << ": " << message->ptr;
 }
 
 void execute(const char* source_text, bool dump_all = false) {
@@ -491,6 +491,18 @@ TEST(Parser, WeakArrays) {
         c = @a;
         c.delete(0, 1);
         sys_assertIEq(1, c[0] && _==n ? 1:0)
+    )");
+}
+
+TEST(Parser, SharedArrays) {
+    execute(R"(
+        a = sys_SharedArray(sys_String);
+        a.insertItems(0, 10);
+        a[0] := "Asdf";
+        a[1] := "Qwer";
+        c = @a;
+        c.delete(0, 1);
+        sys_assert(c[0] && _=="Qwer", "c[0]==Qwer")
     )");
 }
 

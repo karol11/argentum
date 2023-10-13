@@ -5,7 +5,7 @@
 #define AG_RETAIN(PTR) ag_retain_shared((AgObject*)(PTR))
 #define AG_RETAIN_OWN(PTR, PARENT) ag_retain_shared((AgObject*)(PTR))
 #define AG_RETAIN_OWN_NN(PTR, PARENT) ag_retain_shared((AgObject*)(PTR))
-#define AG_COPY(TO, FROM, PARENT) (AgObject*)*(TO) = ag_copy_object_field((AgObject*)*FROM, 0);
+#define AG_COPY(TO, FROM, PARENT) { *TO = *FROM; ag_retain_shared(*(AgObject**)(FROM)); }
 #define AG_VISIT_KIND AG_VISIT_OWN
 #define AG_ITEM_TYPE AgObject*
 

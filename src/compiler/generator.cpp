@@ -2788,6 +2788,7 @@ struct Generator : ast::ActionScanner {
 			ast->blob,
 			ast->own_array,
 			ast->weak_array,
+			ast->modules["sys"]->peek_class("SharedArray"),
 			ast->string_cls,
 			ast->modules["sys"]->peek_class("Thread"),
 			ast->modules["sys"]->peek_class("Map") };

@@ -95,6 +95,14 @@ void register_runtime_content(struct ast::Ast& ast) {
 		ast.mk_method(mut::MUTATING, ast.weak_array, "setAt", FN(ag_m_sys_WeakArray_setAt), new ast::ConstVoid, { ast.tp_int64(), ast.get_weak(t_cls) });
 		ast.mk_method(mut::MUTATING, ast.weak_array, "delete", FN(ag_m_sys_WeakArray_delete), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
 	}
+	{
+		auto shared_array_cls = ast.mk_class("SharedArray");
+		shared_array_cls->overloads[container];
+		auto t_cls = add_class_param(shared_array_cls);
+		ast.mk_method(mut::ANY, shared_array_cls, "getAt", FN(ag_m_sys_SharedArray_getAt), make_opt_result(make_ptr_result(new ast::FreezeOp, t_cls)), { ast.tp_int64() });
+		ast.mk_method(mut::MUTATING, shared_array_cls, "setAt", FN(ag_m_sys_SharedArray_setAt), new ast::ConstVoid, { ast.tp_int64(), ast.get_shared(t_cls) });
+		ast.mk_method(mut::MUTATING, shared_array_cls, "delete", FN(ag_m_sys_SharedArray_delete), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
+	}
 	ast.string_cls = ast.mk_class("String", {
 		ast.mk_field("_cursor", new ast::ConstInt64),
 		ast.mk_field("_buffer", new ast::ConstInt64) });
@@ -185,6 +193,9 @@ void register_runtime_content(struct ast::Ast& ast) {
 		{ "ag_copy_sys_Array", FN(ag_copy_sys_Array) },
 		{ "ag_dtor_sys_Array",FN(ag_dtor_sys_Array) },
 		{ "ag_visit_sys_Array",FN(ag_visit_sys_Array) },
+		{ "ag_copy_sys_SharedArray", FN(ag_copy_sys_SharedArray) },
+		{ "ag_dtor_sys_SharedArray",FN(ag_dtor_sys_SharedArray) },
+		{ "ag_visit_sys_SharedArray",FN(ag_visit_sys_SharedArray) },
 		{ "ag_copy_sys_WeakArray", FN(ag_copy_sys_WeakArray) },
 		{ "ag_dtor_sys_WeakArray", FN(ag_dtor_sys_WeakArray) },
 		{ "ag_visit_sys_WeakArray", FN(ag_visit_sys_WeakArray) },
