@@ -5,8 +5,9 @@ void AG_NAME(ag_m_sys_, Array_delete) (AgBlob* b, uint64_t index, uint64_t count
 	if (!count || index > b->size || index + count > b->size)
 		return;
 	int64_t* data = b->data + index;
-	for (uint64_t i = count; i != 0; i--, data++)
+	for (uint64_t i = count; i != 0; i--, data++) {
 		AG_RELEASE(*data);
+	}
 	ag_m_sys_Blob_deleteBytes(b, index * sizeof(int64_t), count * sizeof(int64_t));
 }
 
@@ -29,8 +30,9 @@ void AG_NAME(ag_m_sys_, Array_setAt) (AgBlob* b, uint64_t index, AG_ITEM_TYPE va
 void AG_NAME(ag_dtor_sys_, Array) (AgBlob* p) {
     int64_t* ptr = p->data;
     int64_t* to = ptr + p->size;
-	while (ptr < to)
-		AG_RELEASE(*(ptr++));
+	for (; ptr < to; ptr++) {
+		AG_RELEASE(*ptr);
+	}
 	ag_free(p->data);
 }
 
@@ -40,8 +42,9 @@ void AG_NAME(ag_copy_sys_, Array) (AgBlob* d, AgBlob* s) {
     int64_t* from = s->data;
 	int64_t* to = d->data;
 	int64_t* term = from + d->size;
-	for (; from < term; from++, to++)
-        AG_COPY(to, from, &d->head);
+	for (; from < term; from++, to++) {
+		AG_COPY(to, from, &d->head);
+	}
 }
 
 void AG_NAME(ag_visit_sys_, Array)(

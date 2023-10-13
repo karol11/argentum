@@ -5,7 +5,7 @@
 #define AG_RETAIN(PTR) ag_retain_pin((AgObject*)(PTR))
 #define AG_RETAIN_OWN(PTR, PARENT) ag_retain_own((AgObject*)(PTR), PARENT)
 #define AG_RETAIN_OWN_NN(PTR, PARENT) ag_retain_own_nn((AgObject*)(PTR), PARENT)
-#define AG_COPY(TO, FROM, PARENT) (AgObject*)*(TO) = ag_copy_object_field((AgObject*)*FROM, PARENT);
+#define AG_COPY(TO, FROM, PARENT) (*(AgObject**)(TO) = ag_copy_object_field(*(AgObject**)(FROM), (PARENT)));
 #define AG_VISIT_KIND AG_VISIT_OWN
 #define AG_ITEM_TYPE AgObject*
 
