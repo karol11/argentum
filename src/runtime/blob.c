@@ -26,7 +26,7 @@ void ag_m_sys_Blob_deleteBytes(AgBlob* b, uint64_t index, uint64_t bytes_count) 
 	ag_memcpy((char*)new_data + index, (char*)b->data + index + bytes_count, (b->size * sizeof(int64_t) - index));
 	ag_free(b->data);
 	b->data = new_data;
-	b->size -= new_byte_size >> 3;
+	b->size = new_byte_size >> 3;
 }
 
 bool ag_m_sys_Container_moveItems(AgBlob* blob, uint64_t a, uint64_t b, uint64_t c) {
