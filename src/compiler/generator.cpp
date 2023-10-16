@@ -2850,7 +2850,7 @@ struct Generator : ast::ActionScanner {
 				continue;
 			} else {
 				auto disp_name = ast::format_str("ag_disp_", cls->get_name());
-				info.dispatcher = llvm::Function::Create(dispatcher_fn_type, llvm::Function::InternalLinkage,
+				info.dispatcher = llvm::Function::Create(dispatcher_fn_type, llvm::Function::ExternalLinkage,
 					disp_name, module.get());
 				if (di_builder) {
 					info.dispatcher->setSubprogram(
@@ -3250,6 +3250,8 @@ llvm::orc::ThreadSafeModule generate_code(ltm::pin<ast::Ast> ast, bool add_debug
 	return gen.build();
 }
 
+extern "C" void* ag_disp_sys_String;
+
 int64_t execute(llvm::orc::ThreadSafeModule& module, ast::Ast& ast, bool dump_ir) {
 #ifdef AG_STANDALONE_COMPILER_MODE
 	return -1;
@@ -3271,6 +3273,8 @@ int64_t execute(llvm::orc::ThreadSafeModule& module, ast::Ast& ast, bool dump_ir
 	check(lib->define(llvm::orc::absoluteSymbols(move(runtime_exports))));
 	check(jit->addIRModule(std::move(module)));
 	auto f_main = check(jit->lookup("main"));
+	auto disp_sys_string = check(jit->lookup("ag_disp_sys_String"));
+	ag_disp_sys_String = disp_sys_string.toPtr<void*(void*, int)>();
 	auto main_addr = f_main.toPtr<void()>();
 	for (auto& m : ast.modules) {
 		for (auto& test : m.second->tests) {

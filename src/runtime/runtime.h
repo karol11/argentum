@@ -161,6 +161,8 @@ int32_t   ag_m_sys_String_getCh     (AgString* s);
 int32_t   ag_m_sys_String_peekCh    (AgString* s);
 bool      ag_m_sys_String_fromBlob  (AgString* s, AgBlob* b, int at, int count);
 int64_t   ag_m_sys_Blob_putChAt     (AgBlob* b, int at, int codepoint);
+int64_t   ag_m_sys_String_getHash   (AgObject* obj);
+bool      ag_m_sys_String_equals    (AgObject* a, AgObject* b);
 //
 // System
 //
