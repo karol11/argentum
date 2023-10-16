@@ -636,6 +636,14 @@ int64_t ag_fn_sys_hash(AgObject* s) {
 	return r ^ (r >> 14) ^ (r << 16);
 }
 
+int64_t   ag_m_sys_Object_getHash(AgObject* obj) {
+	return ag_fn_sys_hash(obj);
+}
+
+bool ag_m_sys_Object_equals(AgObject* a, AgObject* b) {
+	return a == b;
+}
+
 static void ag_init_queue(ag_queue* q) {
 	q->read_pos = q->write_pos = q->start = AG_ALLOC(sizeof(int64_t) * AG_THREAD_QUEUE_SIZE);
 	q->end = q->start + AG_THREAD_QUEUE_SIZE;

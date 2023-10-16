@@ -21,6 +21,8 @@ void register_runtime_content(struct ast::Ast& ast) {
 #endif
 	using mut = ast::Mut;
 	ast.object = ast.mk_class("Object");
+	ast.mk_method(mut::ANY, ast.object, "getHash", FN(ag_m_sys_Object_getHash), new ast::ConstInt64, {});
+	ast.mk_method(mut::ANY, ast.object, "equals", FN(ag_m_sys_Object_equals), new ast::ConstBool, { ast.get_conform_ref(ast.object) });
 	auto container = ast.mk_class("Container", {
 		ast.mk_field("_size", new ast::ConstInt64),
 		ast.mk_field("_data", new ast::ConstInt64) });
