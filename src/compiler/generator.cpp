@@ -2928,14 +2928,14 @@ struct Generator : ast::ActionScanner {
 				m_info.ordinal = vmt_content.size();
 				vmt_content.push_back(m_info.type->getPointerTo());
 			}
-			if (cls->base_class) {  // interfaces have no base class
+			if (cls->base_class) {  // !interface && !Object
 				auto& base_info = classes[cls->base_class];
 				size_t base_index = vmt_content.size();
 				for (auto& mt : base_info.vmt->elements())
 					vmt_content.push_back(mt);
 				for (auto& m : cls->overloads[cls->base_class]) {
 					auto& m_info = methods[m];
-					auto& m_overridden = methods[m->ovr];
+					auto& m_overridden = methods.at(m->ovr);
 					m_info.ordinal = m_overridden.ordinal + base_index;
 					m_info.type = m_overridden.type;
 				}
@@ -2969,7 +2969,7 @@ struct Generator : ast::ActionScanner {
 					ast::format_str("ag_fn_", m.first, "_", fn.first), module.get())});
 			}
 		}
-		// From this point it is possible to build code that access fleds and methods.
+		// From this point it is possible to build code that access fields and methods.
 		// Make llvm functions for standalone ast functions.
 		// Build class contents - initializer, dispatcher, disposer, copier, methods.
 		for (auto& cls : ast->classes_in_order) {
@@ -3142,14 +3142,13 @@ struct Generator : ast::ActionScanner {
 					info.fields->getPointerTo(),
 					m->is_platform));
 			}
-			size_t base_index = info.vmt_fields.size();
 			if (cls->base_class) {
 				auto& base_vmt = classes[cls->base_class].vmt_fields;
 				for (size_t i = 0, j = base_vmt.size() - 1; i < j; i++)
 					info.vmt_fields.push_back(base_vmt[i]);
 				for (auto& m : cls->overloads[cls->base_class]) { // for overrides
 					auto& m_info = methods[m];
-					info.vmt_fields[base_index + m_info.ordinal] = compile_function(*m,
+					info.vmt_fields[m_info.ordinal] = compile_function(*m,
 						ast::format_str("ag_m_", cls->get_name(), '_', ast::LongName{ m->name, m->base_module }),
 						info.fields->getPointerTo(),
 						m->is_platform);
