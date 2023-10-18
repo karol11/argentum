@@ -21,8 +21,8 @@ void register_runtime_content(struct ast::Ast& ast) {
 #endif
 	using mut = ast::Mut;
 	ast.object = ast.mk_class("Object");
-	ast.mk_method(mut::ANY, ast.object, "getHash", FN(ag_m_sys_Object_getHash), new ast::ConstInt64, {});
-	ast.mk_method(mut::ANY, ast.object, "equals", FN(ag_m_sys_Object_equals), new ast::ConstBool, { ast.get_conform_ref(ast.object) });
+	auto obj_get_hash = ast.mk_method(mut::ANY, ast.object, "getHash", FN(ag_m_sys_Object_getHash), new ast::ConstInt64, {});
+	auto obj_equals = ast.mk_method(mut::ANY, ast.object, "equals", FN(ag_m_sys_Object_equals), new ast::ConstBool, { ast.get_conform_ref(ast.object) });
 	auto container = ast.mk_class("Container", {
 		ast.mk_field("_size", new ast::ConstInt64),
 		ast.mk_field("_data", new ast::ConstInt64) });
@@ -111,6 +111,8 @@ void register_runtime_content(struct ast::Ast& ast) {
 	ast.mk_method(mut::MUTATING, ast.string_cls, "fromBlob", FN(ag_m_sys_String_fromBlob), new ast::ConstBool, { ast.get_conform_ref(ast.blob), ast.tp_int64(), ast.tp_int64() });
 	ast.mk_method(mut::MUTATING, ast.string_cls, "getCh", FN(ag_m_sys_String_getCh), new ast::ConstInt64, {});
 	ast.mk_method(mut::ANY, ast.string_cls, "peekCh", FN(ag_m_sys_String_peekCh), new ast::ConstInt64, {});
+	ast.mk_overload(ast.string_cls, FN(ag_m_sys_String_getHash), obj_get_hash);
+	ast.mk_overload(ast.string_cls, FN(ag_m_sys_String_equals), obj_equals);
 	{
 		auto map_cls = ast.mk_class("Map", {
 			ast.mk_field("_hasher", new ast::ConstInt64),
