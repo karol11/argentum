@@ -525,7 +525,6 @@ pin<ast::Method> Ast::mk_method(
 	m->mut = mut;
 	m->name = m_name;
 	m->cls = cls;
-	m->ovr = m->base = m;
 	m->is_platform = true;
 	m->type_expression = result_type;
 	cls->new_methods.push_back(m);
@@ -540,6 +539,21 @@ pin<ast::Method> Ast::mk_method(
 		platform_exports.insert({ ast::format_str("ag_m_", cls->get_name(), "_", m_name), entry_point});
 	return m;
 };
+
+pin<Method> Ast::mk_overload(pin<Class> cls, void(*entry_point)(), pin<Method> ovr) {
+	auto m = pin<ast::Method>::make();
+	m->mut = ovr->mut;
+	m->name = ovr->name;
+	m->cls = cls;
+	m->is_platform = ovr->is_platform;
+	m->type_expression = ovr->type_expression;
+	cls->overloads[ovr->cls].push_back(m);
+	for (auto& p : ovr->names)
+		m->names.push_back(p);
+	if (entry_point)
+		platform_exports.insert({ ast::format_str("ag_m_", cls->get_name(), "_", m->name), entry_point });
+	return m;
+}
 
 pin<ast::Function> Ast::mk_fn(string name, void(*entry_point)(), pin<Action> result_type, std::initializer_list<pin<Type>> params) {
 	auto fn = pin<ast::Function>::make();

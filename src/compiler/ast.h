@@ -382,6 +382,7 @@ struct Ast: dom::DomItem {
 	pin<Class> mk_class(string name, std::initializer_list<pin<Field>> fields = {});
 	pin<Function> mk_fn(string name, void(*entry_point)(), pin<Action> result_type, std::initializer_list<pin<Type>> params);
 	pin<Method> mk_method(Mut mut, pin<Class> cls, string m_name, void(*entry_point)(), pin<Action> result_type, std::initializer_list<pin<Type>> params);
+	pin<Method> mk_overload(pin<Class> cls, void(*entry_point)(), pin<Method> overloaded);
 	void add_this_param(ast::Function& fn, pin<ast::Class> cls);
 
 	pin<TpInt64> tp_int64();
