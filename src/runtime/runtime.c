@@ -390,11 +390,8 @@ AgObject* ag_allocate_obj(size_t size) {
 	return r;
 }
 AgObject* ag_freeze(AgObject* src) {
-	if (AG_SHARED == (src->wb_p & AG_F_PARENT
-		? src->wb_p & ~AG_F_PARENT
-		: ((AgWeak*)src->wb_p)->org_pointer_to_parent))
-	{
-		src->ctr_mt += AG_CTR_STEP;
+	if (src->ctr_mt & AG_CTR_SHARED) {
+		ag_retain_shared_nn(src);
 		return src;
 	}
 	ag_copy_freeze = true;
@@ -434,14 +431,14 @@ AgObject* ag_copy(AgObject* src) {
 }
 
 AgObject* ag_copy_object_field(AgObject* src, AgObject* parent) {
-	if (ag_copy_freeze)
-		parent = (AgObject*) AG_SHARED;
 	if (!src || (size_t)src < 256)
 		return src;
 	AgVmt* vmt = ((AgVmt*)(ag_head(src)->dispatcher)) - 1;
 	AgObject* dh = (AgObject*) ag_alloc(vmt->instance_alloc_size + AG_HEAD_SIZE);
 	ag_memcpy(dh, ag_head(src), vmt->instance_alloc_size + AG_HEAD_SIZE);
-	dh->ctr_mt = AG_CTR_STEP;
+	dh->ctr_mt = ag_copy_freeze
+		? AG_CTR_STEP | AG_CTR_SHARED
+		: AG_CTR_STEP;
 	dh->wb_p = (uintptr_t) AG_TAG_PTR(AgObject, parent, AG_F_PARENT);  //NO_WEAK also makes it AG_TG_NOWEAK_DST
 	vmt->copy_ref_fields((AgObject*)(dh + AG_HEAD_SIZE), src);
 	if ((ag_head(src)->wb_p & AG_F_PARENT) == 0) { // has weak block
@@ -615,12 +612,12 @@ bool ag_m_sys_String_fromBlob(AgString* s, AgBlob* b, int at, int count) {
 }
 
 AgObject* ag_fn_sys_getParent(AgObject* obj) {  // obj not null, result is nullable
+	if (obj->ctr_mt & AG_CTR_SHARED)
+		return 0;
 	uintptr_t r = obj->wb_p & AG_F_PARENT
 		? obj->wb_p & ~AG_F_PARENT
 		: ((AgWeak*)obj->wb_p)->org_pointer_to_parent;
-	return r <= AG_SHARED
-		? 0
-		: ag_retain_pin((AgObject*)(r));
+	return ag_retain_pin((AgObject*)(r));
 }
 
 void ag_fn_sys_terminate(int result) {
@@ -806,19 +803,15 @@ void ag_bound_field_to_thread(void* field, int type, void* ctx);
 
 inline void ag_bound_own_to_thread(AgObject* ptr, ag_thread* th) {
 	if (ag_not_null(ptr)) {
-		uintptr_t parent = 0;
 		if ((ptr->wb_p & AG_F_PARENT) == 0) {
-			parent = ptr->wb_p;
 			AgWeak* w = (AgWeak*)ptr->wb_p;
 			if (w->thread == th)
 				return;
 			if (w->wb_ctr_mt & AG_CTR_MT) // we can check this bit, but can't rewrite it if it's mt
 				w->wb_ctr_mt |= AG_CTR_MT;
 			w->thread = th;
-		} else {
-			parent = ptr->wb_p & ~AG_F_PARENT;
 		}
-		if (parent == AG_SHARED) {
+		if (ptr->ctr_mt & AG_CTR_SHARED) {
 			if ((ptr->ctr_mt & AG_CTR_MT) == 0) {
 				ptr->ctr_mt |= AG_CTR_MT;  //previously it belonged only to this thread, so no atomic op here
 				((AgVmt*)(ag_head(ptr)->dispatcher))[-1].visit(ptr, ag_bound_field_to_thread, th);

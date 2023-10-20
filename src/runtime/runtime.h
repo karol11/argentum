@@ -44,11 +44,12 @@ void ag_memmove(void*, void*, size_t);
 // When not in copy op, all not shared obj->wb pointers have to have 0b00 in two LSB bits
 #define AG_F_PARENT ((uintptr_t) 1)
 #define AG_IN_STACK 0
-#define AG_SHARED   ((uintptr_t) 2)
-// Tags in `counter` field (only for shared or conform pointers)
-#define AG_CTR_MT ((uintptr_t) 1)
-#define AG_CTR_WEAK ((uintptr_t) 2)
-#define AG_CTR_STEP ((uintptr_t) 16)
+// Tags in `counter` field (only for shared objects)
+#define AG_CTR_MT     ((uintptr_t) 1)
+#define AG_CTR_WEAK   ((uintptr_t) 2)
+#define AG_CTR_SHARED ((uintptr_t) 4)
+#define AG_CTR_HASH   ((uintptr_t) 8)
+#define AG_CTR_STEP   ((uintptr_t) 16)
 
 typedef struct ag_thread_tag ag_thread;
 
@@ -61,6 +62,8 @@ typedef struct ag_thread_tag ag_thread;
 #define AG_VMT_FIELD_VISIT     2
 #define AG_VMT_FIELD_INST_SIZE 3
 #define AG_VMT_FIELD_VMT_SIZE  4
+#define AG_VMT_FIELD_HASH      5
+#define AG_VMT_FIELD_EQUALS    6
 
 #define ag_not_null(OBJ) ((OBJ) && (size_t)(OBJ) >= 256)
 
