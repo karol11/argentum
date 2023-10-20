@@ -120,7 +120,7 @@ struct NameResolver : ast::ActionScanner {
 						for (auto& m : overload->new_methods)
 							ivmt->push_back(m);
 					}
-					if (ivmt || overload == c->base_class) {  // TODO: {1}
+					if (ivmt || overload == c->base_class) {
 						for (auto& base_name : overload->this_names) {
 							if (c->this_names.count(base_name.first) != 0)
 								c->this_names[base_name.first] = nullptr;  // mark ambiguous
@@ -176,12 +176,6 @@ struct NameResolver : ast::ActionScanner {
 				not_inherited_names.insert(n);
 				c->this_names[n] = m;
 				c->this_names[{m->name, nullptr}] = m;
-			}
-			if (c->base_class) { // TODO: remove as it's done in {1}
-				for (auto& n : c->base_class->get_implementation()->this_names) {
-					if (c->this_names.count(n.first) == 0)
-						c->this_names.insert(n);
-				}
 			}
 			this_class = nullptr;
 			for (auto& f : c->fields)
