@@ -77,7 +77,7 @@ struct NameResolver : ast::ActionScanner {
 				order_class(c.second);
 			}
 		}
-		// Now classes are ordered in base-first order, and `cls.overloads` contains all base classes and interfeces - direct and indirect.
+		// Now classes are ordered in base-first order, and cls.overloads contains all base classes and interfeces - direct and indirect.
 		assert(cls_cnt == ast->classes_in_order.size());
 		for (auto& cw : ast->classes_in_order) {
 			auto c = cw.pinned();
@@ -113,50 +113,50 @@ struct NameResolver : ast::ActionScanner {
 					c->interface_vmts = c->base_class->get_implementation()->interface_vmts;
 				for (auto& abstract_overload : c->overloads) {
 					auto overload = abstract_overload.first->get_implementation();
-					auto ivmt = overload->is_interface
-						? &c->interface_vmts[overload]
-						: nullptr;
-					if (ivmt && ivmt->empty()) {
+					auto handle_overloads = [&](vector<weak<ast::Method>>* ivmt = nullptr) {
+						for (auto& ovr_method : abstract_overload.second) {
+							ovr_method->cls = c;
+							if (!overload->handle_member(*ovr_method, { ovr_method->name, ovr_method->base_module },
+								[&](auto& field) { ovr_method->error("method overriding field:", field); },
+								[&](auto& base_method) {
+									if (ovr_method == base_method) // each class member regustered in this_names twice with short and long name.
+										return;
+									ovr_method->ordinal = base_method->ordinal;
+									if (base_method->cls == c)
+										ovr_method->error("method is already implemented here", base_method);
+									ovr_method->base = base_method->base;
+									ovr_method->ovr = base_method;
+									ovr_method->mut = base_method->mut;
+									if (ivmt) {
+										assert(ovr_method->ordinal < ivmt->size());
+										(*ivmt)[ovr_method->ordinal] = ovr_method;
+									}
+									c->this_names[ast::LongName{ ovr_method->name, ovr_method->module }] = ovr_method;
+									c->this_names[ast::LongName{ ovr_method->name, nullptr }] = ovr_method;
+								},
+								[&]() { ovr_method->error("override is ambiguous"); }))
+								ovr_method->error("no method to override");
+						}
+					};
+					if (!overload->is_interface) {
+						handle_overloads();
+						continue;
+					}
+					auto& ivmt = c->interface_vmts[overload];
+					if (ivmt.empty()) {
 						for (auto& m : overload->new_methods)
-							ivmt->push_back(m);
+							ivmt.push_back(m);
 					}
-					if (ivmt || overload == c->base_class) {
-						for (auto& base_name : overload->this_names) {
-							if (c->this_names.count(base_name.first) != 0)
-								c->this_names[base_name.first] = nullptr;  // mark ambiguous
-							else
-								c->this_names[base_name.first] = base_name.second;
-						}
+					for (auto& base_name : overload->this_names) {
+						if (c->this_names.count(base_name.first) != 0)
+							c->this_names[base_name.first] = nullptr;  // mark ambiguous
+						else
+							c->this_names[base_name.first] = base_name.second;
 					}
-					for (auto& ovr_method : abstract_overload.second) {
-						ovr_method->cls = c;
-						if (!overload->handle_member(*ovr_method, { ovr_method->name, ovr_method->base_module },
-							[&](auto& field) { ovr_method->error("method overriding field:", field); },
-							[&](auto& base_method) {
-								if (ovr_method == base_method) // each class member registered in this_names twice with short and long name.
-									return;
-								ovr_method->ordinal = base_method->ordinal;
-								if (base_method->cls == c)
-									ovr_method->error("method is already implemented here", base_method);
-								ovr_method->base = base_method->base;
-								ovr_method->ovr = base_method;
-								ovr_method->mut = base_method->mut;
-								assert(!ivmt || ovr_method->ordinal < ivmt->size());
-								if (ivmt)
-									(*ivmt)[ovr_method->ordinal] = ovr_method;
-								if (auto& named = c->this_names[ast::LongName{ ovr_method->name, ovr_method->module }])
-									named = ovr_method;
-								if (auto& named = c->this_names[ast::LongName{ ovr_method->name, nullptr }])
-									named = ovr_method;
-							},
-							[&]() { ovr_method->error("override is ambiguous"); }))
-							ovr_method->error("no method to override");
-					}
-					if (ivmt) {
-						for (auto& m : *ivmt) {
-							if (m->body.empty())
-								m->error("method is not implemented in class ", c);
-						}
+					handle_overloads(&ivmt);
+					for (auto& m : ivmt) {
+						if (m->body.empty())
+							m->error("method is not implemented in class ", c);
 					}
 				}
 			}
@@ -176,6 +176,12 @@ struct NameResolver : ast::ActionScanner {
 				not_inherited_names.insert(n);
 				c->this_names[n] = m;
 				c->this_names[{m->name, nullptr}] = m;
+			}
+			if (c->base_class) {
+				for (auto& n : c->base_class->get_implementation()->this_names) {
+					if (c->this_names.count(n.first) == 0)
+						c->this_names.insert(n);
+				}
 			}
 			this_class = nullptr;
 			for (auto& f : c->fields)
