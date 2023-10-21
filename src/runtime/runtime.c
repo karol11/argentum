@@ -265,26 +265,37 @@ void ag_set_parent(AgObject* obj, AgObject* parent) {
 	}
 }
 
-void ag_release_pin(AgObject * obj) {
-	if (ag_not_null(obj)) {
+inline void ag_release_pin_nn(AgObject* obj) {
+	if (ag_head(obj)->ctr_mt & (~0u - (AG_CTR_STEP - 1))) {
 		assert((ag_head(obj)->ctr_mt & AG_CTR_MT) == 0);  // pin cannot be shared and as such mt
 		if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) == 0)
 			ag_dispose_obj(obj);
 	}
 }
-AgObject* ag_retain_pin(AgObject* obj) {
-	if (ag_not_null(obj)) {
+void ag_release_pin(AgObject * obj) {
+	if (ag_not_null(obj))
+		ag_release_pin_nn(obj);
+}
+inline void ag_retain_pin_nn(AgObject* obj) {
+	if (ag_head(obj)->ctr_mt & (~0u - (AG_CTR_STEP - 1))) {
 		assert((ag_head(obj)->ctr_mt & AG_CTR_MT) == 0);  // pin cannot be shared and as such mt
 		ag_head(obj)->ctr_mt += AG_CTR_STEP;
 	}
-	return obj;
+}
+void ag_retain_pin(AgObject* obj) {
+	if (ag_not_null(obj))
+		ag_retain_pin_nn(obj);
 }
 inline void ag_reg_mt_release(uintptr_t p) {
+	if ((((AgObject*)p)->ctr_mt & (~0u - (AG_CTR_STEP - 1))) == 0)
+		return;
 	if (--ag_release_pos == ag_retain_pos)
 		ag_flush_retain_release();
 	*ag_release_pos = p;
 }
 inline void ag_reg_mt_retain(uintptr_t p) {
+	if ((((AgObject*)p)->ctr_mt & (~0u - (AG_CTR_STEP - 1))) == 0)
+		return;
 	*ag_retain_pos = p;
 	if (++ag_retain_pos == ag_release_pos)
 		ag_flush_retain_release();
@@ -617,7 +628,8 @@ AgObject* ag_fn_sys_getParent(AgObject* obj) {  // obj not null, result is nulla
 	uintptr_t r = obj->wb_p & AG_F_PARENT
 		? obj->wb_p & ~AG_F_PARENT
 		: ((AgWeak*)obj->wb_p)->org_pointer_to_parent;
-	return ag_retain_pin((AgObject*)(r));
+	ag_retain_pin((AgObject*)(r));
+	return (AgObject*)(r);
 }
 
 void ag_fn_sys_terminate(int result) {
@@ -679,7 +691,8 @@ bool ag_fn_sys_setMainObject(AgObject* s) {
 		th->root = NULL;
 		return false;
 	}
-	th->root = ag_retain_pin(s);
+	ag_retain_pin(s);
+	th->root = s;
 	return true;
 }
 
@@ -968,7 +981,8 @@ AgThread* ag_m_sys_Thread_start(AgThread* th, AgObject* root) {
 	}
 	mtx_unlock(&ag_threads_mutex);
 	// TODO: make root object marker value for parent ptr.
-	t->root = ag_retain_pin(root); // ok to retain on the crating thread before thrd_create
+	ag_retain_pin(root); // ok to retain on the crating thread before thrd_create
+	t->root = root;
 	th->thread = t;
 	AgWeak* w = ag_mk_weak(root);
 	w->wb_ctr_mt = (w->wb_ctr_mt - AG_CTR_STEP) | AG_CTR_MT;
