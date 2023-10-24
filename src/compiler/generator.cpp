@@ -250,6 +250,7 @@ struct Generator : ast::ActionScanner {
 	llvm::Constant* const_1 = nullptr;
 	llvm::Constant* const_256 = nullptr;
 	llvm::Constant* const_ctr_step = nullptr;
+	llvm::Constant* const_ctr_static = nullptr;  // SHARED|MT|0
 	llvm::Constant* const_null_ptr = nullptr;
 	unordered_map<string, llvm::GlobalVariable*> string_literals;
 	unordered_map<
@@ -286,6 +287,7 @@ struct Generator : ast::ActionScanner {
 		const_1 = llvm::ConstantInt::get(tp_int_ptr, 1);
 		const_256 = llvm::ConstantInt::get(tp_int_ptr, 256);
 		const_ctr_step = llvm::ConstantInt::get(tp_int_ptr, AG_CTR_STEP);
+		const_ctr_static = llvm::ConstantInt::get(tp_int_ptr, AG_CTR_SHARED | AG_CTR_MT);
 		const_null_ptr = llvm::ConstantPointerNull::get(ptr_type);
 
 		fn_dispose = llvm::Function::Create(
@@ -882,7 +884,7 @@ struct Generator : ast::ActionScanner {
 			str = module->getGlobalVariable(str_name);
 			vector<llvm::Constant*> fields = {
 				llvm::ConstantExpr::getBitCast(cls.dispatcher, ptr_type),
-				const_ctr_step, // ctr_mt
+				const_ctr_static, // shared|mt|0
 				const_1,        // parent/weak todo:hash
 				llvm::ConstantExpr::getPointerCast(builder->CreateGlobalStringPtr(node.value), tp_int_ptr),
 				const_0 };  // buffer
@@ -1124,6 +1126,7 @@ struct Generator : ast::ActionScanner {
 					auto addr = globals[c.second];
 					consts_to_dispose.push_back(make_retained_or_non_ptr(compile(c.second->initializer)));
 					auto& initializer = consts_to_dispose.back();
+					builder->CreateStore(const_ctr_static, builder->CreateStructGEP(obj_struct, cast_to(initializer.data, ptr_type), 1));
 					builder->CreateStore(initializer.data, addr);
 					initializer.data = addr;
 				}
@@ -1188,9 +1191,10 @@ struct Generator : ast::ActionScanner {
 			builder->SetInsertPoint(exit_bb);
 		}
 		active_breaks = move(prev_breaks);
-		for (auto& c : consts_to_dispose) {
+		while (!consts_to_dispose.empty()) {
+			auto& c = consts_to_dispose.back();
 			if (is_ptr(c.type)) {
-				build_release(builder->CreateLoad(ptr_type, c.data), c.type, false);
+				builder->CreateCall(fn_dispose, { builder->CreateLoad(ptr_type, c.data) });
 			}
 		}
 		if (&node == &*ast->starting_module->entry_point) {

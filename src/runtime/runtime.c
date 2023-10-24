@@ -342,7 +342,7 @@ void ag_retain_own(AgObject* obj, AgObject* parent) {
 }
 inline void ag_release_shared_nn(AgObject* obj) {
 	// only shared ptrs can reference string literals and named consts with static lifetimes, so check only for shared
-	if ((((AgObject*)obj)->ctr_mt & (~0u - (AG_CTR_STEP - 1))) == 0)
+	if ((((AgObject*)obj)->ctr_mt & ~(AG_CTR_STEP - 1)) == 0)
 		return;
 	if (ag_head(obj)->ctr_mt & AG_CTR_MT)
 		ag_reg_mt_release((uintptr_t)obj);
@@ -355,7 +355,7 @@ void ag_release_shared(AgObject* obj) {
 }
 void ag_retain_shared_nn(AgObject* obj) {
 	// only shared ptrs can reference string literals and named consts with static lifetimes, so check only for shared
-	if ((((AgObject*)obj)->ctr_mt & (~0u - (AG_CTR_STEP - 1))) == 0)
+	if ((((AgObject*)obj)->ctr_mt & ~(AG_CTR_STEP - 1)) == 0)
 		return;
 	if (ag_head(obj)->ctr_mt & AG_CTR_MT)
 		ag_reg_mt_retain((uintptr_t)obj);
