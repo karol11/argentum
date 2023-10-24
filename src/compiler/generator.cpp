@@ -1126,7 +1126,14 @@ struct Generator : ast::ActionScanner {
 					auto addr = globals[c.second];
 					consts_to_dispose.push_back(make_retained_or_non_ptr(compile(c.second->initializer)));
 					auto& initializer = consts_to_dispose.back();
-					builder->CreateStore(const_ctr_static, builder->CreateStructGEP(obj_struct, cast_to(initializer.data, ptr_type), 1));
+					if (is_ptr(initializer.type)) {
+						builder->CreateStore(
+							const_ctr_static,
+							builder->CreateStructGEP(
+								obj_struct,
+								cast_to(initializer.data, ptr_type),
+								1));
+					}
 					builder->CreateStore(initializer.data, addr);
 					initializer.data = addr;
 				}
@@ -1191,7 +1198,7 @@ struct Generator : ast::ActionScanner {
 			builder->SetInsertPoint(exit_bb);
 		}
 		active_breaks = move(prev_breaks);
-		while (!consts_to_dispose.empty()) {
+		for (; !consts_to_dispose.empty(); consts_to_dispose.pop_back()) {
 			auto& c = consts_to_dispose.back();
 			if (is_ptr(c.type)) {
 				builder->CreateCall(fn_dispose, { builder->CreateLoad(ptr_type, c.data) });
