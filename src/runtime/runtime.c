@@ -266,36 +266,28 @@ void ag_set_parent(AgObject* obj, AgObject* parent) {
 }
 
 inline void ag_release_pin_nn(AgObject* obj) {
-	if (ag_head(obj)->ctr_mt & (~0u - (AG_CTR_STEP - 1))) {
-		assert((ag_head(obj)->ctr_mt & AG_CTR_MT) == 0);  // pin cannot be shared and as such mt
-		if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) == 0)
-			ag_dispose_obj(obj);
-	}
+	assert((ag_head(obj)->ctr_mt & AG_CTR_MT) == 0);  // pin cannot be shared and as such mt
+	if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) == 0)
+		ag_dispose_obj(obj);
 }
 void ag_release_pin(AgObject * obj) {
 	if (ag_not_null(obj))
 		ag_release_pin_nn(obj);
 }
 inline void ag_retain_pin_nn(AgObject* obj) {
-	if (ag_head(obj)->ctr_mt & (~0u - (AG_CTR_STEP - 1))) {
-		assert((ag_head(obj)->ctr_mt & AG_CTR_MT) == 0);  // pin cannot be shared and as such mt
-		ag_head(obj)->ctr_mt += AG_CTR_STEP;
-	}
+	assert((ag_head(obj)->ctr_mt & AG_CTR_MT) == 0);  // pin cannot be shared and as such mt
+	ag_head(obj)->ctr_mt += AG_CTR_STEP;
 }
 void ag_retain_pin(AgObject* obj) {
 	if (ag_not_null(obj))
 		ag_retain_pin_nn(obj);
 }
 inline void ag_reg_mt_release(uintptr_t p) {
-	if ((((AgObject*)p)->ctr_mt & (~0u - (AG_CTR_STEP - 1))) == 0)
-		return;
 	if (--ag_release_pos == ag_retain_pos)
 		ag_flush_retain_release();
 	*ag_release_pos = p;
 }
 inline void ag_reg_mt_retain(uintptr_t p) {
-	if ((((AgObject*)p)->ctr_mt & (~0u - (AG_CTR_STEP - 1))) == 0)
-		return;
 	*ag_retain_pos = p;
 	if (++ag_retain_pos == ag_release_pos)
 		ag_flush_retain_release();
@@ -309,7 +301,7 @@ void ag_release_weak(AgWeak* w) {
 		ag_free(w);
 	}
 }
-AgWeak* ag_retain_weak_nn(AgWeak* w) {
+static inline AgWeak* ag_retain_weak_nn(AgWeak* w) {
 	if (w->wb_ctr_mt & AG_CTR_MT) {
 		ag_reg_mt_retain((uintptr_t)w);
 	} else {
@@ -323,16 +315,18 @@ void ag_retain_weak(AgWeak* w) {
 }
 // TODO: separate into
 // - `assign_own`, that handles previous val, and parent ptr, but doesn't handle mt
-// - `dispose_own` that handles mt but not parent ptr
+// - `dispose_own` that handles mt
+void ag_release_own_nn(AgObject* obj) {
+	if (ag_head(obj)->ctr_mt & AG_CTR_MT)  // when in field it can point to a frozen shared mt.
+		ag_reg_mt_release((uintptr_t)obj);
+	else if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) < AG_CTR_STEP)
+		ag_dispose_obj(obj);
+	else
+		ag_set_parent_nn(obj, AG_IN_STACK);
+}
 void ag_release_own(AgObject* obj) {
-	if (ag_not_null(obj)) {
-		if (ag_head(obj)->ctr_mt & AG_CTR_MT)  // when in field it can point to a frozen shared mt.
-			ag_reg_mt_release((uintptr_t) obj);
-		else if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) < AG_CTR_STEP)
-			ag_dispose_obj(obj);
-		else
-			ag_set_parent_nn(obj, AG_IN_STACK);
-	}
+	if (ag_not_null(obj))
+		ag_release_own_nn(obj);
 }
 void ag_retain_own_nn(AgObject* obj, AgObject* parent) {
 	if (ag_head(obj)->ctr_mt & AG_CTR_MT) {  // when in field it can point to a frozen shared mt
@@ -346,15 +340,23 @@ void ag_retain_own(AgObject* obj, AgObject* parent) {
 	if (ag_not_null(obj))
 		ag_retain_own_nn(obj, parent);
 }
+inline void ag_release_shared_nn(AgObject* obj) {
+	// only shared ptrs can reference string literals and named consts with static lifetimes, so check only for shared
+	if ((((AgObject*)obj)->ctr_mt & (~0u - (AG_CTR_STEP - 1))) == 0)
+		return;
+	if (ag_head(obj)->ctr_mt & AG_CTR_MT)
+		ag_reg_mt_release((uintptr_t)obj);
+	else if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) == 0)
+		ag_dispose_obj(obj);
+}
 void ag_release_shared(AgObject* obj) {
-	if (ag_not_null(obj)) {
-		if (ag_head(obj)->ctr_mt & AG_CTR_MT)
-			ag_reg_mt_release((uintptr_t)obj);
-		else if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) == 0)
-			ag_dispose_obj(obj);
-	}
+	if (ag_not_null(obj))
+		ag_release_shared_nn(obj);
 }
 void ag_retain_shared_nn(AgObject* obj) {
+	// only shared ptrs can reference string literals and named consts with static lifetimes, so check only for shared
+	if ((((AgObject*)obj)->ctr_mt & (~0u - (AG_CTR_STEP - 1))) == 0)
+		return;
 	if (ag_head(obj)->ctr_mt & AG_CTR_MT)
 		ag_reg_mt_retain((uintptr_t)obj);
 	else

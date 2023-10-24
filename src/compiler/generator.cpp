@@ -207,11 +207,16 @@ struct Generator : ast::ActionScanner {
 	llvm::Function* fn_set_parent = nullptr;   // void(Obj*, Obj* parent)  // used when retained object gets assigned to field
 	llvm::Function* fn_splice = nullptr;   // bool(Obj*, Obj* parent)  // checks loops, retains, sets parent
 	llvm::Function* fn_release_pin = nullptr;  // void(Obj*) no_throw // used for pins and local owns, doesn't clear parent
+	llvm::Function* fn_release_pin_nn = nullptr;  // same as above but without null-check
 	llvm::Function* fn_release_shared = nullptr;  // void(Obj*) no_throw // used for shared-frozen
+	llvm::Function* fn_release_shared_nn = nullptr;  // same as above but without null-check
 	llvm::Function* fn_release_own = nullptr;  // void(Obj*) no_throw as pin + clears parent
+	llvm::Function* fn_release_own_nn = nullptr;  // same as above but without null-check
 	llvm::Function* fn_release_weak = nullptr;  // void(WB*) no_throw
 	llvm::Function* fn_retain_shared = nullptr;  // void(Obj*) no_throw, handles mt, used in shared and conform
+	llvm::Function* fn_retain_shared_nn = nullptr;  // same as above but without null-check
 	llvm::Function* fn_retain_own = nullptr;  // void(Obj*, Obj*parent) no_throw as pin + sets parent, used in set_field
+	llvm::Function* fn_retain_own_nn = nullptr;  // same as above but without null-check
 	llvm::Function* fn_retain_weak = nullptr;  // void(WB*) no_throw 
 	llvm::Function* fn_dispose = nullptr;  // void(Obj*) no_throw // used in releaseObj
 	llvm::Function* fn_allocate = nullptr; // Obj*(size_t)
@@ -293,6 +298,11 @@ struct Generator : ast::ActionScanner {
 			llvm::Function::ExternalLinkage,
 			"ag_retain_own",
 			*module);
+		fn_retain_own_nn = llvm::Function::Create(
+			llvm::FunctionType::get(void_type, { ptr_type, ptr_type }, false),
+			llvm::Function::ExternalLinkage,
+			"ag_retain_own_nn",
+			*module);
 		fn_retain_weak = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { ptr_type }, false),
 			llvm::Function::ExternalLinkage,
@@ -302,6 +312,11 @@ struct Generator : ast::ActionScanner {
 			llvm::FunctionType::get(void_type, { ptr_type }, false),
 			llvm::Function::ExternalLinkage,
 			"ag_retain_shared",
+			*module);
+		fn_retain_shared_nn = llvm::Function::Create(
+			llvm::FunctionType::get(void_type, { ptr_type }, false),
+			llvm::Function::ExternalLinkage,
+			"ag_retain_shared_nn",
 			*module);
 		fn_set_parent = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { ptr_type, ptr_type}, false),
@@ -323,10 +338,20 @@ struct Generator : ast::ActionScanner {
 			llvm::Function::ExternalLinkage,
 			"ag_release_shared",
 			*module);
+		fn_release_shared_nn = llvm::Function::Create(
+			llvm::FunctionType::get(void_type, { ptr_type }, false),
+			llvm::Function::ExternalLinkage,
+			"ag_release_shared_nn",
+			*module);
 		fn_release_own = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { ptr_type }, false),
 			llvm::Function::ExternalLinkage,
 			"ag_release_own",
+			*module);
+		fn_release_own_nn = llvm::Function::Create(
+			llvm::FunctionType::get(void_type, { ptr_type }, false),
+			llvm::Function::ExternalLinkage,
+			"ag_release_own_nn",
 			*module);
 		fn_release_weak = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { ptr_type }, false),
@@ -631,22 +656,6 @@ struct Generator : ast::ActionScanner {
 				step),
 			addr);
 	}
-	void build_retain_not_null(llvm::Value* ptr, const ast::Type& type, llvm::Value* maybe_own_parent = nullptr) {
-		if (isa<ast::TpWeak>(type)) {
-			build_inc(const_ctr_step, builder->CreateStructGEP(weak_struct, cast_to(ptr, ptr_type), 1));
-		} else if (isa<ast::TpDelegate>(type)) {
-			build_inc(
-				const_ctr_step,
-				builder->CreateStructGEP(
-					obj_struct,
-					builder->CreateExtractValue(cast_to(ptr, ptr_type), { 0 }),
-					1));
-		} else if (isa<ast::TpRef>(type) || isa<ast::TpShared>(type) || (isa<ast::TpOwn>(type) && !maybe_own_parent)) {
-			build_inc(const_ctr_step, builder->CreateStructGEP(obj_struct, cast_to(ptr, ptr_type), 1));
-		} else if (isa<ast::TpOwn>(type)) {
-			builder->CreateCall(fn_retain_own, { cast_to(ptr, ptr_type), maybe_own_parent });
-		}
-	}
 	void build_retain(llvm::Value* ptr, pin<ast::Type> type, llvm::Value* maybe_own_parent = nullptr) {
 		if (!is_ptr(type))
 			return;
@@ -654,7 +663,7 @@ struct Generator : ast::ActionScanner {
 		if (as_opt) 
 			type = as_opt->wrapped;
 		if (isa<ast::TpOwn>(*type) && maybe_own_parent) {
-			builder->CreateCall(fn_retain_own, { cast_to(ptr, ptr_type), maybe_own_parent });
+			builder->CreateCall(as_opt ? fn_retain_own : fn_retain_own_nn, { cast_to(ptr, ptr_type), maybe_own_parent });
 		} else if (isa<ast::TpDelegate>(*type)) {
 			builder->CreateCall(fn_retain_weak, {
 				builder->CreateExtractValue(ptr, { 0 }),
@@ -662,8 +671,8 @@ struct Generator : ast::ActionScanner {
 		} else if (isa<ast::TpWeak>(*type) || isa<ast::TpConformWeak>(*type) || isa<ast::TpFrozenWeak>(*type)) {
 			builder->CreateCall(fn_retain_weak, { cast_to(ptr, ptr_type) });
 		} else if (isa<ast::TpShared>(*type) || isa<ast::TpConformRef>(*type)) {
-			builder->CreateCall(fn_retain_shared, { cast_to(ptr, ptr_type) });
-		} else if (as_opt) {
+			builder->CreateCall(as_opt ? fn_retain_shared : fn_retain_shared_nn, { cast_to(ptr, ptr_type) });
+		} else if (as_opt) {  // inlined fn_retain_pin
 			auto bb_not_null = llvm::BasicBlock::Create(*context, "", current_ll_fn);
 			auto bb_null = llvm::BasicBlock::Create(*context, "", current_ll_fn);
 			builder->CreateCondBr(
@@ -676,7 +685,7 @@ struct Generator : ast::ActionScanner {
 			build_inc(const_ctr_step, builder->CreateStructGEP(obj_struct, cast_to(ptr, ptr_type), 1));
 			builder->CreateBr(bb_null);
 			builder->SetInsertPoint(bb_null);
-		} else {
+		} else {  // inlined fn_retain_pin_nn
 			build_inc(const_ctr_step, builder->CreateStructGEP(obj_struct, cast_to(ptr, ptr_type), 1));
 		}
 	}
@@ -720,11 +729,11 @@ struct Generator : ast::ActionScanner {
 			} else if (isa<ast::TpDelegate>(*type)) {
 				builder->CreateCall(fn_release_weak, { builder->CreateExtractValue(ptr, {0}) });
 			} else if (isa<ast::TpRef>(*type) || (isa<ast::TpOwn>(*type) && is_local)) {
-				build_release_ptr_not_null(ptr);
+				build_release_ptr_not_null(ptr);  // inlined ag_release_pin_nn
 			} else if (isa<ast::TpShared>(*type) || isa<ast::TpConformRef>(*type)) {
-				build_release_ptr_not_null(ptr);
+				builder->CreateCall(fn_release_shared_nn, { ptr });
 			} else if (isa<ast::TpOwn>(*type)) {
-				builder->CreateCall(fn_release_own, { ptr });
+				builder->CreateCall(fn_release_own_nn, { ptr });
 			}
 		}
 	}

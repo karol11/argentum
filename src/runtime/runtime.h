@@ -123,9 +123,10 @@ void ag_init();
 //
 // AgObject support
 //
+void      ag_release_own_nn     (AgObject* obj);
 void      ag_release_own        (AgObject* obj);
-void      ag_retain_own         (AgObject* obj, AgObject* parent);
 void      ag_retain_own_nn      (AgObject* obj, AgObject* parent);
+void      ag_retain_own         (AgObject* obj, AgObject* parent);
 void      ag_set_parent         (AgObject* obj, AgObject* parent);
 bool      ag_splice             (AgObject* object, AgObject* parent);  // checks if parent is not already in object hierarchy, sets parent, retains
 AgObject* ag_copy               (AgObject* src);
@@ -135,6 +136,7 @@ void      ag_release_pin        (AgObject* obj);
 void      ag_retain_pin_nn      (AgObject* obj);
 void      ag_retain_pin         (AgObject* obj);
 void      ag_release_shared     (AgObject* obj);
+void      ag_release_shared_nn  (AgObject* obj);
 void      ag_retain_shared      (AgObject* obj);
 void      ag_retain_shared_nn   (AgObject* obj);
 void      ag_dispose_obj        (AgObject* src);
@@ -152,7 +154,6 @@ bool      ag_m_sys_Object_equals  (AgObject* a, AgObject *b);
 void      ag_copy_weak_field (void** dst, AgWeak* src);
 void      ag_release_weak    (AgWeak* obj);
 void      ag_retain_weak     (AgWeak* obj);
-AgWeak*   ag_retain_weak_nn  (AgWeak* obj);
 AgWeak*   ag_mk_weak         (AgObject* obj);
 AgObject* ag_deref_weak      (AgWeak* w);
 
