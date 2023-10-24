@@ -69,13 +69,13 @@ struct OptBranch : ltm::Object {
 struct Val {
 	own<ast::Type> type; // used to optionize retain/release for non-optionals, and for optional branches folding
 	llvm::Value* data = nullptr;
-	struct NonPtr {}; // non-pointer data (or nullptr that can be safely passed to fnRelease), default case
+	struct Static {}; // non-pointer data, nullptr, string literal, named constant - thing that need no disposal but can be safely passed to disposeVal, default case
 	struct Temp { weak<ast::Var> var; };  // value fetched from local variable or field, see below
 	struct Retained {}; // retained temp (fn result, newly constructed object, locked for other reasons), must be released or moved to Var or to Val::RField::to_release.
 	struct RField { llvm::Value* to_release; };  // temp raw, that represents child subobject, of Retained temp. It must be locked and converted to Retained if needed, it must destroy its protector in the end. 
-	// nonptr fields become NonPtr
+	// nonptr fields become Static
 	// ptr fields of Retained become RField, other ptr's fields become Temp{null}
-	using lifetime_t = std::variant<NonPtr, Temp, Retained, RField>;
+	using lifetime_t = std::variant<Static, Temp, Retained, RField>;
 	lifetime_t lifetime;
 	// If set, this value is optional and returned as branches.
 	// Current branch holds presented value (in wrapped or unwrapped),
@@ -824,7 +824,7 @@ struct Generator : ast::ActionScanner {
 		}
 	}
 
-	// Make value be able to outlive any random field and var assignment. Makes NonPtr, Retained or a var-bounded Temp.
+	// Make value be able to outlive any random field and var assignment. Makes Static, Retained or a var-bounded Temp.
 	Val persist_val(Val&& val, llvm::Value* maybe_own_parent = nullptr, bool retain_mutable_locals = true) {
 		persist_rfield(val, maybe_own_parent);
 		if (auto as_temp = get_if<Val::Temp>(&val.lifetime)) {
@@ -868,7 +868,7 @@ struct Generator : ast::ActionScanner {
 	}
 	llvm::Value* comp_non_ptr(own<ast::Action>& action) {
 		auto r = compile(action);
-		assert(get_if<Val::NonPtr>(&r.lifetime));
+		assert(get_if<Val::Static>(&r.lifetime));
 		return r.data;
 	}
 	void on_const_i64(ast::ConstInt64& node) override { result->data = builder->getInt64(node.value); }
@@ -893,7 +893,7 @@ struct Generator : ast::ActionScanner {
 		}
 		result->data = str;
 		builder->CreateCall(fn_retain_shared, str);
-		result->lifetime = Val::Retained{};
+		result->lifetime = Val::Static{};
 	}
 
 	unordered_map<ast::Type*, llvm::DISubroutineType*> di_fn_types;
@@ -1124,18 +1124,18 @@ struct Generator : ast::ActionScanner {
 			for (auto& m : ast->modules_in_order) {
 				for (auto& c : m->constants) {
 					auto addr = globals[c.second];
-					consts_to_dispose.push_back(make_retained_or_non_ptr(compile(c.second->initializer)));
-					auto& initializer = consts_to_dispose.back();
-					if (is_ptr(initializer.type)) {
+					auto val = make_retained_or_non_ptr(compile(c.second->initializer));
+					builder->CreateStore(val.data, addr);
+					if (is_ptr(val.type) && !get_if<Val::Static>(&val.lifetime)) {
 						builder->CreateStore(
 							const_ctr_static,
 							builder->CreateStructGEP(
 								obj_struct,
-								cast_to(initializer.data, ptr_type),
+								cast_to(val.data, ptr_type),
 								1));
+						val.data = addr;
+						consts_to_dispose.push_back(move(val));
 					}
-					builder->CreateStore(initializer.data, addr);
-					initializer.data = addr;
 				}
 			}
 		}
@@ -1199,10 +1199,9 @@ struct Generator : ast::ActionScanner {
 		}
 		active_breaks = move(prev_breaks);
 		for (; !consts_to_dispose.empty(); consts_to_dispose.pop_back()) {
-			auto& c = consts_to_dispose.back();
-			if (is_ptr(c.type)) {
-				builder->CreateCall(fn_dispose, { builder->CreateLoad(ptr_type, c.data) });
-			}
+			builder->CreateCall(fn_dispose, {
+				builder->CreateLoad(ptr_type, consts_to_dispose.back().data)
+			});
 		}
 		if (&node == &*ast->starting_module->entry_point) {
 			builder->CreateRet(builder->CreateCall(fn_handle_main_thread, {}));
@@ -1278,7 +1277,7 @@ struct Generator : ast::ActionScanner {
 					make_opt_none(l->type.cast<ast::TpOptional>()),
 					is_ptr(l->type)
 						? Val::lifetime_t(Val::Retained{})
-						: Val::lifetime_t(Val::NonPtr{})
+						: Val::lifetime_t(Val::Static{})
 				},
 				0 });
 			to_dispose.back().second = active_breaks.size();
@@ -1538,13 +1537,13 @@ struct Generator : ast::ActionScanner {
 									builder->CreateExtractValue(to_dispose.front().first.data, {1})),
 								move(params)),
 							result_type),
-						Val::NonPtr{} };
+						Val::Static{} };
 					build_release_ptr_not_null(cast_to(retained_receiver_pin, ptr_type));
 					return r;
 				},
 				[&] {
 					auto opt_t = ast->tp_optional(result_type);
-					return Val{ opt_t, make_opt_val(make_opt_none(result_type), opt_t), Val::NonPtr{} };
+					return Val{ opt_t, make_opt_val(make_opt_none(result_type), opt_t), Val::Static{} };
 				});
 		} else {
 			bool is_fn = isa<ast::TpFunction>(*node.callee->type());
@@ -1560,7 +1559,7 @@ struct Generator : ast::ActionScanner {
 					*pt++));
 			}
 			auto callee = compile(node.callee);
-			assert(get_if<Val::NonPtr>(&callee.lifetime));
+			assert(get_if<Val::Static>(&callee.lifetime));
 			if (!is_fn)
 				params.front() = builder->CreateExtractValue(callee.data, { 0 });
 			result->data = builder->CreateCall(
@@ -1635,7 +1634,7 @@ struct Generator : ast::ActionScanner {
 						Val{
 							fn_result_type,
 							make_opt_none(fn_result_type),
-							Val::NonPtr{}
+							Val::Static{}
 						},
 						current_function });
 				} else {
@@ -1863,7 +1862,7 @@ struct Generator : ast::ActionScanner {
 	}
 	void on_get(ast::Get& node) override {
 		result->data = remove_indirection(*node.var.pinned(), get_data_ref(node.var));
-		if (is_ptr(node.type()))
+		if (is_ptr(node.type()) && !node.var->is_const)
 			result->lifetime = Val::Temp{ node.var };
 	}
 	void on_set(ast::Set& node) override {
@@ -1892,7 +1891,7 @@ struct Generator : ast::ActionScanner {
 			} else {
 				result->lifetime = Val::Temp{};
 			}
-		} else { // leave lifetime = Val::NonPtr
+		} else { // leave lifetime = Val::Static
 			dispose_val(move(base), active_breaks.size());
 		}
 	}
@@ -2011,7 +2010,7 @@ struct Generator : ast::ActionScanner {
 					builder->CreateBitOrPointerCast(interface_ordinal, ptr_type),
 					id),
 				[&] { return Val{ result->type, make_opt_val(result->data, result_type), result->lifetime }; },
-				[&] { return Val{ result->type, make_opt_none(result_type), Val::NonPtr{} }; });
+				[&] { return Val{ result->type, make_opt_none(result_type), Val::Static{} }; });
 			return;
 		}
 		auto vmt_ptr = builder->CreateLoad(ptr_type, builder->CreateConstGEP2_32(obj_struct, result->data, AG_HEADER_OFFSET, 0));
@@ -2030,9 +2029,9 @@ struct Generator : ast::ActionScanner {
 						builder->CreateLoad(ptr_type,
 							builder->CreateConstGEP2_32(cls_info.vmt, vmt_ptr, -1, 0))),
 					[&] { return Val{ result->type, make_opt_val(result->data, result_type), result->lifetime }; },
-					[&] { return Val{ result->type, make_opt_none(result_type), Val::NonPtr{} }; });
+					[&] { return Val{ result->type, make_opt_none(result_type), Val::Static{} }; });
 			},
-			[&] { return Val{ result_type, make_opt_none(result_type), Val::NonPtr{} }; });
+			[&] { return Val{ result_type, make_opt_none(result_type), Val::Static{} }; });
 	}
 	void on_add(ast::AddOp& node) override {
 		auto lhs = comp_non_ptr(node.p[0]);
@@ -2451,9 +2450,9 @@ struct Generator : ast::ActionScanner {
 		// retained        *                retained          make other retained
 		// rfield	- cant be because other can assign. so both branches must be persistent
 		// temp{anything}  *				temp{0}           none
-		if (get_if<Val::NonPtr>(&then_val.lifetime)) {
+		if (get_if<Val::Static>(&then_val.lifetime)) {
 			result.lifetime = else_val.lifetime;
-		} else if (get_if<Val::NonPtr>(&else_val.lifetime)) {
+		} else if (get_if<Val::Static>(&else_val.lifetime)) {
 			result.lifetime = then_val.lifetime;
 		} else if (get_if<Val::Retained>(&then_val.lifetime)) {
 			else_val = make_retained_or_non_ptr(move(else_val));
@@ -2534,7 +2533,7 @@ struct Generator : ast::ActionScanner {
 				builder->SetInsertPoint(then_bb);
 				comp_then();
 				builder->SetInsertPoint(else_bb);
-				*result = Val{ node_type, make_opt_none(node_type), Val::NonPtr{} };
+				*result = Val{ node_type, make_opt_none(node_type), Val::Static{} };
 			} else {
 				*result = compile_if(
 					*node_type,
@@ -2544,7 +2543,7 @@ struct Generator : ast::ActionScanner {
 						return Val{ node_type, make_opt_val(val.data, node_type), val.lifetime };
 					},
 					[&] {
-						return Val{ node_type, make_opt_none(node_type), Val::NonPtr{} };
+						return Val{ node_type, make_opt_none(node_type), Val::Static{} };
 					});
 			}
 		}
@@ -2563,7 +2562,7 @@ struct Generator : ast::ActionScanner {
 					: compile(node.p[1]);
 			},
 			[&] {
-				return Val{ node_type, make_opt_none(node_type), Val::NonPtr{} };
+				return Val{ node_type, make_opt_none(node_type), Val::Static{} };
 			});
 	}
 	void on_else(ast::Else& node) override {
