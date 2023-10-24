@@ -267,7 +267,7 @@ void ag_set_parent(AgObject* obj, AgObject* parent) {
 
 inline void ag_release_pin_nn(AgObject* obj) {
 	assert((ag_head(obj)->ctr_mt & AG_CTR_MT) == 0);  // pin cannot be shared and as such mt
-	if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) == 0)
+	if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) < AG_CTR_STEP)
 		ag_dispose_obj(obj);
 }
 void ag_release_pin(AgObject * obj) {
@@ -297,7 +297,7 @@ void ag_release_weak(AgWeak* w) {
 		return;
 	if (w->wb_ctr_mt & AG_CTR_MT) {
 		ag_reg_mt_release((uintptr_t)w);
-	} else if ((w->wb_ctr_mt -= AG_CTR_STEP) == AG_CTR_WEAK) {
+	} else if ((w->wb_ctr_mt -= AG_CTR_STEP) < AG_CTR_STEP) {
 		ag_free(w);
 	}
 }
@@ -346,7 +346,7 @@ inline void ag_release_shared_nn(AgObject* obj) {
 		return;
 	if (ag_head(obj)->ctr_mt & AG_CTR_MT)
 		ag_reg_mt_release((uintptr_t)obj);
-	else if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) == 0)
+	else if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) < AG_CTR_STEP)
 		ag_dispose_obj(obj);
 }
 void ag_release_shared(AgObject* obj) {
