@@ -169,6 +169,13 @@ bool      ag_m_sys_String_fromBlob  (AgString* s, AgBlob* b, int at, int count);
 int64_t   ag_m_sys_Blob_putChAt     (AgBlob* b, int at, int codepoint);
 int64_t   ag_m_sys_String_getHash   (AgObject* obj);
 bool      ag_m_sys_String_equals    (AgObject* a, AgObject* b);
+
+inline int64_t ag_getStringHash(const char* s) {
+	int64_t r = 5381;
+	for (; *s; s++)
+		r = ((r << 5) + r) ^ *s;
+	return r;
+}
 //
 // System
 //

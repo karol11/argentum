@@ -654,11 +654,9 @@ int64_t   ag_m_sys_Object_getHash(AgObject* obj) {
 bool ag_m_sys_Object_equals(AgObject* a, AgObject* b) {
 	return a == b;
 }
+
 int64_t ag_m_sys_String_getHash(AgObject* obj) {
-	int64_t r = 5381;
-	for (const char* s = ((AgString*)obj)->ptr; *s; s++)
-		r = ((r << 5) + r) ^ *s;
-	return r;
+	return ag_getStringHash(((AgString*)obj)->ptr);
 }
 void* ag_disp_sys_String;
 bool ag_m_sys_String_equals(AgObject* a, AgObject* b) {

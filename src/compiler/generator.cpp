@@ -251,6 +251,7 @@ struct Generator : ast::ActionScanner {
 	llvm::Constant* const_256 = nullptr;
 	llvm::Constant* const_ctr_step = nullptr;
 	llvm::Constant* const_ctr_static = nullptr;  // SHARED|MT|0
+	llvm::Constant* const_ctr_str_literal = nullptr;  // SHARED|MT|HASH|0
 	llvm::Constant* const_null_ptr = nullptr;
 	unordered_map<string, llvm::GlobalVariable*> string_literals;
 	unordered_map<
@@ -288,6 +289,7 @@ struct Generator : ast::ActionScanner {
 		const_256 = llvm::ConstantInt::get(tp_int_ptr, 256);
 		const_ctr_step = llvm::ConstantInt::get(tp_int_ptr, AG_CTR_STEP);
 		const_ctr_static = llvm::ConstantInt::get(tp_int_ptr, AG_CTR_SHARED | AG_CTR_MT);
+		const_ctr_str_literal = llvm::ConstantInt::get(tp_int_ptr, AG_CTR_SHARED | AG_CTR_MT | AG_CTR_HASH);
 		const_null_ptr = llvm::ConstantPointerNull::get(ptr_type);
 
 		fn_dispose = llvm::Function::Create(
@@ -884,8 +886,8 @@ struct Generator : ast::ActionScanner {
 			str = module->getGlobalVariable(str_name);
 			vector<llvm::Constant*> fields = {
 				llvm::ConstantExpr::getBitCast(cls.dispatcher, ptr_type),
-				const_ctr_static, // shared|mt|0
-				const_1,        // parent/weak todo:hash
+				const_ctr_str_literal, // shared|mt|hash|0
+				llvm::ConstantInt::get(tp_int_ptr, ag_getStringHash(node.value.c_str()) | 1),        // parent/weak/hash field
 				llvm::ConstantExpr::getPointerCast(builder->CreateGlobalStringPtr(node.value), tp_int_ptr),
 				const_0 };  // buffer
 			str->setInitializer(llvm::ConstantStruct::get(cls.fields, fields));
