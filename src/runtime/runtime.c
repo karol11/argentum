@@ -642,13 +642,43 @@ void ag_fn_sys_log(AgString* s) {
 	fputs(s->ptr, stdout);
 }
 
-int64_t ag_fn_sys_hash(AgObject* s) {
-	int64_t r = (int64_t) s;
-	return r ^ (r >> 14) ^ (r << 16);
+int64_t ag_fn_sys_hash(AgObject* obj) {  // Shared
+	if (!obj)
+		return 0;
+	assert(obj->ctr_mt & AG_CTR_SHARED);
+	int64_t* dst = (obj->wb_p & AG_F_PARENT) != 0
+		? &obj->wb_p
+		: &((AgWeak*)obj->wb_p)->org_pointer_to_parent;
+	if ((obj->ctr_mt & AG_CTR_HASH) == 0)
+		*dst = ((AgVmt*)(ag_head(obj)->dispatcher))[-1].get_hash(obj) | 1;
+	return *dst >> 1;
 }
 
-int64_t   ag_m_sys_Object_getHash(AgObject* obj) {
-	return ag_fn_sys_hash(obj);
+bool ag_equal_mut(AgObject* a, AgObject* b) {
+	if (a == b) return true;
+	if (!a || !b) return false;
+	if (a->dispatcher != b->dispatcher) return false;
+	return ((AgVmt*)(ag_head(a)->dispatcher))[-1].equals_to(a, b);
+}
+bool ag_equal_shared(AgObject* a, AgObject* b) {
+	if (a == b) return true;
+	if (!a || !b) return false;
+	if (a->dispatcher != b->dispatcher) return false;
+	if ((a->ctr_mt & AG_CTR_HASH) && (b->ctr_mt & AG_CTR_HASH)) {
+		int64_t ah = (a->wb_p & AG_F_PARENT) != 0
+			? a->wb_p
+			: ((AgWeak*)a->wb_p)->org_pointer_to_parent;
+		int64_t bh = (b->wb_p & AG_F_PARENT) != 0
+			? b->wb_p
+			: ((AgWeak*)b->wb_p)->org_pointer_to_parent;
+		if (ah != bh) return false;
+	}
+	return ((AgVmt*)(ag_head(a)->dispatcher))[-1].equals_to(a, b);
+}
+
+int64_t ag_m_sys_Object_getHash(AgObject* obj) {
+	int64_t r = (int64_t)obj;
+	return r ^ (r >> 14) ^ (r << 16);
 }
 
 bool ag_m_sys_Object_equals(AgObject* a, AgObject* b) {
