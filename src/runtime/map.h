@@ -16,23 +16,16 @@ extern "C" {
 typedef struct {
     AgObject*    key;   // 0 - empty
     AgObject*    val;
-    uint64_t     hash : 48;
-    unsigned int psl : 16;  // probe_sequence_length
+    uint64_t     dist;  // distance from ideal position
 } AgMapBucket;
 
 typedef struct {
     AgObject     head;
-    uint64_t     (*hasher)   (AgObject* item);
-    bool         (*comparer) (AgObject* a, AgObject* b);
     AgMapBucket* buckets;
     size_t       capacity; // must be power of 2
     size_t       size;
 } AgMap;
 
-void      ag_m_sys_Map_init (
-                                AgMap*  map,
-                                int64_t (*hasher)   (AgObject*),
-                                bool    (*comparer) (AgObject*,AgObject*));
 int64_t   ag_m_sys_Map_size     (AgMap* map);
 void      ag_m_sys_Map_clear    (AgMap* map);
 AgObject* ag_m_sys_Map_getAt    (AgMap* map, AgObject* key);                  // returns ?T
