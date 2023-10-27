@@ -654,13 +654,13 @@ int64_t ag_fn_sys_hash(AgObject* obj) {  // Shared
 	return *dst >> 1;
 }
 
-bool ag_equal_mut(AgObject* a, AgObject* b) {
+bool ag_eq_mut(AgObject* a, AgObject* b) {
 	if (a == b) return true;
 	if (!a || !b) return false;
 	if (a->dispatcher != b->dispatcher) return false;
 	return ((AgVmt*)(ag_head(a)->dispatcher))[-1].equals_to(a, b);
 }
-bool ag_equal_shared(AgObject* a, AgObject* b) {
+bool ag_eq_shared(AgObject* a, AgObject* b) {
 	if (a == b) return true;
 	if (!a || !b) return false;
 	if (a->dispatcher != b->dispatcher) return false;
@@ -682,18 +682,14 @@ int64_t ag_m_sys_Object_getHash(AgObject* obj) {
 }
 
 bool ag_m_sys_Object_equals(AgObject* a, AgObject* b) {
-	return a == b;
+	return false;  // by default equality is only by references
 }
 
 int64_t ag_m_sys_String_getHash(AgObject* obj) {
 	return ag_getStringHash(((AgString*)obj)->ptr);
 }
-void* ag_disp_sys_String;
 bool ag_m_sys_String_equals(AgObject* a, AgObject* b) {
-	return a == b
-		|| (b->dispatcher == ag_disp_sys_String
-			// TODO: compare hashes
-			&& strcmp(((AgString*)a)->ptr, ((AgString*)b)->ptr));
+	return strcmp(((AgString*)a)->ptr, ((AgString*)b)->ptr);
 }
 
 static void ag_init_queue(ag_queue* q) {

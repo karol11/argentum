@@ -180,6 +180,8 @@ void register_runtime_content(struct ast::Ast& ast) {
 		{ "ag_set_parent", FN(ag_set_parent) },
 		{ "ag_splice", FN(ag_splice) },
 		{ "ag_freeze", FN(ag_freeze) },
+		{ "ag_eq_mut", FN(ag_eq_mut) },
+		{ "ag_eq_shared", FN(ag_eq_shared) },
 		{ "ag_unlock_thread_queue", FN(ag_unlock_thread_queue) }, // used in trampoline
 		{ "ag_get_thread_param", FN(ag_get_thread_param) }, // used in trampoline
 		{ "ag_prepare_post_message", FN(ag_prepare_post_message) }, // used in post~message

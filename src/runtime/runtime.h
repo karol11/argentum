@@ -59,19 +59,25 @@ typedef struct ag_thread_tag ag_thread;
 
 #define ag_not_null(OBJ) ((OBJ) && (size_t)(OBJ) >= 256)
 
+// offset from `copy_ref_fields` to `vmt_size`
+#define AG_VMT_FIELD_VMT_SIZE 4
+
+typedef uint64_t(*ag_get_hash_fn_t)(void* ptr);
+typedef bool(*ag_equals_fn_t)(void* a, void* b);
+
 typedef struct {
-	uint64_t (*get_hash)         (void* ptr);
-	bool     (*equals_to)        (void* a, void* b);
-	void     (*copy_ref_fields)  (void* dst, void* src);
-	void     (*dispose)          (void* ptr);
-	void     (*visit)            (void* ptr,
+	ag_get_hash_fn_t get_hash;
+	ag_equals_fn_t   equals_to;
+	void   (*copy_ref_fields)  (void* dst, void* src);
+	void   (*dispose)          (void* ptr);
+	void   (*visit)            (void* ptr,
 								void(* visitor)(
 									void*,  // field_ptr*
 									int,    // type AG_VISIT_*
 									void*), // ctx
 								void* ctx);
-	size_t   instance_alloc_size;
-	size_t   vmt_size;
+	size_t instance_alloc_size;
+	size_t vmt_size;
 } AgVmt;
 
 typedef void** (*ag_dispatcher_t) (uint64_t interface_and_method_ordinal);
@@ -137,8 +143,8 @@ void      ag_dispose_obj        (AgObject* src);
 AgObject* ag_allocate_obj       (size_t size);
 AgObject* ag_copy_object_field  (AgObject* src, AgObject* parent);
 void      ag_reg_copy_fixer     (AgObject* object, void (*fixer)(AgObject*));
-bool      ag_equal_mut          (AgObject* a, AgObject* b);
-bool      ag_equal_shared       (AgObject* a, AgObject* b);
+bool      ag_eq_mut             (AgObject* a, AgObject* b);
+bool      ag_eq_shared          (AgObject* a, AgObject* b);
 
 AgObject* ag_fn_sys_getParent   (AgObject* obj);   // obj not null
 
