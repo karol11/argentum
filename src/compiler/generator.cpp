@@ -238,6 +238,8 @@ struct Generator : ast::ActionScanner {
 	llvm::Function* fn_finalize_post_message = nullptr;   // void (?ag_hread*)
 	llvm::Function* fn_handle_main_thread = nullptr;   // int (void)
 	llvm::Function* fn_terminate = nullptr;   // void(void)
+	llvm::Function* fn_eq_mut = nullptr;   // bool(Obj*, Obj*)
+	llvm::Function* fn_eq_shared = nullptr;   // bool(Obj*, Obj*)
 	std::default_random_engine random_generator;
 	std::uniform_int_distribution<uint64_t> uniform_uint64_distribution;
 	unordered_set<uint64_t> assigned_interface_ids;
@@ -408,6 +410,16 @@ struct Generator : ast::ActionScanner {
 			llvm::FunctionType::get(tp_int_ptr, { ptr_type }, false),
 			llvm::Function::ExternalLinkage,
 			"ag_deref_weak",
+			*module);
+		fn_eq_mut = llvm::Function::Create(
+			llvm::FunctionType::get(tp_bool, { ptr_type, ptr_type }, false),
+			llvm::Function::ExternalLinkage,
+			"ag_eq_mut",
+			*module);
+		fn_eq_shared = llvm::Function::Create(
+			llvm::FunctionType::get(tp_bool, { ptr_type, ptr_type }, false),
+			llvm::Function::ExternalLinkage,
+			"ag_eq_shared",
 			*module);
 		fn_unlock_thread_queue = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { ptr_type }, false),
@@ -2081,6 +2093,11 @@ struct Generator : ast::ActionScanner {
 				phi->addIncoming(cond2, on_eq);
 				gen.result->data = phi;
 			}
+			void call_comparer(llvm::Function* comparer) {
+				gen.result->data = gen.builder->CreateCall(comparer, {
+					gen.cast_to(lhs, gen.ptr_type),
+					gen.cast_to(rhs, gen.ptr_type) });
+			}
 			Comparer(llvm::Value* lhs, llvm::Value* rhs, Generator& gen) : lhs(lhs), rhs(rhs), gen(gen) {}
 			void on_int64(ast::TpInt64& type) override { compare_scalar(); }
 			void on_double(ast::TpDouble& type) override { gen.result->data = gen.builder->CreateCmp(llvm::CmpInst::Predicate::FCMP_OEQ, lhs, rhs); }
@@ -2101,12 +2118,12 @@ struct Generator : ast::ActionScanner {
 					void on_cold_lambda(ast::TpColdLambda& type) override { c.compare_scalar(); }
 					void on_void(ast::TpVoid& type) override { c.compare_scalar(); }
 					void on_optional(ast::TpOptional& type) override { assert(false); }
-					void on_own(ast::TpOwn& type) override { c.compare_scalar(); }
-					void on_ref(ast::TpRef& type) override { c.compare_scalar(); }
-					void on_shared(ast::TpShared& type) override { c.compare_scalar(); }
+					void on_own(ast::TpOwn& type) override { c.call_comparer(c.gen.fn_eq_mut); }
+					void on_ref(ast::TpRef& type) override { c.call_comparer(c.gen.fn_eq_mut); }
+					void on_shared(ast::TpShared& type) override { c.call_comparer(c.gen.fn_eq_shared); }
 					void on_weak(ast::TpWeak& type) override { c.compare_scalar(); }
 					void on_frozen_weak(ast::TpFrozenWeak& type) override { c.compare_scalar(); }
-					void on_conform_ref(ast::TpConformRef& type) override { c.compare_scalar(); }
+					void on_conform_ref(ast::TpConformRef& type) override { c.call_comparer(c.gen.fn_eq_shared); }
 					void on_conform_weak(ast::TpConformWeak& type) override { c.compare_scalar(); }
 					void on_no_ret(ast::TpNoRet& type) override { assert(false); }
 				};
@@ -2871,7 +2888,7 @@ struct Generator : ast::ActionScanner {
 				continue;
 			} else {
 				auto disp_name = ast::format_str("ag_disp_", cls->get_name());
-				info.dispatcher = llvm::Function::Create(dispatcher_fn_type, llvm::Function::ExternalLinkage,
+				info.dispatcher = llvm::Function::Create(dispatcher_fn_type, llvm::Function::InternalLinkage,
 					disp_name, module.get());
 				if (di_builder) {
 					info.dispatcher->setSubprogram(
@@ -3270,8 +3287,6 @@ llvm::orc::ThreadSafeModule generate_code(ltm::pin<ast::Ast> ast, bool add_debug
 	return gen.build();
 }
 
-extern "C" void* ag_disp_sys_String;
-
 int64_t execute(llvm::orc::ThreadSafeModule& module, ast::Ast& ast, bool dump_ir) {
 #ifdef AG_STANDALONE_COMPILER_MODE
 	return -1;
@@ -3293,8 +3308,6 @@ int64_t execute(llvm::orc::ThreadSafeModule& module, ast::Ast& ast, bool dump_ir
 	check(lib->define(llvm::orc::absoluteSymbols(move(runtime_exports))));
 	check(jit->addIRModule(std::move(module)));
 	auto f_main = check(jit->lookup("main"));
-	auto disp_sys_string = check(jit->lookup("ag_disp_sys_String"));
-	ag_disp_sys_String = disp_sys_string.toPtr<void*(void*, int)>();
 	auto main_addr = f_main.toPtr<void()>();
 	for (auto& m : ast.modules) {
 		for (auto& test : m.second->tests) {

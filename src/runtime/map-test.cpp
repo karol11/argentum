@@ -18,12 +18,29 @@ void DummyVisitor(
 	void* ctx) {
 }
 
-AgVmt dummy_vmt = { DummyCopier, DummyDisposer, DummyVisitor, sizeof(AgObject), sizeof(AgVmt) };
-AgVmt map_vmt = { ag_copy_sys_Map, ag_dtor_sys_Map, DummyVisitor, sizeof(AgMap), sizeof(AgVmt) };
+AgVmt dummy_vmt = {
+	(ag_get_hash_fn_t)ag_m_sys_Object_getHash,
+	(ag_equals_fn_t)ag_m_sys_Object_equals,
+	DummyCopier,
+	DummyDisposer,
+	DummyVisitor,
+	sizeof(AgObject),
+	sizeof(AgVmt)
+};
+AgVmt map_vmt = {
+	(ag_get_hash_fn_t)ag_m_sys_Object_getHash,
+	(ag_equals_fn_t)ag_m_sys_Object_equals,
+	ag_copy_sys_Map,
+	ag_dtor_sys_Map,
+	DummyVisitor,
+	sizeof(AgMap),
+	sizeof(AgVmt)
+};
 
 AgObject* mk_object() {
 	AgObject* r = ag_allocate_obj(sizeof(AgObject));
 	r->dispatcher = (ag_dispatcher_t)(&dummy_vmt + 1);
+	r->ctr_mt |= AG_CTR_SHARED;
 	return r;
 }
 
