@@ -1,5 +1,5 @@
 #include <stdint.h>
-#include "blob.h"
+#include "runtime/blob.h"
 
 void AG_NAME(ag_m_sys_, Array_delete) (AgBlob* b, uint64_t index, uint64_t count) {
 	if (!count || index > b->size || index + count > b->size)

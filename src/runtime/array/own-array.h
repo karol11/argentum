@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 #include <stdint.h>
-#include "runtime.h"
+#include "runtime/runtime.h"
 
 void	  ag_copy_sys_Array       (AgBlob* dst, AgBlob* src);
 void      ag_dtor_sys_Array       (AgBlob* ptr);

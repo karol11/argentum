@@ -6,9 +6,9 @@
 #include "compiler/ast.h"
 #include "runtime/runtime.h"
 #include "runtime/blob.h"
-#include "runtime/own-array.h"
-#include "runtime/weak-array.h"
-#include "runtime/shared-array.h"
+#include "runtime/array/own-array.h"
+#include "runtime/array/weak-array.h"
+#include "runtime/array/shared-array.h"
 #include "runtime/map.h"
 
 void register_runtime_content(struct ast::Ast& ast) {

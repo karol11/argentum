@@ -24,15 +24,15 @@ set(ag_rtl_sources
     src/runtime/runtime.c
     src/runtime/blob.h
     src/runtime/blob.c
-    src/runtime/own-array.h
-    src/runtime/own-array.c
-    src/runtime/weak-array.h
-    src/runtime/weak-array.c
-    src/runtime/shared-array.h
-    src/runtime/shared-array.c
+    src/runtime/array/array-base.inc
+    src/runtime/array/own-array.h
+    src/runtime/array/own-array.c
+    src/runtime/array/weak-array.h
+    src/runtime/array/weak-array.c
+    src/runtime/array/shared-array.h
+    src/runtime/array/shared-array.c
     src/runtime/map.h
     src/runtime/map.c
-    src/runtime/array-base.inc
     src/utils/utf8.h
     src/utils/utf8.c
 )
