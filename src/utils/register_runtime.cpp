@@ -9,7 +9,7 @@
 #include "runtime/array/own-array.h"
 #include "runtime/array/weak-array.h"
 #include "runtime/array/shared-array.h"
-#include "runtime/map.h"
+#include "runtime/map/own-map.h"
 
 void register_runtime_content(struct ast::Ast& ast) {
 	if (ast.object)

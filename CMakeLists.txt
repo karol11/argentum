@@ -31,8 +31,10 @@ set(ag_rtl_sources
     src/runtime/array/weak-array.c
     src/runtime/array/shared-array.h
     src/runtime/array/shared-array.c
-    src/runtime/map.h
-    src/runtime/map.c
+    src/runtime/map/map-base.h
+    src/runtime/map/map-base.c
+    src/runtime/map/own-map.h
+    src/runtime/map/own-map.c
     src/utils/utf8.h
     src/utils/utf8.c
 )
@@ -94,7 +96,7 @@ add_executable(ag-tests
     src/dom/dom-test.cpp
     src/compiler/compiler-test.cpp
     src/utils/vmt_util-test.cpp
-    src/runtime/map-test.cpp
+    src/runtime/map/own-map-test.cpp
 )
 target_link_libraries(ag-tests ${llvm_libs})
 
