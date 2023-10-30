@@ -35,6 +35,8 @@ set(ag_rtl_sources
     src/runtime/map/map-base.c
     src/runtime/map/own-map.h
     src/runtime/map/own-map.c
+    src/runtime/map/shared-map.h
+    src/runtime/map/shared-map.c
     src/utils/utf8.h
     src/utils/utf8.c
 )
