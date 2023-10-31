@@ -11,6 +11,7 @@
 #include "runtime/array/shared-array.h"
 #include "runtime/map/own-map.h"
 #include "runtime/map/shared-map.h"
+#include "runtime/map/weak-map.h"
 
 void register_runtime_content(struct ast::Ast& ast) {
 	if (ast.object)
@@ -154,6 +155,25 @@ void register_runtime_content(struct ast::Ast& ast) {
 		ast.mk_method(mut::ANY, map_cls, "keyAt", FN(ag_m_sys_SharedMap_keyAt), opt_shared_to_key_res, { ast.tp_int64() });
 		ast.mk_method(mut::ANY, map_cls, "valAt", FN(ag_m_sys_SharedMap_valAt), opt_ref_to_val_res, { ast.tp_int64() });
 	}
+	{
+		auto map_cls = ast.mk_class("WeakMap", {
+			ast.mk_field("_buckets", new ast::ConstInt64),
+			ast.mk_field("_capacity", new ast::ConstInt64),
+			ast.mk_field("_size", new ast::ConstInt64) });
+		auto val_cls = add_class_param(map_cls, "V");
+		auto weak_to_val_res = make_ptr_result(new ast::MkWeakOp, val_cls);
+		auto key_cls = add_class_param(map_cls, "K");
+		auto opt_shared_to_key_res = make_opt_result(
+			make_ptr_result(new ast::FreezeOp, key_cls));
+		ast.mk_method(mut::ANY, map_cls, "size", FN(ag_m_sys_WeakMap_size), new ast::ConstInt64, {});
+		ast.mk_method(mut::ANY, map_cls, "capacity", FN(ag_m_sys_WeakMap_capacity), new ast::ConstInt64, {});
+		ast.mk_method(mut::ANY, map_cls, "clear", FN(ag_m_sys_WeakMap_clear), new ast::ConstVoid, {});
+		ast.mk_method(mut::ANY, map_cls, "delete", FN(ag_m_sys_WeakMap_delete), weak_to_val_res, { ast.get_shared(key_cls) });
+		ast.mk_method(mut::ANY, map_cls, "getAt", FN(ag_m_sys_WeakMap_getAt), weak_to_val_res, { ast.get_shared(key_cls) });
+		ast.mk_method(mut::ANY, map_cls, "setAt", FN(ag_m_sys_WeakMap_setAt), weak_to_val_res, { ast.get_shared(key_cls), ast.get_weak(val_cls) });
+		ast.mk_method(mut::ANY, map_cls, "keyAt", FN(ag_m_sys_WeakMap_keyAt), opt_shared_to_key_res, { ast.tp_int64() });
+		ast.mk_method(mut::ANY, map_cls, "valAt", FN(ag_m_sys_WeakMap_valAt), weak_to_val_res, { ast.tp_int64() });
+	}
 	ast.mk_fn("getParent", FN(ag_fn_sys_getParent), opt_ref_to_object, { ast.get_conform_ref(ast.object) });
 	ast.mk_fn("log", FN(ag_fn_sys_log), new ast::ConstVoid, { ast.get_conform_ref(ast.string_cls) });
 	ast.mk_fn("hash", FN(ag_fn_sys_hash), new ast::ConstInt64, { ast.get_conform_ref(ast.object) });
@@ -221,6 +241,9 @@ void register_runtime_content(struct ast::Ast& ast) {
 		{ "ag_copy_sys_SharedMap", FN(ag_copy_sys_SharedMap) },
 		{ "ag_dtor_sys_SharedMap",FN(ag_dtor_sys_SharedMap) },
 		{ "ag_visit_sys_SharedMap", FN(ag_visit_sys_SharedMap) },
+		{ "ag_copy_sys_WeakMap", FN(ag_copy_sys_WeakMap) },
+		{ "ag_dtor_sys_WeakMap",FN(ag_dtor_sys_WeakMap) },
+		{ "ag_visit_sys_WeakMap", FN(ag_visit_sys_WeakMap) },
 		{ "ag_copy_sys_Array", FN(ag_copy_sys_Array) },
 		{ "ag_dtor_sys_Array",FN(ag_dtor_sys_Array) },
 		{ "ag_visit_sys_Array",FN(ag_visit_sys_Array) },
