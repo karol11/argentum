@@ -43,7 +43,7 @@ AgObject* ag_m_sys_Map_keyAt(AgMap* map, uint64_t index) {
 }
 
 AgObject* ag_m_sys_Map_valAt(AgMap* map, uint64_t index) {
-    if (index >= map->capacity)
+    if (index >= map->capacity || !map->buckets[index].key)
         return 0;
     AgObject* r = map->buckets[index].val.ptr_val;
     ag_retain_pin(r);

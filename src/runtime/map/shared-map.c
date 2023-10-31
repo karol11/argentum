@@ -27,8 +27,7 @@ AgObject* ag_m_sys_SharedMap_getAt(AgMap* map, AgObject* key) {
 
 AgObject* ag_m_sys_SharedMap_setAt(AgMap* map, AgObject* key, AgObject* value) {
     ag_retain_shared(value);
-    AgObject* r = ag_map_set_at(map, key, (AgMapVal) { .ptr_val = value }).ptr_val;
-    return r;
+    return ag_map_set_at(map, key, (AgMapVal) { .ptr_val = value }).ptr_val;
 }
 
 AgObject* ag_m_sys_SharedMap_delete(AgMap* map, AgObject* key) {
@@ -40,7 +39,7 @@ AgObject* ag_m_sys_SharedMap_keyAt(AgMap* map, uint64_t index) {
 }
 
 AgObject* ag_m_sys_SharedMap_valAt(AgMap* map, uint64_t index) {
-    if (index >= map->capacity)
+    if (index >= map->capacity || !map->buckets[index].key)
         return 0;
     AgObject* r = map->buckets[index].val.ptr_val;
     ag_retain_shared(r);
