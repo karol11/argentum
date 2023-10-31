@@ -131,7 +131,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 		ast.mk_method(mut::ANY, map_cls, "clear", FN(ag_m_sys_Map_clear), new ast::ConstVoid, {});
 		ast.mk_method(mut::ANY, map_cls, "delete", FN(ag_m_sys_Map_delete), opt_ref_to_val_res, { ast.get_shared(key_cls) });
 		ast.mk_method(mut::ANY, map_cls, "getAt", FN(ag_m_sys_Map_getAt), opt_ref_to_val_res, { ast.get_shared(key_cls) });
-		ast.mk_method(mut::ANY, map_cls, "setAt", FN(ag_m_sys_Map_setAt), new ast::ConstVoid, { ast.get_shared(key_cls), ast.get_own(val_cls) });
+		ast.mk_method(mut::ANY, map_cls, "setAt", FN(ag_m_sys_Map_setAt), opt_ref_to_val_res, { ast.get_shared(key_cls), ast.get_own(val_cls) });
 		ast.mk_method(mut::ANY, map_cls, "keyAt", FN(ag_m_sys_Map_keyAt), opt_shared_to_key_res, { ast.tp_int64() });
 		ast.mk_method(mut::ANY, map_cls, "valAt", FN(ag_m_sys_Map_valAt), opt_ref_to_val_res, { ast.tp_int64() });
 	}
@@ -142,18 +142,18 @@ void register_runtime_content(struct ast::Ast& ast) {
 			ast.mk_field("_size", new ast::ConstInt64) });
 		auto val_cls = add_class_param(map_cls, "V");
 		auto shared_to_val_res = make_ptr_result(new ast::FreezeOp, val_cls);
-		auto opt_ref_to_val_res = make_opt_result(shared_to_val_res);
+		auto opt_shared_to_val_res = make_opt_result(shared_to_val_res);
 		auto key_cls = add_class_param(map_cls, "K");
 		auto opt_shared_to_key_res = make_opt_result(
 			make_ptr_result(new ast::FreezeOp, key_cls));
 		ast.mk_method(mut::ANY, map_cls, "size", FN(ag_m_sys_SharedMap_size), new ast::ConstInt64, {});
 		ast.mk_method(mut::ANY, map_cls, "capacity", FN(ag_m_sys_SharedMap_capacity), new ast::ConstInt64, {});
 		ast.mk_method(mut::ANY, map_cls, "clear", FN(ag_m_sys_SharedMap_clear), new ast::ConstVoid, {});
-		ast.mk_method(mut::ANY, map_cls, "delete", FN(ag_m_sys_SharedMap_delete), opt_ref_to_val_res, { ast.get_shared(key_cls) });
-		ast.mk_method(mut::ANY, map_cls, "getAt", FN(ag_m_sys_SharedMap_getAt), opt_ref_to_val_res, { ast.get_shared(key_cls) });
-		ast.mk_method(mut::ANY, map_cls, "setAt", FN(ag_m_sys_SharedMap_setAt), new ast::ConstVoid, { ast.get_shared(key_cls), ast.get_shared(val_cls) });
+		ast.mk_method(mut::ANY, map_cls, "delete", FN(ag_m_sys_SharedMap_delete), opt_shared_to_val_res, { ast.get_shared(key_cls) });
+		ast.mk_method(mut::ANY, map_cls, "getAt", FN(ag_m_sys_SharedMap_getAt), opt_shared_to_val_res, { ast.get_shared(key_cls) });
+		ast.mk_method(mut::ANY, map_cls, "setAt", FN(ag_m_sys_SharedMap_setAt), opt_shared_to_val_res, { ast.get_shared(key_cls), ast.get_shared(val_cls) });
 		ast.mk_method(mut::ANY, map_cls, "keyAt", FN(ag_m_sys_SharedMap_keyAt), opt_shared_to_key_res, { ast.tp_int64() });
-		ast.mk_method(mut::ANY, map_cls, "valAt", FN(ag_m_sys_SharedMap_valAt), opt_ref_to_val_res, { ast.tp_int64() });
+		ast.mk_method(mut::ANY, map_cls, "valAt", FN(ag_m_sys_SharedMap_valAt), opt_shared_to_val_res, { ast.tp_int64() });
 	}
 	{
 		auto map_cls = ast.mk_class("WeakMap", {
