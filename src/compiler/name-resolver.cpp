@@ -358,15 +358,19 @@ struct NameResolver : ast::ActionScanner {
 	void on_call(ast::Call& node) override {
 		ast::ActionScanner::on_call(node);
 		if (auto callee_as_mk_inst = dom::strict_cast<ast::MkInstance>(node.callee)) {
-			vector<weak<ast::AbstractClass>> params{ callee_as_mk_inst->cls };
-			for (auto& p : node.params) {
-				if (auto p_as_inst = dom::strict_cast<ast::MkInstance>(p))
-					params.push_back(p_as_inst->cls);
-				else
-					p->error("Class param should be a class");
+			if (auto cls_as_class = dom::strict_cast<ast::Class>(callee_as_mk_inst->cls)) {
+				if (!cls_as_class->params.empty()) {
+					vector<weak<ast::AbstractClass>> params{ callee_as_mk_inst->cls };
+					for (auto& p : node.params) {
+						if (auto p_as_inst = dom::strict_cast<ast::MkInstance>(p))
+							params.push_back(p_as_inst->cls);
+						else
+							p->error("Class param should be a class");
+					}
+					callee_as_mk_inst->cls = ast->get_class_instance(move(params));
+					*fix_result = move(callee_as_mk_inst);
+				}
 			}
-			callee_as_mk_inst->cls = ast->get_class_instance(move(params));
-			*fix_result = move(callee_as_mk_inst);
 		}
 	}
 	void on_async_call(ast::AsyncCall& node) override {

@@ -158,6 +158,29 @@ struct Typer : ast::ActionMatcher {
 	void on_call(ast::Call& node) override {
 		for (auto& p : node.params)
 			find_type(p);
+		auto callee_type = find_type(node.callee)->type();
+		if (auto callee_cls = ast->extract_class(callee_type)) {
+			if (!callee_cls->get_implementation()->handle_member(
+				node,
+				ast::LongName{ "call" },
+				[&](auto& field) {
+					auto r = ast::make_at_location<ast::GetField>(*node.callee);
+					r->base = move(node.callee);
+					r->field = field;
+					node.callee = move(r);
+				},
+				[&](auto& method) {
+					auto r = ast::make_at_location<ast::MakeDelegate>(*node.callee);
+					r->base = move(node.callee);
+					r->method = method;
+					node.callee = move(r);
+				},
+				[&] () {
+					node.error("class ", callee_cls->get_name(), " has ambigous member 'call'");
+				})) {
+				node.error("class ", callee_cls->get_name(), " has no member 'call'");
+			}
+		}
 		type_call(node, find_type(node.callee), node.params);
 		if (auto as_mk_delegate = dom::strict_cast<ast::MakeDelegate>(node.callee)) {
 			if (dom::isa<ast::TpWeak>(*as_mk_delegate->base->type()))
