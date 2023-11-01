@@ -24,7 +24,7 @@ set(ag_rtl_sources
     src/runtime/runtime.c
     src/runtime/blob.h
     src/runtime/blob.c
-    src/runtime/array/array-base.inc
+    src/runtime/array/array-base-inc.h
     src/runtime/array/own-array.h
     src/runtime/array/own-array.c
     src/runtime/array/weak-array.h

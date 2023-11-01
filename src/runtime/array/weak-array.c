@@ -9,4 +9,4 @@
 #define AG_VISIT_KIND AG_VISIT_WEAK
 #define AG_ITEM_TYPE AgWeak*
 
-#include "array-base.inc.h"
+#include "array-base-inc.h"

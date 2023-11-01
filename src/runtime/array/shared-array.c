@@ -9,4 +9,4 @@
 #define AG_VISIT_KIND AG_VISIT_OWN
 #define AG_ITEM_TYPE AgObject*
 
-#include "array-base.inc.h"
+#include "array-base-inc.h"

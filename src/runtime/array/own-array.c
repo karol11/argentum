@@ -9,7 +9,7 @@
 #define AG_VISIT_KIND AG_VISIT_OWN
 #define AG_ITEM_TYPE AgObject*
 
-#include "array-base.inc.h"
+#include "array-base-inc.h"
 
 AgObject* ag_m_sys_Array_setOptAt(AgBlob* b, uint64_t index, AgObject* val) {
 	if (index >= b->size)
