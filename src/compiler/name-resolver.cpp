@@ -360,6 +360,8 @@ struct NameResolver : ast::ActionScanner {
 		if (auto callee_as_mk_inst = dom::strict_cast<ast::MkInstance>(node.callee)) {
 			if (auto cls_as_class = dom::strict_cast<ast::Class>(callee_as_mk_inst->cls)) {
 				if (!cls_as_class->params.empty()) {
+					if (cls_as_class->params.size() != node.params.size())
+						node.error("mismatched parameters count");
 					vector<weak<ast::AbstractClass>> params{ callee_as_mk_inst->cls };
 					for (auto& p : node.params) {
 						if (auto p_as_inst = dom::strict_cast<ast::MkInstance>(p))
