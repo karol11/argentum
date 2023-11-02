@@ -183,16 +183,18 @@ void register_runtime_content(struct ast::Ast& ast) {
 		ast.tp_int64(),
 		ast.tp_delegate({ ast.tp_void() })
 	});
-	auto thread = ast.mk_class("Thread", {
-		ast.mk_field("_internal", new ast::ConstInt64) });
 	{
-		auto start = ast.mk_method(mut::MUTATING, thread, "start", FN(ag_m_sys_Thread_start), nullptr, { ast.get_ref(ast.object) });
+		auto thread = ast.mk_class("Thread", {
+			ast.mk_field("_internal", new ast::ConstInt64) });
+		auto param = add_class_param(thread, "R");
+
+		auto start = ast.mk_method(mut::MUTATING, thread, "start", FN(ag_m_sys_Thread_start), nullptr, { ast.get_ref(param) });
 		start->is_factory = true;
 		auto get_this = new ast::Get;
 		start->type_expression = get_this;
 		get_this->var = start->names[0];
+		ast.mk_method(mut::MUTATING, thread, "root", FN(ag_m_sys_Thread_root), make_ptr_result(new ast::MkWeakOp, param), {});
 	}
-	ast.mk_method(mut::MUTATING, thread, "root", FN(ag_m_sys_Thread_root), make_ptr_result(new ast::MkWeakOp, ast.object), {});
 
 	ast.platform_exports.insert({
 		{ "ag_init", FN(ag_init) },
