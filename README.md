@@ -44,7 +44,7 @@ forRange(1, 101) i {
    i % 5 == 0 ? b.putStr("buzz");
    b.pos == 0 ? b.putInt(i);
    log(b.newLine().toStr());
-};
+}
 ```
 
 #### Find loop in a graph
