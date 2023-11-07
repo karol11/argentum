@@ -4,7 +4,7 @@ using sys { String, Blob }
 fn sdlInit(flags int) int;
 fn sdlQuit();
 
-fn createWindow(title String, x int, y int, w int, h int, flags int) int;
+fn createWindow(title -String, x int, y int, w int, h int, flags int) int;
 fn destroyWindow(windowId int);
 
 fn createRenderer(windowId int, index int, flags int) int;
@@ -28,4 +28,4 @@ fn freeSurface(surfaceId int);
 
 fn imgInit(flags int) int;
 fn imgQuit();
-fn imgLoad(fileName String) int; // returns surfaceId
+fn imgLoad(fileName -String) int; // returns surfaceId

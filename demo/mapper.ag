@@ -1,0 +1,23 @@
+using sys{ String, StrBuilder, Array, log, SharedMap }
+using string;
+using array;
+using utils{ forRange }
+
+class SharedMap {
+   call(key *K, val *V) this {
+      this[key] := val
+   }
+}
+
+a = "alpha bravo charlie delta".split(' ');
+log(`hash=${sys_hash(a)} `);
+v = a.findFirst(i\i.equalsCS("delta"));
+log(v
+   ? *`found at ${_}`
+   : `not found`);
+
+m = SharedMap(String, String)
+   ("One", "aaa")
+   ("Two", "bbb")
+   ("Three", "ccc");
+m["Two"] ? log(_);

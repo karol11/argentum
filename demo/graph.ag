@@ -42,6 +42,6 @@ class Graph {
     }
 }
 
-log(Graph.fromStr("a>b b>c c>d e>f b>e e>a c>c").hasLoop()
+log(Graph.fromStr(@"a>b b>c c>d e>f b>e e>a c>c").hasLoop()
     ? "has some loop\n"
     : "has no loops\n")

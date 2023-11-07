@@ -1,7 +1,39 @@
 using sys {
     String,
     Blob,
-    StrBuilder
+    StrBuilder,
+    Array
+}
+using array;
+
+class String {
+    // Case sensitive comparison
+    -equalsCS(other -String) bool {
+        a = @this;
+        b = @other;
+        loop {
+            aChar = a.getCh();
+            bChar = b.getCh();
+            aChar != bChar ? ^equalsCS=false;
+            aChar != 0 && bChar != 0 ? true
+        }
+    }
+    getTill(separator int) ?@String {
+        peekCh() != 0 ? {
+            r = StrBuilder;
+            loop !{
+                c = getCh();
+                c != separator && c != 0 ? r.putCh(c)
+            };
+            r.toStr()
+        }
+    }
+    -split(delimiter int) @Array(String) {
+        res = Array(String);
+        text = @this;
+        loop !(text.getTill(delimiter) ? res.append(@_));
+        res
+    }
 }
 
 class StrBuilder {
@@ -16,13 +48,14 @@ class StrBuilder {
         reserve(1);
         pos := putChAt(pos, codePoint)
     }
-    putStr(s String) this {
+    putStr(fs -String) this {
+        s = @fs;
         loop !{
             c = s.getCh();
             c != 0 ? putCh(c)
         }
     }
-    putOptStr(s ?String) this { s ? putStr(_) }
+    putOptStr(s ?-String) this { s ? putStr(_) }
     putInt(val int) this {
         reserve(3);
         isNeg = val < 0;

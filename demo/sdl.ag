@@ -34,7 +34,7 @@ fn disposeSdl(sdl Sdl) {
 class Window {
     handle = 0;
     renderer = 0;
-    createCentered(title String, w int, h int) bool {
+    createCentered(title -String, w int, h int) bool {
         destroyWindow(this);
         handle := sdlFfi_createWindow(title, xDefaultPos, xDefaultPos, w, h, 0);
         renderer := handle == 0 ? 0 : sdlFfi_createRenderer(handle, -1, xRendererAccelerated);
@@ -73,7 +73,7 @@ class Event {
 
 class Texture{
     id = 0;
-    init(wnd Window, fileName String) bool {
+    init(wnd Window, fileName -String) bool {
         wnd.renderer != 0 && {
             surface = sdlFfi_imgLoad(fileName);
             surface != 0 && {

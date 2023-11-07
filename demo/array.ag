@@ -1,12 +1,18 @@
 using sys { Object, Array, WeakArray }
-using utils { existsInRange }
+using utils { existsInRange, forRange }
 
 class Array {
     itemsCount = 0;
 
     -size() int { itemsCount }
 
-    -each(handler (T)) {
+    findFirst(predicate(T)bool) ?int {
+        forRange(0, size()) i {
+            this[i] && predicate(_) ? ^findFirst = +i
+        };
+        ?0
+    }
+    each(handler (T)) {
         i = 0;
         loop!{
             i < itemsCount ? {
@@ -15,11 +21,7 @@ class Array {
             }
         }
     }
-    -contain(predicate (T)bool) bool {
-        existsInRange(0, itemsCount) i {
-            this[i] && predicate(_)
-        }
-    }
+    contain(predicate (T)bool) bool { !!findFirst(predicate) }
     plow(filter (T)bool) {
         i = 0;
         loop!{
