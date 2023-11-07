@@ -39,12 +39,12 @@ using string { Builder }
 using utils{ forRange }
 
 b = Builder;
-forRange(1, 101, (i){
+forRange(1, 101) i {
    i % 3 == 0 ? b.putStr("fizz");
    i % 5 == 0 ? b.putStr("buzz");
    b.pos == 0 ? b.putInt(i);
    log(b.newLine().toStr());
-});
+};
 ```
 
 #### Find loop in a graph
@@ -62,7 +62,7 @@ class Node {
     hasLoop() bool {
         isActive || (!isVisited && {
             isVisited := isActive := true;
-            r = connections.contain((c){ c.hasLoop() });
+            r = connections.contain(c \ c.hasLoop());
             isActive := false;
             r
         })
@@ -84,7 +84,7 @@ class Graph {
         }
     }    
     hasLoop() bool {
-        nodes.contain((n){ n.hasLoop() })
+        nodes.contain(n \ n.hasLoop())
     }
 }
 log(Graph.fromStr("a>b b>c c>d e>f b>e e>a c>c").hasLoop()
@@ -111,7 +111,7 @@ Other languages automate this process using mark/sweep or copying Garbage Collec
 * Java Script
 * Dart etc.
 
-There are third group of languages, that use semi-automatic approach usualy based on ref-counting. Programmer don't have to think too much on memory management, but their main downside is: memory leaks are possible and in fact without strict discipline they are inevidable. These languages are:
+There is a third group of languages, that use semi-automatic approach usualy based on ref-counting. Programmer don't have to think too much on memory management, but their main downside is: memory leaks are possible and in fact without strict discipline they are inevidable. These languages are:
 
 * Swift
 * Rust
