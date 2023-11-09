@@ -47,7 +47,7 @@ AgWeak* ag_m_sys_WeakMap_valAt(AgMap* map, uint64_t index) {
 }
 
 void ag_copy_sys_WeakMap(void* dst, void* src) {
-    AG_MAP_COPY(ag_copy_weak_field(&i->val.weak_val, i->val.weak_val))
+    AG_MAP_COPY(ag_copy_weak_field((void**)&i->val.weak_val, i->val.weak_val))
 }
 
 void ag_dtor_sys_WeakMap(void* map) {

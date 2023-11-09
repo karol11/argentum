@@ -1014,7 +1014,7 @@ AgThread* ag_m_sys_Thread_start(AgThread* th, AgObject* root) {
 	w->wb_ctr_mt = (w->wb_ctr_mt - AG_CTR_STEP) | AG_CTR_MT;
 	w->thread = t;
 	th->head.ctr_mt += AG_CTR_STEP;
-	thrd_create(&t->thread, ag_thread_proc, t);
+	thrd_create(&t->thread, (thrd_start_t) ag_thread_proc, t);
 	return th;
 }
 

@@ -1592,7 +1592,7 @@ struct Generator : ast::ActionScanner {
 				result->data = last_param_to_return;
 			} else {
 				dispose_val(
-					move(to_dispose.back().first),
+					to_dispose.back().first,
 					to_dispose.back().second,
 					true);
 			}
@@ -2937,7 +2937,7 @@ struct Generator : ast::ActionScanner {
 				continue;
 			vector<llvm::Type*> fields;
 			if (cls->base_class) {
-				auto& base_fields = classes[cls->base_class].fields->elements();
+				const auto& base_fields = classes[cls->base_class].fields->elements();
 				for (auto& f : base_fields)
 					fields.push_back(f);
 			} else {
@@ -3307,8 +3307,14 @@ int64_t execute(llvm::orc::ThreadSafeModule& module, ast::Ast& ast, bool dump_ir
 	auto& es = jit->getExecutionSession();
 	auto* lib = es.getJITDylibByName("main");
 	llvm::orc::SymbolMap runtime_exports;
-	for (auto& i : ast.platform_exports)
-		runtime_exports.insert({ es.intern(i.first), { llvm::pointerToJITTargetAddress(i.second), llvm::JITSymbolFlags::Callable} });
+	for (auto& i : ast.platform_exports) {
+		runtime_exports.insert({
+			es.intern(i.first),
+			{
+				llvm::orc::ExecutorAddr::fromPtr(i.second),
+				llvm::JITSymbolFlags::Callable
+			} });
+	}
 	check(lib->define(llvm::orc::absoluteSymbols(move(runtime_exports))));
 	check(jit->addIRModule(std::move(module)));
 	auto f_main = check(jit->lookup("main"));
