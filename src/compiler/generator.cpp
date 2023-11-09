@@ -814,7 +814,7 @@ struct Generator : ast::ActionScanner {
 		builder->SetInsertPoint(common_bb);
 		auto phi = builder->CreatePHI(to_llvm_type(*val.type), 2);
 		phi->addIncoming(wrapped_val, val_bb);
-		for (auto b = val.optional_br;
+		for (pin<OptBranch> b = val.optional_br;
 			b;
 			b = b->deeper,
 			type = dom::strict_cast<ast::TpOptional>(ast->get_wrapped(type)))
@@ -990,7 +990,7 @@ struct Generator : ast::ActionScanner {
 	}
 
 	void compile_fn_body(ast::MkLambda& node, string name, llvm::Type* closure_struct = nullptr) {
-		auto prev_breaks = move(active_breaks);
+		vector<BreakTrace> prev_breaks = move(active_breaks);
 		active_breaks.clear();
 		unordered_map<weak<ast::Var>, llvm::Value*> outer_locals;
 		unordered_map<weak<ast::Var>, int> outer_capture_offsets = capture_offsets;
@@ -1158,7 +1158,7 @@ struct Generator : ast::ActionScanner {
 			if (a != node.body.back())
 				comp_to_void(a);
 		}
-		auto result_type = cast<ast::TpLambda>(node.type())->params.back();
+		pin<ast::Type> result_type = cast<ast::TpLambda>(node.type())->params.back();
 		if (cast<ast::TpLambda>(node.type())->can_x_break)
 			result_type = ast->tp_optional(result_type);
 		auto fn_result = compile(node.body.back());
@@ -1624,7 +1624,7 @@ struct Generator : ast::ActionScanner {
 					auto this_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
 					auto not_this_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
 					auto& var = b->names.front();
-					auto opt_t = cast<ast::TpOptional>(var->type);
+					pin<ast::TpOptional> opt_t = cast<ast::TpOptional>(var->type);
 					auto val = remove_indirection(*var, get_data_ref(var.weaked()));
 					builder->CreateCondBr(
 						check_opt_has_val(val, opt_t),
