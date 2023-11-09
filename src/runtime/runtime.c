@@ -4,7 +4,7 @@
 #include <assert.h>
 #include <time.h>  // timespec, timespec_get
 
-inline uint64_t timespec_to_ms(const struct timespec* time) {
+static inline uint64_t timespec_to_ms(const struct timespec* time) {
 	return time->tv_nsec / 1000000 + time->tv_sec * 1000;
 }
 
@@ -47,33 +47,33 @@ int mtx_init(mtx_t* mutex, int type) {
 		: thrd_error;
 }
 #define mtx_destroy DeleteCriticalSection
-inline int mtx_lock(mtx_t* mutex) {
+static inline int mtx_lock(mtx_t* mutex) {
 	EnterCriticalSection(mutex);
 	return thrd_success;
 }
-inline int mtx_unlock(mtx_t* mutex) {
+static inline int mtx_unlock(mtx_t* mutex) {
 	LeaveCriticalSection(mutex);
 	return thrd_success;
 }
 
 // CVar
 typedef CONDITION_VARIABLE cnd_t;
-inline int cnd_init(cnd_t* cond) {
+static inline int cnd_init(cnd_t* cond) {
 	InitializeConditionVariable(cond);
 	return thrd_success;
 }
-inline void cnd_destroy(cnd_t* cond) {
+static inline void cnd_destroy(cnd_t* cond) {
 	// do nothing
 }
-inline int cnd_signal(cnd_t* cond) {
+static inline int cnd_signal(cnd_t* cond) {
 	WakeConditionVariable(cond);
 	return thrd_success;
 }
-inline int cnd_broadcast(cnd_t* cond) {
+static inline int cnd_broadcast(cnd_t* cond) {
 	WakeAllConditionVariable(cond);
 	return thrd_success;
 }
-inline int cnd_timedwait(cnd_t* cond, mtx_t* mutex, const struct timespec* timeout) {
+int cnd_timedwait(cnd_t* cond, mtx_t* mutex, const struct timespec* timeout) {
 	struct timespec now;
 	return SleepConditionVariableCS(
 		cond,
@@ -85,7 +85,7 @@ inline int cnd_timedwait(cnd_t* cond, mtx_t* mutex, const struct timespec* timeo
 		? thrd_success
 		: thrd_error;
 }
-inline int cnd_wait(cnd_t* cond, mtx_t* mutex) {
+static inline int cnd_wait(cnd_t* cond, mtx_t* mutex) {
 	return SleepConditionVariableCS(cond, mutex, INFINITE)
 		? thrd_success
 		: thrd_error;
@@ -240,7 +240,7 @@ void ag_flush_retain_release() {
 	}
 }
 
-inline void ag_set_parent_nn(AgObject* obj, AgObject* parent) {
+static inline void ag_set_parent_nn(AgObject* obj, AgObject* parent) {
 	if (obj->wb_p & AG_F_PARENT)
 		obj->wb_p = (uintptr_t)parent | AG_F_PARENT;
 	else
@@ -265,7 +265,7 @@ void ag_set_parent(AgObject* obj, AgObject* parent) {
 	}
 }
 
-inline void ag_release_pin_nn(AgObject* obj) {
+void ag_release_pin_nn(AgObject* obj) {
 	assert((ag_head(obj)->ctr_mt & AG_CTR_MT) == 0);  // pin cannot be shared and as such mt
 	if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) < AG_CTR_STEP)
 		ag_dispose_obj(obj);
@@ -274,7 +274,7 @@ void ag_release_pin(AgObject * obj) {
 	if (ag_not_null(obj))
 		ag_release_pin_nn(obj);
 }
-inline void ag_retain_pin_nn(AgObject* obj) {
+void ag_retain_pin_nn(AgObject* obj) {
 	assert((ag_head(obj)->ctr_mt & AG_CTR_MT) == 0);  // pin cannot be shared and as such mt
 	ag_head(obj)->ctr_mt += AG_CTR_STEP;
 }
@@ -282,12 +282,12 @@ void ag_retain_pin(AgObject* obj) {
 	if (ag_not_null(obj))
 		ag_retain_pin_nn(obj);
 }
-inline void ag_reg_mt_release(uintptr_t p) {
+static inline void ag_reg_mt_release(uintptr_t p) {
 	if (--ag_release_pos == ag_retain_pos)
 		ag_flush_retain_release();
 	*ag_release_pos = p;
 }
-inline void ag_reg_mt_retain(uintptr_t p) {
+static inline void ag_reg_mt_retain(uintptr_t p) {
 	*ag_retain_pos = p;
 	if (++ag_retain_pos == ag_release_pos)
 		ag_flush_retain_release();
@@ -340,7 +340,7 @@ void ag_retain_own(AgObject* obj, AgObject* parent) {
 	if (ag_not_null(obj))
 		ag_retain_own_nn(obj, parent);
 }
-inline void ag_release_shared_nn(AgObject* obj) {
+void ag_release_shared_nn(AgObject* obj) {
 	// only shared ptrs can reference string literals and named consts with static lifetimes, so check only for shared
 	if ((((AgObject*)obj)->ctr_mt & ~(AG_CTR_STEP - 1)) == 0)
 		return;
@@ -832,7 +832,7 @@ void ag_finalize_post_message(ag_thread* th) {
 		mtx_unlock(&th->mutex);
 }
 
-inline void ag_make_weak_mt(AgWeak* w) {
+static inline void ag_make_weak_mt(AgWeak* w) {
 	if (ag_not_null(w) && (w->wb_ctr_mt & AG_CTR_MT) == 0) {
 		w->wb_ctr_mt |= AG_CTR_MT;  //previously this weak belonged only to this thread, so no atomic op here
 	}
@@ -840,7 +840,7 @@ inline void ag_make_weak_mt(AgWeak* w) {
 
 void ag_bound_field_to_thread(void* field, int type, void* ctx);
 
-inline void ag_bound_own_to_thread(AgObject* ptr, ag_thread* th) {
+void ag_bound_own_to_thread(AgObject* ptr, ag_thread* th) {
 	if (ag_not_null(ptr)) {
 		if ((ptr->wb_p & AG_F_PARENT) == 0) {
 			AgWeak* w = (AgWeak*)ptr->wb_p;
