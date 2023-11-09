@@ -15,7 +15,9 @@ llvm_map_components_to_libnames(llvm_libs support core nativecodegen orcjit)
 
 find_package(SDL2 REQUIRED)
 find_package(SDL2_image REQUIRED)
-get_target_property(SDL2_IMAGE_INCLUDE_DIRS SDL2_image::SDL2_image INTERFACE_INCLUDE_DIRECTORIES)
+if(NOT DEFINED SDL2_IMAGE_INCLUDE_DIRS)
+    get_target_property(SDL2_IMAGE_INCLUDE_DIRS SDL2_image::SDL2_image INTERFACE_INCLUDE_DIRECTORIES)
+endif()
 include_directories(${CMAKE_CURRENT_LIST_DIR}/src ${SDL2_INCLUDE_DIRS} ${SDL2_IMAGE_INCLUDE_DIRS})
 
 set(CMAKE_CXX_FLAGS_RELEASE "/MT")

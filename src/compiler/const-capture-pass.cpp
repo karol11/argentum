@@ -13,7 +13,6 @@ using std::move;
 using std::variant;
 using std::get_if;
 using std::function;
-using std::shared_ptr;
 using ltm::pin;
 using ltm::weak;
 using ltm::own;

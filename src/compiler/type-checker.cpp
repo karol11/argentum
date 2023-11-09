@@ -458,7 +458,7 @@ struct Typer : ast::ActionMatcher {
 		auto node_type = find_type(node)->type();
 		auto type_as_weak = dom::strict_cast<ast::TpWeak>(node_type);
 		auto cls = type_as_weak && include_week
-			? type_as_weak->target
+			? type_as_weak->target.pinned()
 			: ast->extract_class(node_type);
 		if (!cls)
 			node->error("Expected pointer to class, not ", node->type().pinned());

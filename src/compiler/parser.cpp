@@ -319,7 +319,7 @@ struct Parser {
 			body.push_back(parse_statement());
 		} while (match(";"));
 	}
-	pin<ast::Action> mk_get(char* kind) {
+	pin<ast::Action> mk_get(const char* kind) {
 		auto n = expect_long_name(kind, nullptr);
 		if (!n.module && current_class) {
 			for (auto& p : current_class->params) {
