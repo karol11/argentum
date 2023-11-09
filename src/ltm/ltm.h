@@ -237,20 +237,6 @@ public:
 	}
 
 	template <
-		typename SUB,
-		typename = typename std::enable_if<std::is_convertible<SUB*, T*>::value>::type>
-	const own<SUB>& cast() const noexcept {
-		return *reinterpret_cast<const own<SUB>*>(this);
-	}
-
-	template <
-		typename SUB,
-		typename = typename std::enable_if<std::is_convertible<SUB*, T*>::value>::type>
-	own<SUB>& cast() noexcept {
-		return *reinterpret_cast<own<SUB>*>(this);
-	}
-
-	template <
 		typename C = T,
 		typename = typename std::enable_if<std::is_convertible<C*, T*>::value>::type,
 		typename... P>
@@ -279,6 +265,22 @@ public:
 		return ::ltm::pin<U>(*this);
 	}
 };
+
+template <
+	typename SUB,
+	typename T,
+	typename = typename std::enable_if<std::is_convertible<SUB*, T*>::value>::type>
+const own<SUB>& cast(const own<T>& me) noexcept {
+	return reinterpret_cast<const own<SUB>&>(me);
+}
+
+template <
+	typename SUB,
+	typename T,
+	typename = typename std::enable_if<std::is_convertible<SUB*, T*>::value>::type>
+own<SUB>& cast(own<T>& me) noexcept {
+	return reinterpret_cast<own<SUB>&>(me);
+}
 
 // Temporay pointer
 template <typename T>
@@ -360,16 +362,6 @@ public:
 		return *reinterpret_cast<pin<BASE>*>(this);
 	}
 
-	template <typename SUB>
-	pin<SUB>& cast() noexcept {
-		return *reinterpret_cast<pin<SUB>*>(this);
-	}
-
-	template <typename SUB>
-	const pin<SUB>& cast() const noexcept {
-		return *reinterpret_cast<const pin<SUB>*>(this);
-	}
-
 	template <
 		typename SUB = T,
 		typename = typename std::enable_if<std::is_convertible<SUB*, T*>::value>::type>
@@ -422,6 +414,16 @@ public:
 		return std::move(*this);
 	}
 };
+
+template <typename SUB, typename T>
+pin<SUB>& cast(pin<T>& me) noexcept {
+	return reinterpret_cast<pin<SUB>&>(me);
+}
+
+template <typename SUB, typename T>
+const pin<SUB>& cast(const pin<T>& me) noexcept {
+	return reinterpret_cast<const pin<SUB>&>(me);
+}
 
 // Weak pointer
 template <typename T>
@@ -514,13 +516,6 @@ public:
 	}
 
 	template <
-		typename SUB,
-		typename = typename std::enable_if<std::is_convertible<SUB*, T*>::value>::type>
-	weak<SUB>& cast() noexcept {
-		return *reinterpret_cast<weak<SUB>*>(this);
-	}
-
-	template <
 		typename U = T,
 		typename = typename std::enable_if<std::is_convertible<T*, U*>::value>::type>
 	own<U> owned() const {
@@ -534,6 +529,14 @@ public:
 		return ::ltm::pin<U>(*this);
 	}
 };
+
+template <
+	typename SUB,
+	typename T,
+	typename = typename std::enable_if<std::is_convertible<SUB*, T*>::value>::type>
+weak<SUB>& cast(weak<T>& me) noexcept {
+	return reinterpret_cast<weak<SUB>&>(me);
+}
 
 template <
 	typename A,

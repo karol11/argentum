@@ -88,7 +88,7 @@ struct NameResolver : ast::ActionScanner {
 					c->base_contexts.insert({ base_class, b_as_inst });
 					for (auto i_base_ctx : base_class->base_contexts) {
 						auto& c_ctx = c->base_contexts[i_base_ctx.first];
-						auto c_ctx_inst = ast->resolve_params(i_base_ctx.second, b_as_inst).cast<ast::ClassInstance>();
+						auto c_ctx_inst = ltm::cast<ast::ClassInstance>(ast->resolve_params(i_base_ctx.second, b_as_inst));
 						if (c_ctx) {
 							if (c_ctx != c_ctx_inst)
 								c->error("class has conflicting bases ", c_ctx->get_name(), " and ", c_ctx_inst->get_name());

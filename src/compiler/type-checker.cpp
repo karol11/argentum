@@ -11,6 +11,7 @@ using std::vector;
 using ltm::own;
 using ltm::pin;
 using ltm::weak;
+using ltm::cast;
 using dom::strict_cast;
 using ast::Type;
 using std::function;
@@ -399,7 +400,7 @@ struct Typer : ast::ActionMatcher {
 		} else {
 			node.type_ = ast->convert_maybe_optional(node.var->type, [&](auto tp) {
 				if (auto as_own = dom::strict_cast<ast::TpOwn>(tp))
-					return ast->get_ref(as_own->target).cast<ast::Type>();
+					return cast<ast::Type>(ast->get_ref(as_own->target));
 				return tp;
 			});
 		}
@@ -487,24 +488,24 @@ struct Typer : ast::ActionMatcher {
 		if (dom::isa<ast::TpConformRef>(*node.base->type())) {
 			node.type_ = ast->convert_maybe_optional(node.type(), [&](auto tp) {
 				if (auto as_own = dom::strict_cast<ast::TpOwn>(tp))
-					return ast->get_conform_ref(as_own->target).cast<ast::Type>();
+					return cast<ast::Type>(ast->get_conform_ref(as_own->target));
 				if (auto as_weak = dom::strict_cast<ast::TpWeak>(tp))
-					return ast->get_conform_weak(as_weak->target).cast<ast::Type>();
+					return cast<ast::Type>(ast->get_conform_weak(as_weak->target));
 				return tp;
 			});
 
 		} else if (dom::isa<ast::TpShared>(*node.base->type())) {
 			node.type_ = ast->convert_maybe_optional(node.type(), [&](auto tp) {
 				if (auto as_own = dom::strict_cast<ast::TpOwn>(tp))
-					return ast->get_shared(as_own->target).cast<ast::Type>();
+					return cast<ast::Type>(ast->get_shared(as_own->target));
 				if (auto as_weak = dom::strict_cast<ast::TpWeak>(tp))
-					return ast->get_frozen_weak(as_weak->target).cast<ast::Type>();
+					return cast<ast::Type>(ast->get_frozen_weak(as_weak->target));
 				return tp;
 			});
 		} else {
 			node.type_ = ast->convert_maybe_optional(node.type(), [&](auto tp) {
 				if (auto as_own = dom::strict_cast<ast::TpOwn>(tp))
-					return ast->get_ref(as_own->target).cast<ast::Type>();
+					return cast<ast::Type>(ast->get_ref(as_own->target));
 				return tp;
 			});
 		}
@@ -593,7 +594,7 @@ struct Typer : ast::ActionMatcher {
 			find_type(node.field->initializer)->type());
 		node.type_ = ast->convert_maybe_optional(node.type(), [&](auto tp) {
 			if (auto as_own = dom::strict_cast<ast::TpOwn>(tp))
-				return ast->get_ref(as_own->target).cast<ast::Type>();
+				return cast<ast::Type>(ast->get_ref(as_own->target));
 			return tp;
 		});
 	}

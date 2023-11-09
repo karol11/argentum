@@ -17,6 +17,7 @@ using std::shared_ptr;
 using ltm::pin;
 using ltm::weak;
 using ltm::own;
+using ltm::cast;
 using ast::Node;
 
 namespace {
@@ -224,12 +225,12 @@ struct ConstCapturePass : ast::ActionScanner {
 		if (node.block->lexical_depth != lambda_levels.size() - 1) {
 			if (!dom::isa<ast::Block>(*node.block.pinned())) {
 				if (node.block->body.size() == 1 && dom::isa<ast::Block>(*node.block->body.back())) {
-					node.block = node.block->body.back().cast<ast::Block>();
+					node.block = cast<ast::Block>(node.block->body.back());
 				} else {
 					auto block = ast::make_at_location<ast::Block>(*node.block.pinned());
 					std::swap(block->body, node.block->body);
 					node.block->body.push_back(block);
-					block->type_ = node.block->type().cast<ast::TpLambda>()->params.back();
+					block->type_ = cast<ast::TpLambda>(node.block->type())->params.back();
 					block->lexical_depth = node.block->lexical_depth;
 					node.block = block;
 				}
@@ -276,7 +277,7 @@ struct ConstCapturePass : ast::ActionScanner {
 
 	void on_call(ast::Call& node) override {
 		ast::ActionScanner::on_call(node);
-		if (node.callee->type().cast<ast::TpLambda>()->can_x_break) {
+		if (cast<ast::TpLambda>(node.callee->type())->can_x_break) {
 			LambdaDep::tp_pull set;
 			calls_to_fix.push_back(&node);
 			auto add_dep = [&](own<ast::Action>& n) {

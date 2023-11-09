@@ -32,6 +32,7 @@ using std::get_if;
 using ltm::weak;
 using ltm::own;
 using ltm::pin;
+using ltm::cast;
 using std::uintptr_t;
 using dom::isa;
 
@@ -1157,12 +1158,12 @@ struct Generator : ast::ActionScanner {
 			if (a != node.body.back())
 				comp_to_void(a);
 		}
-		auto result_type = node.type().cast<ast::TpLambda>()->params.back();
-		if (node.type().cast<ast::TpLambda>()->can_x_break)
+		auto result_type = cast<ast::TpLambda>(node.type())->params.back();
+		if (cast<ast::TpLambda>(node.type())->can_x_break)
 			result_type = ast->tp_optional(result_type);
 		auto fn_result = compile(node.body.back());
 		persist_rfield(fn_result);
-		if (node.type().cast<ast::TpLambda>()->can_x_break) {
+		if (cast<ast::TpLambda>(node.type())->can_x_break) {
 			auto t = ast->tp_optional(fn_result.type);
 			fn_result.type = t;
 			fn_result.data = make_opt_val(fn_result.data, t);
@@ -1288,7 +1289,7 @@ struct Generator : ast::ActionScanner {
 				parameter.data ? parameter :
 				Val{
 					l->type,
-					make_opt_none(l->type.cast<ast::TpOptional>()),
+					make_opt_none(cast<ast::TpOptional>(l->type)),
 					is_ptr(l->type)
 						? Val::lifetime_t(Val::Retained{})
 						: Val::lifetime_t(Val::Static{})
@@ -1405,7 +1406,7 @@ struct Generator : ast::ActionScanner {
 		persist_rfield(r);
 		if (node.x_var
 			|| (!dom::isa<ast::Block>(*node.block.pinned())
-				&& node.block->type().cast<ast::TpLambda>()->can_x_break)) {
+				&& cast<ast::TpLambda>(node.block->type())->can_x_break)) {
 			auto t = ast->tp_optional(r.type);
 			r.type = t;
 			r.data = make_opt_val(r.data, t);
@@ -1414,7 +1415,7 @@ struct Generator : ast::ActionScanner {
 			r = make_retained_or_non_ptr(move(r));
 			builder->CreateStore(r.data, get_data_ref(node.x_var));
 			auto fn_result_t = ast->tp_optional(
-				current_function->type().cast<ast::TpLambda>()->params.back());
+				cast<ast::TpLambda>(current_function->type())->params.back());
 			r.data = make_opt_none(fn_result_t);
 			r.type = fn_result_t;
 		}
@@ -1596,7 +1597,7 @@ struct Generator : ast::ActionScanner {
 					true);
 			}
 		}
-		auto callee = node.callee->type().cast<ast::TpLambda>();
+		auto callee = cast<ast::TpLambda>(node.callee->type());
 		if (callee->can_x_break) {
 			unordered_set<pin<ast::Block>> x_targets;
 			bool has_outer_break = false;
@@ -1623,7 +1624,7 @@ struct Generator : ast::ActionScanner {
 					auto this_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
 					auto not_this_bb = llvm::BasicBlock::Create(*context, "", current_ll_fn);
 					auto& var = b->names.front();
-					auto opt_t = var->type.cast<ast::TpOptional>();
+					auto opt_t = cast<ast::TpOptional>(var->type);
 					auto val = remove_indirection(*var, get_data_ref(var.weaked()));
 					builder->CreateCondBr(
 						check_opt_has_val(val, opt_t),
@@ -1642,7 +1643,7 @@ struct Generator : ast::ActionScanner {
 				}
 				if (has_outer_break) {
 					auto fn_result_type = ast->tp_optional(
-						current_function->type().cast<ast::TpLambda>()->params.back());
+						cast<ast::TpLambda>(current_function->type())->params.back());
 					active_breaks.push_back({
 						builder->GetInsertBlock(),
 						Val{
@@ -2045,7 +2046,7 @@ struct Generator : ast::ActionScanner {
 					[&] { return Val{ result->type, make_opt_val(result->data, result_type), result->lifetime }; },
 					[&] { return Val{ result->type, make_opt_none(result_type), Val::Static{} }; });
 			},
-			[&] { return Val{ result_type, make_opt_none(result_type), Val::Static{} }; });
+			[&] { return Val{ result_type, make_opt_none(result_type), Val::Static{}}; });
 	}
 	void on_add(ast::AddOp& node) override {
 		auto lhs = comp_non_ptr(node.p[0]);
@@ -2660,7 +2661,7 @@ struct Generator : ast::ActionScanner {
 
 	llvm::FunctionType* lambda_to_llvm_fn(ast::Node& n, pin<ast::Type> tp) {  // also delegate and method
 		if (isa<ast::TpLambda>(*tp) || isa<ast::TpDelegate>(*tp)) {
-			pin<ast::TpLambda> as_lambda = tp.cast<ast::TpLambda>();
+			pin<ast::TpLambda> as_lambda = cast<ast::TpLambda>(tp);
 			auto& fn = lambda_fns[as_lambda];
 			if (!fn) {
 				vector<llvm::Type*> params{ ptr_type }; // closure struct or this
@@ -2822,7 +2823,7 @@ struct Generator : ast::ActionScanner {
 
 	llvm::orc::ThreadSafeModule build() {
 		std::unordered_set<pin<ast::Class>> special_copy_and_dispose = {
-			ast->blob->base_class.cast<ast::Class>(),
+			cast<ast::Class>(ast->blob->base_class),
 			ast->blob,
 			ast->own_array,
 			ast->weak_array,
@@ -2963,7 +2964,7 @@ struct Generator : ast::ActionScanner {
 				params[0] = ptr_type;  // this
 				auto& m_info = methods[m];
 				auto result_type = m->type_expression->type();
-				if (m->type().cast<ast::TpLambda>()->can_x_break)
+				if (cast<ast::TpLambda>(m->type())->can_x_break)
 					result_type = ast->tp_optional(result_type);
 				m_info.type = llvm::FunctionType::get(to_llvm_type(*result_type), move(params), false);
 				m_info.ordinal = vmt_content.size();

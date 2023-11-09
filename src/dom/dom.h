@@ -24,6 +24,7 @@ using ltm::Object;
 using ltm::own;
 using ltm::weak;
 using ltm::pin;
+using ltm::cast;
 using std::unordered_map;
 using std::function;
 class TypeInfo;
@@ -347,7 +348,7 @@ protected:
 
 template<typename T>
 pin<T> strict_cast(pin<DomItem> item) {
-	return Dom::get_type(item) == T::dom_type_ ? item.cast<T>() : nullptr;
+	return Dom::get_type(item) == T::dom_type_ ? cast<T>(item) : nullptr;
 }
 
 template<typename T> bool isa(const DomItem& v) {

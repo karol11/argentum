@@ -89,7 +89,7 @@ bool type_test_fn(own<PageItem>& p) {
 TEST(LTM, TypeTest) {
 	own<PageItem> p = new Point(); // Init pointer to base with derived instance.
 	p = new Point();               // Assign derived instance.
-	auto xx = p.cast<Point>()->x;  // Upcast
+	auto xx = ltm::cast<Point>(p)->x;  // Upcast
 	EXPECT_EQ(xx, 0);
 	own<Point> pt;
 	EXPECT_EQ(type_test_fn(pt), false);
