@@ -3269,6 +3269,7 @@ struct Generator : ast::ActionScanner {
 			di_builder->finalize();
 		module->addModuleFlag(llvm::Module::Warning, "Debug Info Version", llvm::DEBUG_METADATA_VERSION);
 		module->addModuleFlag(llvm::Module::Warning, "CodeView", 1);
+		module->addModuleFlag(llvm::Module::Max, "Dwarf Version", 4);
 		return llvm::orc::ThreadSafeModule(std::move(module), std::move(context));
 	}
 
