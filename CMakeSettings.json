@@ -13,17 +13,16 @@
       "variables": [
         {
           "name": "SDL2_DIR",
-          "value": "D:/Docs/cpp_proj/SDL2",
+          "value": "D:/cpp/SDL2-2.28.5/cmake",
           "type": "PATH"
         },
         {
           "name": "SDL2_image_DIR",
-          "value": "D:/Docs/cpp_proj/SDL2_image",
+          "value": "D:/cpp/SDL2_image-2.6.3/cmake",
           "type": "PATH"
         },
         {
           "name": "LLVM_DIR",
-          //          "value": "D:/Docs/cpp_proj/llvm-16.0.0-Dbg-MDd/lib/cmake/llvm",
           "value": "D:/cpp/llvm-17.0.4-dbg/lib/cmake/llvm",
           "type": "PATH"
         }
@@ -42,17 +41,17 @@
       "variables": [
         {
           "name": "SDL2_DIR",
-          "value": "D:/Docs/cpp_proj/SDL2",
+          "value": "D:/cpp/SDL2-2.28.5/cmake",
           "type": "PATH"
         },
         {
           "name": "SDL2_image_DIR",
-          "value": "D:/Docs/cpp_proj/SDL2_image",
+          "value": "D:/cpp/SDL2_image-2.6.3/cmake",
           "type": "PATH"
         },
         {
           "name": "LLVM_DIR",
-          "value": "D:/Docs/cpp_proj/llvm-16.0.0-Rel-MT/lib/cmake/llvm",
+          "value": "D:/cpp/llvm-17.0.4-rel/lib/cmake/llvm",
           "type": "PATH"
         }
       ]
