@@ -1007,7 +1007,7 @@ AgThread* ag_m_sys_Thread_start(AgThread* th, AgObject* root) {
 	}
 	mtx_unlock(&ag_threads_mutex);
 	// TODO: make root object marker value for parent ptr.
-	ag_retain_pin(root); // ok to retain on the crating thread before thrd_create
+	ag_retain_pin(root); // ok to retain on the creating thread before thrd_create
 	t->root = root;
 	th->thread = t;
 	AgWeak* w = ag_mk_weak(root);
@@ -1033,8 +1033,10 @@ void ag_dtor_sys_Thread(AgThread* ptr) {
 		ag_unlock_and_notify_thread(th);
 		int unused_result;
 		thrd_join(th->thread, &unused_result);
+		mtx_lock(&ag_threads_mutex);
 		th->timer_proc_param = (AgWeak*) ag_thread_free;
 		ag_thread_free = th;
+		mtx_unlock(&ag_threads_mutex);
 	}
 }
 void ag_visit_sys_Thread(
