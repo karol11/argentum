@@ -1,5 +1,5 @@
 ﻿# Argentum
-cmake_minimum_required (VERSION 3.8)
+cmake_minimum_required (VERSION 3.26)
 set(CMAKE_CXX_STANDARD 17)
 add_definitions(-D_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -22,8 +22,6 @@ if(NOT DEFINED SDL2_IMAGE_LIBRARIES)
     get_target_property(SDL2_IMAGE_LIBRARIES SDL2_image::SDL2_image IMPORTED_IMPLIB)
 endif()
 include_directories(${CMAKE_CURRENT_LIST_DIR}/src ${SDL2_INCLUDE_DIRS} ${SDL2_IMAGE_INCLUDE_DIRS})
-
-set(CMAKE_CXX_FLAGS_RELEASE "/MT")
 
 set(ag_rtl_sources
     src/runtime/runtime.h

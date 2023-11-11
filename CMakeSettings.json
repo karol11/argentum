@@ -55,6 +55,34 @@
           "type": "PATH"
         }
       ]
+    },
+    {
+      "name": "x64-RelWithDebInfo",
+      "generator": "Ninja",
+      "configurationType": "RelWithDebInfo",
+      "buildRoot": "${projectDir}\\out\\build\\${name}",
+      "installRoot": "${projectDir}\\out\\install\\${name}",
+      "cmakeCommandArgs": "",
+      "buildCommandArgs": "",
+      "ctestCommandArgs": "",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "variables": [
+        {
+          "name": "SDL2_DIR",
+          "value": "D:/cpp/SDL2-2.28.5/cmake",
+          "type": "PATH"
+        },
+        {
+          "name": "SDL2_image_DIR",
+          "value": "D:/cpp/SDL2_image-2.6.3/cmake",
+          "type": "PATH"
+        },
+        {
+          "name": "LLVM_DIR",
+          "value": "D:/cpp/llvm-17.0.4-rel/lib/cmake/llvm",
+          "type": "PATH"
+        }
+      ]
     }
   ]
 }
