@@ -13,67 +13,60 @@ static inline uint64_t timespec_to_ms(const struct timespec* time) {
 #include <windows.h>
 
 // Thread
-#define thrd_success 0
-#define thrd_error 1
-typedef HANDLE thrd_t;
-typedef int (*thrd_start_t) (void*);
-int thrd_create(thrd_t* thr, thrd_start_t func, void* arg) {
+typedef HANDLE pthread_t;
+typedef void* (*pthread_start_t) (void*);
+static inline int pthread_create(pthread_t* thr, void* unused_attr, pthread_start_t func, void* arg) {
 	HANDLE r = CreateThread(
 		NULL,                   // default security attributes
 		0,                      // use default stack size  
-		func,
+		(LPTHREAD_START_ROUTINE) func,
 		arg,                    // argument to thread function 
 		0,                      // use default creation flags 
 		NULL
 	);
 	if (r == NULL)
-		return thrd_error;
+		return -1;
 	*thr = r;
-	return thrd_success;
+	return 0;
 }
-#define thrd_exit ExitThread
-int thrd_join(thrd_t thr, int* usused_res) {
+static inline int pthread_join(pthread_t thr, void** usused_res) {
 	return WaitForSingleObject(thr, INFINITE)
-		? thrd_error
-		: thrd_success;  // success if 0 (WAIT_OBJECT_0)
+		? -1
+		: 0;  // success if 0 (WAIT_OBJECT_0)
 }
 
 // Mutex
-#define mtx_plain 0
-typedef CRITICAL_SECTION mtx_t;
-int mtx_init(mtx_t* mutex, int type) {
+typedef CRITICAL_SECTION pthread_mutex_t;
+static inline int pthread_mutex_init(pthread_mutex_t* mutex, const void* unused_attr) {
 	return InitializeCriticalSectionAndSpinCount(mutex, 0x00000400)
-		? thrd_success
-		: thrd_error;
+		? 0
+		: -1;
 }
-#define mtx_destroy DeleteCriticalSection
-static inline int mtx_lock(mtx_t* mutex) {
+#define pthread_mutex_destroy DeleteCriticalSection
+static inline int pthread_mutex_lock(pthread_mutex_t* mutex) {
 	EnterCriticalSection(mutex);
-	return thrd_success;
+	return 0;
 }
-static inline int mtx_unlock(mtx_t* mutex) {
+static inline int pthread_mutex_unlock(pthread_mutex_t* mutex) {
 	LeaveCriticalSection(mutex);
-	return thrd_success;
+	return 0;
 }
 
 // CVar
-typedef CONDITION_VARIABLE cnd_t;
-static inline int cnd_init(cnd_t* cond) {
+typedef CONDITION_VARIABLE pthread_cond_t;
+static inline int pthread_cond_init(pthread_cond_t* cond, const void* unused_attr) {
 	InitializeConditionVariable(cond);
-	return thrd_success;
+	return 0;
 }
-static inline void cnd_destroy(cnd_t* cond) {
+static inline int pthread_cond_destroy(pthread_cond_t* cond) {
 	// do nothing
+	return 0;
 }
-static inline int cnd_signal(cnd_t* cond) {
-	WakeConditionVariable(cond);
-	return thrd_success;
-}
-static inline int cnd_broadcast(cnd_t* cond) {
+static inline int pthread_cond_broadcast(pthread_cond_t* cond) {
 	WakeAllConditionVariable(cond);
-	return thrd_success;
+	return 0;
 }
-int cnd_timedwait(cnd_t* cond, mtx_t* mutex, const struct timespec* timeout) {
+static inline int pthread_cond_timedwait(pthread_cond_t* cond, pthread_mutex_t* mutex, const struct timespec* timeout) {
 	struct timespec now;
 	return SleepConditionVariableCS(
 		cond,
@@ -81,20 +74,16 @@ int cnd_timedwait(cnd_t* cond, mtx_t* mutex, const struct timespec* timeout) {
 		timespec_get(&now, TIME_UTC)
 			? (DWORD)(timespec_to_ms(timeout) - timespec_to_ms(&now))
 			: INFINITE
-	)
-		? thrd_success
-		: thrd_error;
+	) ? 0 : -1;
 }
-static inline int cnd_wait(cnd_t* cond, mtx_t* mutex) {
-	return SleepConditionVariableCS(cond, mutex, INFINITE)
-		? thrd_success
-		: thrd_error;
+static inline int pthread_cond_wait(pthread_cond_t* cond, pthread_mutex_t* mutex) {
+	return SleepConditionVariableCS(cond, mutex, INFINITE) ? 0 : -1;
 }
 #define AG_THREAD_LOCAL __declspec(thread)
 
 #else
 
-#include <threads.h>
+#include <pthread.h>
 #define AG_THREAD_LOCAL _Thread_local
 
 #endif
@@ -173,23 +162,23 @@ typedef struct ag_queue_tag {
 } ag_queue;
 
 typedef struct ag_thread_tag {
-	ag_queue  in;
-	ag_queue  out;
-	AgObject* root;     // 0 if free
-	uint64_t  timer_ms;  // todo: replace with pyramid-heap
-	ag_fn     timer_proc;
-	AgWeak*   timer_proc_param; // next free if free
-	mtx_t     mutex;
-	cnd_t     is_not_empty;
-	thrd_t    thread;
+	ag_queue        in;
+	ag_queue        out;
+	AgObject*       root;     // 0 if free
+	uint64_t        timer_ms;  // todo: replace with pyramid-heap
+	ag_fn           timer_proc;
+	AgWeak*         timer_proc_param; // next free if free
+	pthread_mutex_t mutex;
+	pthread_cond_t  is_not_empty;
+	pthread_t       thread;
 } ag_thread;
 
 // Ag_threads never deallocated.
-// We allocate ag_threads by pages, we hold deallocated pages in a list using write_pos field
-ag_thread*  ag_alloc_thread = NULL;    // next free ag_thread in page
-uint64_t    ag_alloc_threads_left = 0; // number of free ag_threads left in page
-ag_thread*  ag_thread_free = NULL;     // head of freed ag_thread chain
-mtx_t       ag_threads_mutex;
+// We allocate ag_threads by pages, we hold deallocated pages in a list using timer_proc_param field
+ag_thread*      ag_alloc_thread = NULL;    // next free ag_thread in page
+uint64_t        ag_alloc_threads_left = 0; // number of free ag_threads left in page
+ag_thread*      ag_thread_free = NULL;     // head of freed ag_thread chain
+pthread_mutex_t ag_threads_mutex;
 
 ag_thread ag_main_thread = { 0 };
 
@@ -198,10 +187,10 @@ AG_THREAD_LOCAL ag_thread* ag_current_thread = NULL;
 AG_THREAD_LOCAL uintptr_t* ag_retain_buffer = NULL;
 AG_THREAD_LOCAL uintptr_t* ag_retain_pos;
 AG_THREAD_LOCAL uintptr_t* ag_release_pos;
-mtx_t ag_retain_release_mutex;
+pthread_mutex_t            ag_retain_release_mutex;
 
 void ag_flush_retain_release() {
-	mtx_lock(&ag_retain_release_mutex);
+	pthread_mutex_lock(&ag_retain_release_mutex);
 	uintptr_t* i = ag_retain_buffer;
 	uintptr_t* term = ag_retain_pos;
 	for (; i != term; ++i) {
@@ -229,7 +218,7 @@ void ag_flush_retain_release() {
 	}
 	ag_retain_pos = ag_retain_buffer;
 	ag_release_pos = ag_retain_buffer + AG_RETAIN_BUFFER_SIZE;
-	mtx_unlock(&ag_retain_release_mutex);
+	pthread_mutex_unlock(&ag_retain_release_mutex);
 	while (root) {
 		AgObject* n = AG_UNTAG_PTR(AgObject, root->ctr_mt);
 		if (root->ctr_mt & AG_CTR_WEAK)
@@ -700,8 +689,8 @@ static void ag_init_queue(ag_queue* q) {
 static void ag_init_thread(ag_thread* th) {
 	ag_init_queue(&th->in);
 	ag_init_queue(&th->out);
-	mtx_init(&th->mutex, mtx_plain);
-	cnd_init(&th->is_not_empty);
+	pthread_mutex_init(&th->mutex, NULL);
+	pthread_cond_init(&th->is_not_empty, NULL);
 	th->root = NULL;
 	th->timer_ms = 0;
 	th->timer_proc = 0;
@@ -769,24 +758,24 @@ uint64_t ag_get_thread_param(ag_thread* th) {  // for trampolines
 }
 
 void ag_unlock_thread_queue(ag_thread* th) { // for trampolines
-	mtx_unlock(&th->mutex);
+	pthread_mutex_unlock(&th->mutex);
 }
 
 static ag_thread* ag_lock_thread(AgWeak* receiver) {
 	ag_thread* th = (ag_thread*)receiver->thread;
 	if (!th)
 		return NULL;
-	mtx_lock(&th->mutex);
+	pthread_mutex_lock(&th->mutex);
 	if (receiver->thread != th) { // thread had died or object moved while we were locking it
-		mtx_unlock(&th->mutex);
+		pthread_mutex_unlock(&th->mutex);
 		return NULL;
 	}
 	return th;
 }
 
 void ag_unlock_and_notify_thread(ag_thread* th) {
-	mtx_unlock(&th->mutex);
-	cnd_broadcast(&th->is_not_empty);
+	pthread_mutex_unlock(&th->mutex);
+	pthread_cond_broadcast(&th->is_not_empty);
 }
 
 bool ag_fn_sys_postTimer(int64_t at, AgWeak* receiver, ag_fn fn) {
@@ -807,7 +796,7 @@ ag_thread* ag_prepare_post_message(AgWeak* receiver, ag_fn fn, ag_trampoline tra
 	if (!th)
 		return NULL;
 	if (!ag_current_thread) {
-		mtx_unlock(&th->mutex);
+		pthread_mutex_unlock(&th->mutex);
 		return NULL; // todo add support for non-ag threads
 	}
 	// no need to lock out-queue thread b/c it's our thread
@@ -829,7 +818,7 @@ void ag_put_thread_param(ag_thread* th, uint64_t param) {
 
 void ag_finalize_post_message(ag_thread* th) {
 	if (th)
-		mtx_unlock(&th->mutex);
+		pthread_mutex_unlock(&th->mutex);
 }
 
 static inline void ag_make_weak_mt(AgWeak* w) {
@@ -897,16 +886,16 @@ void ag_maybe_flush_retain_release() {
 		ag_flush_retain_release();
 }
 
-int ag_thread_proc(ag_thread* th) {
+void* ag_thread_proc(ag_thread* th) {
 	ag_current_thread = th;
 	ag_init_retain_buffer();
 	struct timespec now;
-	mtx_lock(&th->mutex);
+	pthread_mutex_lock(&th->mutex);
 	for (;;) {
 		if (th->in.read_pos != th->in.write_pos) {
 			uint64_t tramp = ag_get_thread_param(th);
 			if (!tramp) {
-				mtx_unlock(&th->mutex);
+				pthread_mutex_unlock(&th->mutex);
 				AgObject* r = th->root;
 				th->root = NULL;
 				ag_release_own(r);
@@ -922,19 +911,19 @@ int ag_thread_proc(ag_thread* th) {
 				ag_release_pin(receiver);
 				ag_release_weak(w_receiver);
 			}
-			mtx_lock(&th->mutex);
+			pthread_mutex_lock(&th->mutex);
 		} else if (th->timer_ms && timespec_get(&now, TIME_UTC) && timespec_to_ms(&now) <= th->timer_ms) {
 			th->timer_ms = 0;
 			AgObject* timer_object = ag_deref_weak(th->timer_proc_param);
 			if (timer_object) {
-				mtx_unlock(&th->mutex);
+				pthread_mutex_unlock(&th->mutex);
 				th->timer_proc(timer_object);
 				ag_release_pin(timer_object);
-				mtx_lock(&th->mutex);
+				pthread_mutex_lock(&th->mutex);
 			}
 		} else if (th->out.read_pos != th->out.write_pos) {
 			ag_maybe_flush_retain_release();
-			mtx_unlock(&th->mutex);
+			pthread_mutex_unlock(&th->mutex);
 			ag_queue* out = &th->out;
 			while (out->read_pos != out->write_pos) {
 				uint64_t tramp = ag_read_queue(out);
@@ -944,7 +933,7 @@ int ag_thread_proc(ag_thread* th) {
 				ag_thread* out_th = ag_lock_thread((AgWeak*)recv);
 				if (!out_th) {
 					out_th = th; // send to myself to dispose
-					mtx_lock(&th->mutex);
+					pthread_mutex_lock(&th->mutex);
 				}
 				ag_queue* q = &out_th->in;
 				ag_resize_queue(
@@ -957,23 +946,23 @@ int ag_thread_proc(ag_thread* th) {
 					ag_write_queue(q, ag_read_queue(out));
 				ag_unlock_and_notify_thread(out_th);
 			}
-			mtx_lock(&th->mutex);
+			pthread_mutex_lock(&th->mutex);
 		} else if (th->root) {
 			if (th->timer_ms) {
 				struct timespec timeout;
 				timeout.tv_sec = th->timer_ms / 1000;
 				timeout.tv_nsec = th->timer_ms % 1000 * 1000000;
-				cnd_timedwait(&th->is_not_empty, &th->mutex, &timeout);
+				pthread_cond_timedwait(&th->is_not_empty, &th->mutex, &timeout);
 			} else {
-				cnd_wait(&th->is_not_empty, &th->mutex);
+				pthread_cond_wait(&th->is_not_empty, &th->mutex);
 			}
 		} else {
 			break;
 		}
 	}
-	mtx_unlock(&th->mutex);
+	pthread_mutex_unlock(&th->mutex);
 	ag_maybe_flush_retain_release();
-	return 0;
+	return NULL;
 }
 
 int ag_handle_main_thread() {
@@ -987,10 +976,10 @@ AgThread* ag_m_sys_Thread_start(AgThread* th, AgObject* root) {
 	ag_thread* t = NULL;
 	if (!ag_alloc_thread) { // it's first thread creation
 		ag_init_retain_buffer();
-		mtx_init(&ag_retain_release_mutex, mtx_plain);
-		mtx_init(&ag_threads_mutex, mtx_plain);
+		pthread_mutex_init(&ag_retain_release_mutex, NULL);
+		pthread_mutex_init(&ag_threads_mutex, NULL);
 	}
-	mtx_lock(&ag_threads_mutex);
+	pthread_mutex_lock(&ag_threads_mutex);
 	if (ag_thread_free) {
 		t = ag_thread_free;
 		ag_thread_free = (ag_thread*)ag_thread_free->timer_proc_param;
@@ -1005,16 +994,16 @@ AgThread* ag_m_sys_Thread_start(AgThread* th, AgObject* root) {
 		ag_alloc_threads_left--;
 		ag_init_thread(t);
 	}
-	mtx_unlock(&ag_threads_mutex);
+	pthread_mutex_unlock(&ag_threads_mutex);
 	// TODO: make root object marker value for parent ptr.
-	ag_retain_pin(root); // ok to retain on the creating thread before thrd_create
+	ag_retain_pin(root); // ok to retain on the creating thread before `pthread_create`
 	t->root = root;
 	th->thread = t;
 	AgWeak* w = ag_mk_weak(root);
 	w->wb_ctr_mt = (w->wb_ctr_mt - AG_CTR_STEP) | AG_CTR_MT;
 	w->thread = t;
 	th->head.ctr_mt += AG_CTR_STEP;
-	thrd_create(&t->thread, (thrd_start_t) ag_thread_proc, t);
+	pthread_create(&t->thread, NULL, (pthread_start_t) ag_thread_proc, t);
 	return th;
 }
 
@@ -1027,16 +1016,16 @@ void ag_copy_sys_Thread(AgThread* dst, AgThread* src) {
 void ag_dtor_sys_Thread(AgThread* ptr) {
 	if (ptr->thread) {
 		ag_thread* th = ptr->thread;
-		mtx_lock(&th->mutex);
+		pthread_mutex_lock(&th->mutex);
 		ag_resize_queue(&th->in, 1);
 		ag_write_queue(&th->in, 0);
 		ag_unlock_and_notify_thread(th);
-		int unused_result;
-		thrd_join(th->thread, &unused_result);
-		mtx_lock(&ag_threads_mutex);
+		void* unused_result;
+		pthread_join(th->thread, &unused_result);
+		pthread_mutex_lock(&ag_threads_mutex);
 		th->timer_proc_param = (AgWeak*) ag_thread_free;
 		ag_thread_free = th;
-		mtx_unlock(&ag_threads_mutex);
+		pthread_mutex_unlock(&ag_threads_mutex);
 	}
 }
 void ag_visit_sys_Thread(
