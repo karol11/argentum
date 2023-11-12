@@ -8,14 +8,15 @@ static inline uint64_t timespec_to_ms(const struct timespec* time) {
 	return time->tv_nsec / 1000000 + time->tv_sec * 1000;
 }
 
+typedef void* (*ag_thread_start_t) (void*);
+
 #ifdef WIN32
 
 #include <windows.h>
 
 // Thread
 typedef HANDLE pthread_t;
-typedef void* (*pthread_start_t) (void*);
-static inline int pthread_create(pthread_t* thr, void* unused_attr, pthread_start_t func, void* arg) {
+static inline int pthread_create(pthread_t* thr, void* unused_attr, ag_thread_start_t func, void* arg) {
 	HANDLE r = CreateThread(
 		NULL,                   // default security attributes
 		0,                      // use default stack size  
@@ -1003,7 +1004,7 @@ AgThread* ag_m_sys_Thread_start(AgThread* th, AgObject* root) {
 	w->wb_ctr_mt = (w->wb_ctr_mt - AG_CTR_STEP) | AG_CTR_MT;
 	w->thread = t;
 	th->head.ctr_mt += AG_CTR_STEP;
-	pthread_create(&t->thread, NULL, (pthread_start_t) ag_thread_proc, t);
+	pthread_create(&t->thread, NULL, (ag_thread_start_t) ag_thread_proc, t);
 	return th;
 }
 
