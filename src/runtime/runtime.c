@@ -4,6 +4,15 @@
 #include <assert.h>
 #include <time.h>  // timespec, timespec_get
 
+//#define AG_RT_WITH_TRACE
+#ifdef AG_RT_WITH_TRACE
+#define AG_TRACE(msg, ...) printf("--%p " msg "\n", ag_current_thread, __VA_ARGS__)
+#define AG_TRACE0(msg) printf("--%p " msg "\n", ag_current_thread)
+#else
+#define AG_TRACE(...)
+#define AG_TRACE0(msg)
+#endif
+
 static inline uint64_t timespec_to_ms(const struct timespec* time) {
 	return time->tv_nsec / 1000000 + time->tv_sec * 1000;
 }
@@ -191,14 +200,17 @@ AG_THREAD_LOCAL uintptr_t* ag_release_pos;
 pthread_mutex_t            ag_retain_release_mutex;
 
 void ag_flush_retain_release() {
+	AG_TRACE0("flush [");
 	pthread_mutex_lock(&ag_retain_release_mutex);
 	uintptr_t* i = ag_retain_buffer;
 	uintptr_t* term = ag_retain_pos;
 	for (; i != term; ++i) {
 		if (*i & 1)
 			((AgStringBuffer*)(*i & ~1))->counter_mt += 2;
-		else
+		else {
+			AG_TRACE("flush retain item=%p oldCtr=%p", (void*)*i, (void*)((AgObject*)*i)->ctr_mt);
 			((AgObject*)*i)->ctr_mt += AG_CTR_STEP;
+		}
 	}
 	i = ag_release_pos;
 	term = ag_retain_buffer + AG_RETAIN_BUFFER_SIZE;
@@ -211,6 +223,7 @@ void ag_flush_retain_release() {
 
 		} else {
 			AgObject* obj = (AgObject*)*i;
+			AG_TRACE("flush release item=%p oldCtr=%p", obj, (void*)obj->ctr_mt);
 			if ((obj->ctr_mt -= AG_CTR_STEP) < AG_CTR_STEP) {
 				obj->ctr_mt = (obj->ctr_mt & AG_CTR_WEAK) | ((intptr_t)root);
 				root = obj;
@@ -221,6 +234,7 @@ void ag_flush_retain_release() {
 	ag_release_pos = ag_retain_buffer + AG_RETAIN_BUFFER_SIZE;
 	pthread_mutex_unlock(&ag_retain_release_mutex);
 	while (root) {
+		AG_TRACE("flush delete item=%p", root);
 		AgObject* n = AG_UNTAG_PTR(AgObject, root->ctr_mt);
 		if (root->ctr_mt & AG_CTR_WEAK)
 			ag_free(root);
@@ -228,6 +242,7 @@ void ag_flush_retain_release() {
 			ag_dispose_obj(AG_UNTAG_PTR(AgObject, root));
 		root = n;
 	}
+	AG_TRACE0("flush ]");
 }
 
 static inline void ag_set_parent_nn(AgObject* obj, AgObject* parent) {
@@ -257,6 +272,7 @@ void ag_set_parent(AgObject* obj, AgObject* parent) {
 
 void ag_release_pin_nn(AgObject* obj) {
 	assert((ag_head(obj)->ctr_mt & AG_CTR_MT) == 0);  // pin cannot be shared and as such mt
+	AG_TRACE("release pin obj=%p oldCtr=%p", obj, (void*)obj->ctr_mt);
 	if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) < AG_CTR_STEP)
 		ag_dispose_obj(obj);
 }
@@ -265,6 +281,7 @@ void ag_release_pin(AgObject * obj) {
 		ag_release_pin_nn(obj);
 }
 void ag_retain_pin_nn(AgObject* obj) {
+	AG_TRACE("retain pin obj=%p oldCtr=%p", obj, (void*)obj->ctr_mt);
 	assert((ag_head(obj)->ctr_mt & AG_CTR_MT) == 0);  // pin cannot be shared and as such mt
 	ag_head(obj)->ctr_mt += AG_CTR_STEP;
 }
@@ -286,15 +303,19 @@ void ag_release_weak(AgWeak* w) {
 	if (!ag_not_null(w))
 		return;
 	if (w->wb_ctr_mt & AG_CTR_MT) {
+		AG_TRACE("release weak (dealyed) w=%p ctr~~%p", w, (void*)w->wb_ctr_mt);
 		ag_reg_mt_release((uintptr_t)w);
 	} else if ((w->wb_ctr_mt -= AG_CTR_STEP) < AG_CTR_STEP) {
+		AG_TRACE("release weak (immediate) w=%p oldCtr=%p", w, (void*)w->wb_ctr_mt);
 		ag_free(w);
 	}
 }
 static inline AgWeak* ag_retain_weak_nn(AgWeak* w) {
 	if (w->wb_ctr_mt & AG_CTR_MT) {
+		AG_TRACE("retain weak (dealyed) w=%p ctr~~%p", w, (void*)w->wb_ctr_mt);
 		ag_reg_mt_retain((uintptr_t)w);
 	} else {
+		AG_TRACE("retain weak (immediate) w=%p oldCtr=%p", w, (void*)w->wb_ctr_mt);
 		w->wb_ctr_mt += AG_CTR_STEP;
 	}
 	return w;
@@ -307,12 +328,16 @@ void ag_retain_weak(AgWeak* w) {
 // - `assign_own`, that handles previous val, and parent ptr, but doesn't handle mt
 // - `dispose_own` that handles mt
 void ag_release_own_nn(AgObject* obj) {
-	if (ag_head(obj)->ctr_mt & AG_CTR_MT)  // when in field it can point to a frozen shared mt.
+	if (ag_head(obj)->ctr_mt & AG_CTR_MT) { // when in field it can point to a frozen shared mt.
+		AG_TRACE("release own (dealyed) ptr=%p ctr~~%p", obj, (void*)obj->ctr_mt);
 		ag_reg_mt_release((uintptr_t)obj);
-	else if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) < AG_CTR_STEP)
-		ag_dispose_obj(obj);
-	else
-		ag_set_parent_nn(obj, AG_IN_STACK);
+	} else {
+		AG_TRACE("release own (immediate) ptr=%p oldCtr=%p", obj, (void*)(obj->ctr_mt + AG_CTR_STEP));
+		if ((ag_head(obj)->ctr_mt -= AG_CTR_STEP) < AG_CTR_STEP)
+			ag_dispose_obj(obj);
+		else
+			ag_set_parent_nn(obj, AG_IN_STACK);
+	}
 }
 void ag_release_own(AgObject* obj) {
 	if (ag_not_null(obj))
@@ -320,8 +345,10 @@ void ag_release_own(AgObject* obj) {
 }
 void ag_retain_own_nn(AgObject* obj, AgObject* parent) {
 	if (ag_head(obj)->ctr_mt & AG_CTR_MT) {  // when in field it can point to a frozen shared mt
+		AG_TRACE("retain own (dealyed) ptr=%p ctr~~%p", obj, (void*)obj->ctr_mt);
 		ag_reg_mt_retain((uintptr_t)obj);
 	} else {
+		AG_TRACE("release own (immediate) ptr=%p oldCtr=%p", obj, (void*)obj->ctr_mt);
 		ag_head(obj)->ctr_mt += AG_CTR_STEP;
 		ag_set_parent_nn(obj, parent);
 	}
@@ -376,6 +403,7 @@ AG_THREAD_LOCAL AgCopyFixer* ag_copy_fixers = 0;        // Used only for objects
 AG_THREAD_LOCAL bool         ag_copy_freeze = false;
 
 void ag_dispose_obj(AgObject* obj) {
+	AG_TRACE("obj dispoze obj=%p", obj);
 	((AgVmt*)(ag_head(obj)->dispatcher))[-1].dispose(obj);
 	AgWeak* wb = (AgWeak*)(ag_head(obj)->wb_p);
 	if (((uintptr_t)wb & AG_F_PARENT) == 0) {
@@ -390,9 +418,11 @@ AgObject* ag_allocate_obj(size_t size) {
 	ag_zero_mem(r, size);
 	r->ctr_mt = AG_CTR_STEP;
 	r->wb_p = AG_IN_STACK | AG_F_PARENT;
+	AG_TRACE("obj alloc size=%p, obj=%p", (void*)size, r);
 	return r;
 }
 AgObject* ag_freeze(AgObject* src) {
+	AG_TRACE("obj freeze src=%p", src);
 	if (src->ctr_mt & AG_CTR_SHARED) {
 		ag_retain_shared_nn(src);
 		return src;
@@ -403,6 +433,7 @@ AgObject* ag_freeze(AgObject* src) {
 	return r;
 }
 AgObject* ag_copy(AgObject* src) {
+	AG_TRACE("obj copy src=%p", src);
 	AgObject* dst = ag_copy_object_field(src, 0);
 	for (AgObject* obj = ag_copy_head; obj;) {
 		if (AG_PTR_TAG(obj) == AG_TG_NOWEAK_DST) {
@@ -512,7 +543,8 @@ void ag_copy_weak_field(void** dst, AgWeak* src) {
 	}
 }
 
-AgWeak* ag_mk_weak(AgObject* obj) { // obj can't be null
+AgWeak* ag_mk_weak(AgObject* obj) { // obj can't be null TODO: support mk_weak for shared
+	AG_TRACE("mk_weak[ for=%p", obj);
 	if (ag_head(obj)->wb_p & AG_F_PARENT) {
 		AgWeak* w = (AgWeak*) ag_alloc(sizeof(AgWeak));
 		w->org_pointer_to_parent = ag_head(obj)->wb_p & ~AG_F_PARENT;
@@ -520,10 +552,12 @@ AgWeak* ag_mk_weak(AgObject* obj) { // obj can't be null
 		w->wb_ctr_mt = AG_CTR_WEAK | (AG_CTR_STEP * 2); // one from obj and one from `mk_weak` result
 		w->thread = ag_current_thread;
 		ag_head(obj)->wb_p = (uintptr_t) w;
+		AG_TRACE("mk_weak ret new] for=%p, w=%p, ctr=%p", obj, w, (void*)w->wb_ctr_mt);
 		return w;
 	}
 	AgWeak* w = (AgWeak*)(ag_head(obj)->wb_p);
 	ag_retain_weak_nn(w);
+	AG_TRACE("mk_weak ret old] for=%p, w=%p, ctr=%p", obj, w, (void*)w->wb_ctr_mt);
 	return w;
 }
 
@@ -699,6 +733,7 @@ static void ag_init_thread(ag_thread* th) {
 }
 
 bool ag_fn_sys_setMainObject(AgObject* s) {
+	AG_TRACE("set main object[ %p", s);
 	ag_thread* th = &ag_main_thread;
 	if (!th->in.start)
 		ag_init_thread(th);
@@ -709,6 +744,7 @@ bool ag_fn_sys_setMainObject(AgObject* s) {
 	}
 	ag_retain_pin(s);
 	th->root = s;
+	AG_TRACE0("set main object]");
 	return true;
 }
 
@@ -877,6 +913,7 @@ void ag_put_thread_param_own_ptr(ag_thread* th, AgObject* param) {
 void ag_init_retain_buffer() {
 	if (ag_retain_buffer)
 		return;
+	AG_TRACE0("init retain buffer");
 	ag_retain_buffer = AG_ALLOC(sizeof(intptr_t) * AG_RETAIN_BUFFER_SIZE);
 	ag_retain_pos = ag_retain_buffer;
 	ag_release_pos = ag_retain_buffer + AG_RETAIN_BUFFER_SIZE;
@@ -889,11 +926,13 @@ void ag_maybe_flush_retain_release() {
 
 void* ag_thread_proc(ag_thread* th) {
 	ag_current_thread = th;
+	AG_TRACE0("thread_proc[");
 	ag_init_retain_buffer();
 	struct timespec now;
 	pthread_mutex_lock(&th->mutex);
 	for (;;) {
 		if (th->in.read_pos != th->in.write_pos) {
+			AG_TRACE0("thread_proc handle incoming[");
 			uint64_t tramp = ag_get_thread_param(th);
 			if (!tramp) {
 				pthread_mutex_unlock(&th->mutex);
@@ -912,6 +951,7 @@ void* ag_thread_proc(ag_thread* th) {
 				ag_release_pin(receiver);
 				ag_release_weak(w_receiver);
 			}
+			AG_TRACE0("thread_proc handle incoming]");
 			pthread_mutex_lock(&th->mutex);
 		} else if (th->timer_ms && timespec_get(&now, TIME_UTC) && timespec_to_ms(&now) <= th->timer_ms) {
 			th->timer_ms = 0;
@@ -923,6 +963,7 @@ void* ag_thread_proc(ag_thread* th) {
 				pthread_mutex_lock(&th->mutex);
 			}
 		} else if (th->out.read_pos != th->out.write_pos) {
+			AG_TRACE0("thread_proc handle outgoing[");
 			ag_maybe_flush_retain_release();
 			pthread_mutex_unlock(&th->mutex);
 			ag_queue* out = &th->out;
@@ -947,8 +988,10 @@ void* ag_thread_proc(ag_thread* th) {
 					ag_write_queue(q, ag_read_queue(out));
 				ag_unlock_and_notify_thread(out_th);
 			}
+			AG_TRACE0("thread_proc handle outgoing]");
 			pthread_mutex_lock(&th->mutex);
 		} else if (th->root) {
+			AG_TRACE0("thread_proc sleep[");
 			if (th->timer_ms) {
 				struct timespec timeout;
 				timeout.tv_sec = th->timer_ms / 1000;
@@ -957,23 +1000,29 @@ void* ag_thread_proc(ag_thread* th) {
 			} else {
 				pthread_cond_wait(&th->is_not_empty, &th->mutex);
 			}
+			AG_TRACE0("thread_proc sleep]");
 		} else {
+			AG_TRACE0("thread_proc quitting");
 			break;
 		}
 	}
 	pthread_mutex_unlock(&th->mutex);
 	ag_maybe_flush_retain_release();
+	AG_TRACE0("thread_proc]");
 	return NULL;
 }
 
 int ag_handle_main_thread() {
+	AG_TRACE0("handle main thread[");
 	if (ag_main_thread.root) {
 		ag_thread_proc(&ag_main_thread);
 	}
+	AG_TRACE0("handle main thread]");
 	return 0;
 }
 
 AgThread* ag_m_sys_Thread_start(AgThread* th, AgObject* root) {
+	AG_TRACE("thread start [root AgThread=%p root=%p", th, root);
 	ag_thread* t = NULL;
 	if (!ag_alloc_thread) { // it's first thread creation
 		ag_init_retain_buffer();
@@ -1005,16 +1054,20 @@ AgThread* ag_m_sys_Thread_start(AgThread* th, AgObject* root) {
 	w->thread = t;
 	th->head.ctr_mt += AG_CTR_STEP;
 	pthread_create(&t->thread, NULL, (ag_thread_start_t) ag_thread_proc, t);
+	AG_TRACE("thread start ] spawned t=%p", t);
 	return th;
 }
 
 AgWeak* ag_m_sys_Thread_root(AgThread* th) {
+	AG_TRACE("thread get root AgThread=%p ret=%p", th, th->thread->root);
 	return ag_mk_weak(th->thread->root);
 }
 void ag_copy_sys_Thread(AgThread* dst, AgThread* src) {
+	AG_TRACE0("thread obj copy");
 	dst->thread = NULL;
 }
 void ag_dtor_sys_Thread(AgThread* ptr) {
+	AG_TRACE("thread dtor AgThread=%p th= %p", ptr, ptr->thread);
 	if (ptr->thread) {
 		ag_thread* th = ptr->thread;
 		pthread_mutex_lock(&th->mutex);
