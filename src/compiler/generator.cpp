@@ -840,7 +840,7 @@ struct Generator : ast::ActionScanner {
 	}
 
 	// Make value be able to outlive any random field and var assignment. Makes Static, Retained or a var-bounded Temp.
-	Val persist_val(Val&& val, llvm::Value* maybe_own_parent = nullptr, bool retain_mutable_locals = true) {
+	void persist_val(Val& val, llvm::Value* maybe_own_parent = nullptr, bool retain_mutable_locals = true) {
 		persist_rfield(val, maybe_own_parent);
 		if (auto as_temp = get_if<Val::Temp>(&val.lifetime)) {
 			if (!as_temp->var || (as_temp->var->is_mutable && retain_mutable_locals)) {
@@ -849,31 +849,30 @@ struct Generator : ast::ActionScanner {
 			}
 		}
 		remove_branches(val);
-		return val;
 	}
-	Val make_retained_or_non_ptr(Val&& src, llvm::Value* maybe_own_parent = nullptr) {
+	void make_retained_or_non_ptr(Val& src, llvm::Value* maybe_own_parent = nullptr) {
 		if (maybe_own_parent && get_if<Val::Retained>(&src.lifetime)) {
 			auto type = src.type;
 			if (auto as_opt = dom::strict_cast<ast::TpOptional>(src.type))
 				type = as_opt->wrapped;
 			if (isa<ast::TpOwn>(*type))
 				builder->CreateCall(fn_set_parent, { cast_to(src.data, ptr_type), maybe_own_parent });
-			return src;
 		}
-		auto r = persist_val(move(src), maybe_own_parent);
-		if (get_if<Val::Temp>(&r.lifetime)) {
-			build_retain(r.data, r.type, maybe_own_parent);
-			r.lifetime = Val::Retained{};
+		persist_val(src, maybe_own_parent);
+		if (get_if<Val::Temp>(&src.lifetime)) {
+			build_retain(src.data, src.type, maybe_own_parent);
+			src.lifetime = Val::Retained{};
 		}
-		return r;
 	}
 
 	// Make value be able to outlive any random field and var assignment.
 	[[nodiscard]] Val comp_to_persistent(own<ast::Action>& action, bool retain_mutable_locals = true) {
-		return persist_val(
-			compile(action),
+		auto r = compile(action);
+		persist_val(
+			r,
 			nullptr,  // maybe_own_parent. Null, because comp_to_persistent never used in set_field value
 			retain_mutable_locals);
+		return r;
 	}
 
 	llvm::Value* cast_to(llvm::Value* value, llvm::Type* expected) {
@@ -1139,7 +1138,8 @@ struct Generator : ast::ActionScanner {
 			for (auto& m : ast->modules_in_order) {
 				for (auto& c : m->constants) {
 					auto addr = globals[c.second];
-					auto val = make_retained_or_non_ptr(compile(c.second->initializer));
+					auto val = compile(c.second->initializer);
+					make_retained_or_non_ptr(val);
 					builder->CreateStore(val.data, addr);
 					if (is_ptr(val.type) && !get_if<Val::Static>(&val.lifetime)) {
 						builder->CreateStore(
@@ -1300,7 +1300,7 @@ struct Generator : ast::ActionScanner {
 			if (l->is_mutable || l->captured) {
 				auto& addr = locals[l];
 				if (l->is_mutable)
-					initializer = make_retained_or_non_ptr(move(initializer));
+					make_retained_or_non_ptr(initializer);
 				if (l->captured) {
 					addr = builder->CreateStructGEP(
 						captures.back().second,
@@ -1385,7 +1385,7 @@ struct Generator : ast::ActionScanner {
 				}
 				builder->SetInsertPoint(brk.bb);
 				if (!result_temp_var)
-					brk.result = make_retained_or_non_ptr(move(brk.result));
+					make_retained_or_non_ptr(brk.result);
 				builder->CreateBr(exit_bb);
 				phi->addIncoming(brk.result.data, builder->GetInsertBlock());
 				it = active_breaks.erase(it);
@@ -1412,7 +1412,7 @@ struct Generator : ast::ActionScanner {
 			r.data = make_opt_val(r.data, t);
 		}
 		if (node.x_var) {
-			r = make_retained_or_non_ptr(move(r));
+			make_retained_or_non_ptr(r);
 			builder->CreateStore(r.data, get_data_ref(node.x_var));
 			auto fn_result_t = ast->tp_optional(
 				cast<ast::TpLambda>(current_function->type())->params.back());
@@ -1458,17 +1458,22 @@ struct Generator : ast::ActionScanner {
 		compile_fn_body(node, ast::format_str("ag_dl_", node.module->name, "_", node.name));
 		current_ll_fn = prev_fn;
 		auto base = compile(node.base);
+		llvm::Value* base_weak_val = nullptr;
+		if (dom::isa<ast::TpWeak>(*base.type)) {
+			make_retained_or_non_ptr(base);
+			base_weak_val = base.data;
+		} else {
+			base_weak_val = builder->CreateCall(fn_mk_weak, { base.data });
+			dispose_val(base, active_breaks.size());
+		}
 		result->data = builder->CreateInsertValue(
 			builder->CreateInsertValue(
 				llvm::UndefValue::get(delegate_struct),
-				dom::isa<ast::TpWeak>(*base.type)
-					? make_retained_or_non_ptr(move(base)).data
-					: builder->CreateCall(fn_mk_weak, { base.data }),
+				base_weak_val,
 				{ 0 }),
 			dl_fn,
 			{ 1 });
 		result->lifetime = Val::Retained{};
-		dispose_val(base, active_breaks.size());
 	}
 
 	void on_make_fn_ptr(ast::MakeFnPtr& node) {
@@ -1782,7 +1787,8 @@ struct Generator : ast::ActionScanner {
 	}
 
 	void on_async_call(ast::AsyncCall& node) {
-		Val callee = make_retained_or_non_ptr(compile(node.callee));
+		Val callee = compile(node.callee);
+		make_retained_or_non_ptr(callee);
 		auto calle_type = dom::strict_cast<ast::TpDelegate>(callee.type);
 		size_t params_size = 0;
 		auto tramp = build_trampoline(calle_type, params_size);
@@ -1847,7 +1853,9 @@ struct Generator : ast::ActionScanner {
 				void on_conform_weak(ast::TpConformWeak& type) override { handle_weak(); }
 				void on_no_ret(ast::TpNoRet& type) override { assert(false); }
 			};
-			TypeSerializer ts(*this, thread_ptr, make_retained_or_non_ptr(compile(p)).data);
+			auto v = compile(p);
+			make_retained_or_non_ptr(v);
+			TypeSerializer ts(*this, thread_ptr, v.data);
 			p->type()->match(ts);
 		}
 		builder->CreateCall(fn_finalize_post_message, { thread_ptr });
@@ -1881,7 +1889,8 @@ struct Generator : ast::ActionScanner {
 			result->lifetime = Val::Temp{ node.var };
 	}
 	void on_set(ast::Set& node) override {
-		*result = make_retained_or_non_ptr(compile(node.val));
+		*result = compile(node.val);
+		make_retained_or_non_ptr(*result);
 		result->type = nullptr;
 		if (is_ptr(node.var->type)) {
 			auto addr = get_data_ref(node.var);
@@ -1915,7 +1924,8 @@ struct Generator : ast::ActionScanner {
 		if (is_ptr(node.type())) {
 			auto base = comp_to_persistent(node.base);
 			size_t breaks_after_base = active_breaks.size();
-			*result = make_retained_or_non_ptr(compile(node.val), base.data);
+			*result = compile(node.val);
+			make_retained_or_non_ptr(*result, base.data);
 			result->type = node.type();  // @T->T and base-dependent conversions
 			auto addr = builder->CreateStructGEP(class_fields, base.data, node.field->offset);
 			build_release(
@@ -1933,7 +1943,8 @@ struct Generator : ast::ActionScanner {
 				dispose_val(base, breaks_after_base);
 			}
 		} else {
-			*result = make_retained_or_non_ptr(compile(node.val));
+			*result = compile(node.val);
+			make_retained_or_non_ptr(*result);
 			auto base = compile(node.base);
 			builder->CreateStore(
 				result->data,
@@ -2475,11 +2486,11 @@ struct Generator : ast::ActionScanner {
 		} else if (get_if<Val::Static>(&else_val.lifetime)) {
 			result.lifetime = then_val.lifetime;
 		} else if (get_if<Val::Retained>(&then_val.lifetime)) {
-			else_val = make_retained_or_non_ptr(move(else_val));
+			make_retained_or_non_ptr(else_val);
 			result.lifetime = Val::Retained{};
 		} else if (get_if<Val::Retained>(&else_val.lifetime)) {
 			builder->SetInsertPoint(then_bb);
-			then_val = make_retained_or_non_ptr(move(then_val));
+			make_retained_or_non_ptr(then_val);
 			builder->SetInsertPoint(else_bb);
 			result.lifetime = Val::Retained{};
 		} else {
@@ -3034,8 +3045,10 @@ struct Generator : ast::ActionScanner {
 			auto result = builder.CreateBitOrPointerCast(info.initializer->arg_begin(),
 				info.fields->getPointerTo());
 			for (auto& field : cls->fields) {
+				auto initializer = compile(field->initializer);
+				make_retained_or_non_ptr(initializer, result);
 				builder.CreateStore(
-					make_retained_or_non_ptr(compile(field->initializer), result).data,
+					initializer.data,
 					builder.CreateStructGEP(info.fields, result, field->offset));
 			}
 			builder.CreateRetVoid();
