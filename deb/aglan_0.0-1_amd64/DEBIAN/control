@@ -1,0 +1,12 @@
+Package: aglan
+Version: 0.0-1
+Architecture: amd64
+Depends: g++, libsdl2-2.0-0, libsdl2-image-2.0-0
+Maintainer: Andrey Kalmatskiy <admin@aglang.org>
+Description: Compiler, runtime library and examples of the Argentum programming language.
+ Argentum is a strictly typed, compiled, modular, object-oriented, functional, multithreaded,
+ memory-safe, type-safe, null-safe, small, fast programming language
+ with 100%-automated memory management, not using GC, not having sudden pauses and overheads.
+ Unlike Rust/Swift it doesn't have memory leaks caused by cycles in pointers.
+ It doesn't have memory leaks at all.
+ More details: https://aglang.org

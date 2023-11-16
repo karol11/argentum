@@ -1,0 +1,6 @@
+#!/bin/bash
+GREEN='\033[0;32m'
+NC='\033[0m' # No Color
+echo -e "See: ${GREEN}/usr/share/aglan/readme.md${NC}"
+echo -e "Run demo: ${GREEN}/usr/share/aglan/runme.bash${NC}"
+exit 0
