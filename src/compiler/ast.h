@@ -189,6 +189,7 @@ struct Class : AbstractClass {
 	bool is_interface = false;
 	bool is_test = false;
 	bool is_defined = false;
+	bool used = false;  // instantiated, casted to, or has used descendants
 	weak<AbstractClass> base_class; // Class or ClassInstance
 	vector<own<ClassParam>> params;
 	vector<own<Field>> fields;
@@ -474,6 +475,7 @@ struct Function : MkLambda {  // Cannot be in the tree of ops. Resides in Ast::f
 	own<Action> type_expression;
 	bool is_platform = false;
 	bool is_test = false;
+	bool used = false;  // there is a get(Function), of for mk_delegate(method) used is stored in method->base
 	DECLARE_DOM_CLASS(Function);
 };
 
@@ -483,7 +485,7 @@ struct ImmediateDelegate : Function {
 	DECLARE_DOM_CLASS(ImmediateDelegate);
 };
 
-struct Method : Function {  // Cannot be in the tree of ops. Resides in TpClass::new_methods/overloads.
+struct Method : Function {  // Cannot be in the tree of ops. Resides in Class::new_methods/overloads.
 	weak<Method> ovr;  // direct method that was overridden by this one
 	weak<Method> base; // first original class/interface method that was implemented by this one
 	weak<Class> cls;  // class in which this method is declared.
@@ -586,7 +588,7 @@ struct BinaryOp : Action {
 	own<Action> p[2];
 };
 
-struct CastOp : BinaryOp {
+struct CastOp : BinaryOp { // p[0] can be null to indicate no-op conversion of p[1] to this.type()
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(CastOp);
 };

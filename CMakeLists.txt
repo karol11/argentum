@@ -70,6 +70,9 @@ set(ag_sources
     src/compiler/type-checker.h
     src/compiler/type-checker.cpp
 
+    src/compiler/pruner.h
+    src/compiler/pruner.cpp
+
     src/compiler/const-capture-pass.h
     src/compiler/const-capture-pass.cpp
 
@@ -121,3 +124,4 @@ add_library (ag_runtime STATIC
     src/runtime/sdl-bindings.c
 )
 set_property(TARGET ag_runtime PROPERTY C_STANDARD 11)
+set_property(TARGET ag_runtime PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")

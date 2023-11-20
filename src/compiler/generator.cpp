@@ -528,9 +528,9 @@ struct Generator : ast::ActionScanner {
 		if (!di_builder)
 			return;
 		for (auto& c : ast->classes_in_order) {
-			if (c->is_interface)
+			if (c->is_interface || !c->used)
 				continue;
-			auto& ci = classes[c];
+			auto& ci = classes.at(c);
 			ci.di_cls = di_builder->createClassType(
 				nullptr,
 				ast::format_str("ag_cls_", c->get_name()),
@@ -540,17 +540,17 @@ struct Generator : ast::ActionScanner {
 				0,  // align: layout.getABITypeAlign(field_type).value() * 8,
 				0,  // offset
 				llvm::DINode::DIFlags::FlagNonTrivial,
-				c->base_class ? classes[c->base_class].di_cls : di_obj_struct,
+				c->base_class ? classes.at(c->base_class).di_cls : di_obj_struct,
 				nullptr,  // fields
 				di_obj_struct);
 			ci.di_ptr = di_builder->createPointerType(ci.di_cls, 64);
 		}
 		for (auto& c : ast->classes_in_order) {
-			if (c->is_interface)
+			if (c->is_interface || !c->used)
 				continue;
-			auto& ci = classes[c];
+			auto& ci = classes.at(c);
 			vector<llvm::Metadata*> di_fields;
-			auto base_fields = c->base_class ? classes[c->base_class].fields : obj_struct;
+			auto base_fields = c->base_class ? classes.at(c->base_class).fields : obj_struct;
 			size_t base_size = layout.getTypeAllocSize(base_fields) * 8;
 			auto struct_layout = layout.getStructLayout(ci.fields);
 			size_t i = 0;
@@ -558,7 +558,7 @@ struct Generator : ast::ActionScanner {
 				i++; // skip base fields
 			di_fields.push_back(di_builder->createInheritance(
 				ci.di_cls,
-				c->base_class ? classes[c->base_class].di_cls : di_obj_struct,
+				c->base_class ? classes.at(c->base_class).di_cls : di_obj_struct,
 				0,  // base offset
 				0,  // vptr offset
 				llvm::DINode::DIFlags::FlagZero));
@@ -892,7 +892,7 @@ struct Generator : ast::ActionScanner {
 	void on_const_string(ast::ConstString& node) override {
 		auto& str = string_literals[node.value];
 		if (!str) {
-			auto& cls = classes[ast->string_cls];
+			auto& cls = classes.at(ast->string_cls);
 			auto str_name = ast::format_str("ag_str_", &node);
 			module->getOrInsertGlobal(str_name, cls.fields);
 			str = module->getGlobalVariable(str_name);
@@ -943,12 +943,12 @@ struct Generator : ast::ActionScanner {
 				else if (isa<ast::TpVoid>(*type.wrapped)) result = gen->di_byte;
 				else type.wrapped->match(*this);
 			}
-			void on_own(ast::TpOwn& type) override { result = gen->classes[type.target->get_implementation()].di_ptr; }
-			void on_ref(ast::TpRef& type) override { result = gen->classes[type.target->get_implementation()].di_ptr; }
-			void on_shared(ast::TpShared& type) override { result = gen->classes[type.target->get_implementation()].di_ptr; }
+			void on_own(ast::TpOwn& type) override { result = gen->classes.at(type.target->get_implementation()).di_ptr; }
+			void on_ref(ast::TpRef& type) override { result = gen->classes.at(type.target->get_implementation()).di_ptr; }
+			void on_shared(ast::TpShared& type) override { result = gen->classes.at(type.target->get_implementation()).di_ptr; }
 			void on_weak(ast::TpWeak& type) override { result = gen->di_weak_ptr; }
 			void on_frozen_weak(ast::TpFrozenWeak& type) override { result = gen->di_weak_ptr; }
-			void on_conform_ref(ast::TpConformRef& type) override { result = gen->classes[type.target->get_implementation()].di_ptr;; }
+			void on_conform_ref(ast::TpConformRef& type) override { result = gen->classes.at(type.target->get_implementation()).di_ptr;; }
 			void on_conform_weak(ast::TpConformWeak& type) override { result = gen->di_weak_ptr; }
 			void on_delegate(ast::TpDelegate& type) override { result = gen->di_delegate; }
 			void on_no_ret(ast::TpNoRet& type) override { assert(false); }
@@ -1425,16 +1425,16 @@ struct Generator : ast::ActionScanner {
 	void on_make_delegate(ast::MakeDelegate& node) override {
 		auto base = compile(node.base);
 		auto method = node.method->base.pinned();
-		auto m_ordinal = methods[method].ordinal;
+		auto m_ordinal = methods.at(method).ordinal;
 		auto build_non_null_pin_to_entry_point_code = [&] (llvm::Value* base_pin) {
 			auto disp = builder->CreateLoad(ptr_type, builder->CreateConstGEP2_32(obj_struct, base_pin, AG_HEADER_OFFSET, 0));
 			return method->cls->is_interface
 				? (llvm::Value*)builder->CreateCall(
 					llvm::FunctionCallee(dispatcher_fn_type, disp),
-					{ builder->getInt64(classes[method->cls].interface_ordinal | m_ordinal) })
+					{ builder->getInt64(classes.at(method->cls).interface_ordinal | m_ordinal) })
 				: (llvm::Value*)builder->CreateLoad(
 					ptr_type,
-					builder->CreateConstGEP2_32(classes[method->cls].vmt, disp, -1, m_ordinal));
+					builder->CreateConstGEP2_32(classes.at(method->cls).vmt, disp, -1, m_ordinal));
 		};
 		result->data = builder->CreateInsertValue(
 			builder->CreateInsertValue(
@@ -1477,7 +1477,7 @@ struct Generator : ast::ActionScanner {
 	}
 
 	void on_make_fn_ptr(ast::MakeFnPtr& node) {
-		result->data = functions[node.fn];
+		result->data = functions.at(node.fn);
 	}
 
 	void on_call(ast::Call& node) override {
@@ -1493,7 +1493,7 @@ struct Generator : ast::ActionScanner {
 		if (auto calle_as_method = dom::strict_cast<ast::MakeDelegate>(node.callee)) {
 			params.push_back(nullptr);
 			auto method = calle_as_method->method->base.pinned();
-			auto& m_info = methods[method];
+			auto& m_info = methods.at(method);
 			auto pt = m_info.type->params().begin() + 1;
 			for (auto& p : node.params) {
 				params.push_back(cast_to(
@@ -1513,7 +1513,7 @@ struct Generator : ast::ActionScanner {
 						dispatcher_fn_type,
 						builder->CreateLoad(ptr_type, builder->CreateConstGEP2_32(obj_struct, receiver, AG_HEADER_OFFSET, 0))
 					),
-					{ builder->getInt64(classes[method->cls].interface_ordinal | m_info.ordinal) });
+					{ builder->getInt64(classes.at(method->cls).interface_ordinal | m_info.ordinal) });
 				result->data = builder->CreateCall(
 					llvm::FunctionCallee(m_info.type, entry_point),
 					move(params));
@@ -1524,7 +1524,7 @@ struct Generator : ast::ActionScanner {
 						builder->CreateLoad(  // load ptr to fn
 							ptr_type,
 							builder->CreateConstGEP2_32(
-								classes[method->cls].vmt,
+								classes.at(method->cls).vmt,
 								builder->CreateLoad(ptr_type, builder->CreateConstGEP2_32(obj_struct, receiver, AG_HEADER_OFFSET, 0)),
 								-1,
 								m_info.ordinal))),
@@ -1903,7 +1903,7 @@ struct Generator : ast::ActionScanner {
 	}
 	void on_get_field(ast::GetField& node) override {
 		auto base = compile(node.base);
-		auto class_fields = classes[ast->extract_class(base.type)->get_implementation()].fields;
+		auto class_fields = classes.at(ast->extract_class(base.type)->get_implementation()).fields;
 		result->data = builder->CreateLoad(
 			class_fields->getElementType(node.field->offset),
 			builder->CreateStructGEP(class_fields, base.data, node.field->offset));
@@ -1920,7 +1920,7 @@ struct Generator : ast::ActionScanner {
 		}
 	}
 	void on_set_field(ast::SetField& node) override {
-		auto class_fields = classes[ast->extract_class(node.base->type())->get_implementation()].fields;
+		auto class_fields = classes.at(ast->extract_class(node.base->type())->get_implementation()).fields;
 		if (is_ptr(node.type())) {
 			auto base = comp_to_persistent(node.base);
 			size_t breaks_after_base = active_breaks.size();
@@ -1956,7 +1956,7 @@ struct Generator : ast::ActionScanner {
 		}
 	}
 	void on_splice_field(ast::SpliceField& node) override {
-		auto class_fields = classes[ast->extract_class(node.base->type())->get_implementation()].fields;
+		auto class_fields = classes.at(ast->extract_class(node.base->type())->get_implementation()).fields;
 		auto base = comp_to_persistent(node.base);
 		size_t breaks_after_base = active_breaks.size();
 		auto val = compile(node.val);
@@ -1979,7 +1979,7 @@ struct Generator : ast::ActionScanner {
 		dispose_val(base, breaks_after_base);
 	}
 	void on_mk_instance(ast::MkInstance& node) override {
-		result->data = builder->CreateCall(classes[node.cls->get_implementation()].constructor, {});
+		result->data = builder->CreateCall(classes.at(node.cls->get_implementation()).constructor, {});
 		result->lifetime = Val::Retained{};
 	}
 	void on_to_int(ast::ToIntOp& node) override {
@@ -2021,7 +2021,7 @@ struct Generator : ast::ActionScanner {
 		if (!cls) node.error("internal error, in this iteration cast to inst or param is not supported");
 		assert(cls); 
 		*result = compile(node.p[0]);
-		auto& cls_info = classes[cls];
+		auto& cls_info = classes.at(cls);
 		if (cls->is_interface) {
 			auto interface_ordinal = builder->getInt64(cls_info.interface_ordinal);
 			auto id = builder->CreateCall(
@@ -2044,7 +2044,7 @@ struct Generator : ast::ActionScanner {
 		*result = compile_if(
 			*result_type,
 			builder->CreateCmp(llvm::CmpInst::Predicate::ICMP_ULE,
-				builder->getInt64(classes[cls].vmt_size),
+				builder->getInt64(classes.at(cls).vmt_size),
 				builder->CreateLoad(tp_int_ptr,
 					builder->CreateConstGEP2_32(obj_vmt_struct, vmt_ptr, -1, AG_VMT_FIELD_VMT_SIZE))),
 			[&] {
@@ -2891,6 +2891,8 @@ struct Generator : ast::ActionScanner {
 		}
 		// Make LLVM types for classes
 		for (auto& cls : ast->classes_in_order) {
+			if (!cls->used)
+				continue;
 			auto c_name = ast::format_str("ag_cls_", cls->get_name());
 			auto& info = classes[cls];
 			if (cls->is_interface) {
@@ -2943,12 +2945,14 @@ struct Generator : ast::ActionScanner {
 		// Make llvm types for fields.
 		// Fill llvm structs for classes with fields.
 		for (auto& cls : ast->classes_in_order) {
-			auto& info = classes[cls];
+			if (!cls->used)
+				continue;
+			auto& info = classes.at(cls);
 			if (cls->is_interface)
 				continue;
 			vector<llvm::Type*> fields;
 			if (cls->base_class) {
-				const auto& base_fields = classes[cls->base_class].fields->elements();
+				const auto& base_fields = classes.at(cls->base_class).fields->elements();
 				for (auto& f : base_fields)
 					fields.push_back(f);
 			} else {
@@ -2966,9 +2970,13 @@ struct Generator : ast::ActionScanner {
 		// Make llvm types for methods.
 		// Define llvm types for vmts.
 		for (auto& cls : ast->classes_in_order) {
-			auto& info = classes[cls];
+			if (!cls->used)
+				continue;
+			auto& info = classes.at(cls);
 			vector<llvm::Type*> vmt_content{ dispatcher_fn_type->getPointerTo()};  // interface/class id for casts
 			for (auto& m : cls->new_methods) {
+				if (!m->base->used)
+					continue;
 				vector<llvm::Type*> params;
 				for (auto& p : m->names)
 					params.push_back(to_llvm_type(*p->type));
@@ -2982,11 +2990,13 @@ struct Generator : ast::ActionScanner {
 				vmt_content.push_back(m_info.type->getPointerTo());
 			}
 			if (cls->base_class) {  // !interface && !Object
-				auto& base_info = classes[cls->base_class];
+				auto& base_info = classes.at(cls->base_class);
 				size_t base_index = vmt_content.size();
 				for (auto& mt : base_info.vmt->elements())
 					vmt_content.push_back(mt);
 				for (auto& m : cls->overloads[cls->base_class]) {
+					if (!m->base->used)
+						continue;
 					auto& m_info = methods[m];
 					auto& m_overridden = methods.at(m->ovr);
 					m_info.ordinal = m_overridden.ordinal + base_index;
@@ -3014,6 +3024,8 @@ struct Generator : ast::ActionScanner {
 		}
 		for (auto& m : ast->modules) {
 			for (auto& fn : m.second->functions) {
+				if (!fn.second->used)
+					continue;
 				functions.insert({ fn.second, llvm::Function::Create(
 					function_to_llvm_fn(*fn.second, fn.second->type()),
 					fn.second->is_platform
@@ -3028,8 +3040,10 @@ struct Generator : ast::ActionScanner {
 		for (auto& cls : ast->classes_in_order) {
 			if (cls->is_interface)
 				continue;
-			auto& info = classes[cls];
-			ClassInfo* base_info = cls->base_class && cls->base_class != ast->object ? &classes[cls->base_class] : nullptr;
+			if (!cls->used)
+				continue;
+			auto& info = classes.at(cls);
+			ClassInfo* base_info = cls->base_class && cls->base_class != ast->object ? &classes.at(cls->base_class) : nullptr;
 			info.dispose = llvm::Function::Create(
 				dispose_fn_type,
 				special_copy_and_dispose.count(cls) == 0
@@ -3068,7 +3082,7 @@ struct Generator : ast::ActionScanner {
 				if (auto manual_disposer_fn = cls->module->functions.find("dispose" + cls->name); manual_disposer_fn != cls->module->functions.end()) {
 					// TODO: check prototype
 					builder.CreateCall(
-						functions[manual_disposer_fn->second.pinned()],
+						functions.at(manual_disposer_fn->second.pinned()),
 						{ cast_to(info.dispose->getArg(0), info.fields->getPointerTo()) });
 				}
 				if (base_info)
@@ -3139,7 +3153,7 @@ struct Generator : ast::ActionScanner {
 						fn_reg_copy_fixer,
 						{
 							cast_to(info.copier->getArg(0), ptr_type),
-							cast_to(functions[manual_fixer_fn->second.pinned()], ptr_type)
+							cast_to(functions.at(manual_fixer_fn->second.pinned()), ptr_type)
 						});
 				}
 				if (base_info)
@@ -3191,18 +3205,22 @@ struct Generator : ast::ActionScanner {
 			// Class methods
 			info.vmt_fields.push_back(info.dispatcher);  // class id for casts
 			for (auto& m : cls->new_methods) {
-				auto& m_info = methods[m];
+				if (!m->base->used)
+					continue;
+				auto& m_info = methods.at(m);
 				info.vmt_fields.push_back(compile_function(*m,
 					ast::format_str("ag_m_", cls->get_name(), '_', ast::LongName{ m->name, m->base_module }),
 					info.fields->getPointerTo(),
 					m->is_platform));
 			}
 			if (cls->base_class) {
-				auto& base_vmt = classes[cls->base_class].vmt_fields;
+				auto& base_vmt = classes.at(cls->base_class).vmt_fields;
 				for (size_t i = 0, j = base_vmt.size() - 1; i < j; i++)
 					info.vmt_fields.push_back(base_vmt[i]);
 				for (auto& m : cls->overloads[cls->base_class]) { // for overrides
-					auto& m_info = methods[m];
+					if (!m->base->used)
+						continue;
+					auto& m_info = methods.at(m);
 					info.vmt_fields[m_info.ordinal] = compile_function(*m,
 						ast::format_str("ag_m_", cls->get_name(), '_', ast::LongName{ m->name, m->base_module }),
 						info.fields->getPointerTo(),
@@ -3216,14 +3234,17 @@ struct Generator : ast::ActionScanner {
 				builder.getInt64(layout.getTypeStoreSize(info.fields)),
 				builder.getInt64(info.vmt_size) }));
 			info.dispatcher->setPrefixData(llvm::ConstantStruct::get(info.vmt, move(info.vmt_fields)));
-			size_t interfaces_count = cls->interface_vmts.size();
 			// Interface methods
 			unordered_map<uint64_t, llvm::Constant*> vmts;  // interface_id->vmt_struct
 			for (auto& i : cls->interface_vmts) {
+				if (!i.first->used)
+					continue;
 				vector<llvm::Constant*> methods {
-					llvm::ConstantExpr::getIntegerValue(ptr_type, llvm::APInt(64, classes[i.first].interface_ordinal, false)) };
+					llvm::ConstantExpr::getIntegerValue(ptr_type, llvm::APInt(64, classes.at(i.first).interface_ordinal, false)) };
 				methods.reserve(i.second.size() + 1);
 				for (auto& m : i.second) {
+					if (!m->base->used)
+						continue;
 					methods.push_back(llvm::ConstantExpr::getBitCast(
 						compile_function(
 							*m.pinned(),
@@ -3233,7 +3254,7 @@ struct Generator : ast::ActionScanner {
 						ptr_type));
 				}
 				vmts.insert({
-					classes[i.first].interface_ordinal,
+					classes.at(i.first).interface_ordinal,
 					make_const_array(
 						ast::format_str("mt_", cls->get_name(), "_", i.first->get_name()),
 						move(methods))});
@@ -3255,8 +3276,8 @@ struct Generator : ast::ActionScanner {
 		// Compile standalone functions.
 		for (auto& m : ast->modules) {
 			for (auto& fn : m.second->functions) {
-				if (!fn.second->is_platform) {
-					current_ll_fn = functions[fn.second];
+				if (fn.second->used && !fn.second->is_platform) {
+					current_ll_fn = functions.at(fn.second);
 					compile_fn_body(*fn.second, ast::format_str("ag_fn_", m.first, "_", fn.first));
 				}
 			}

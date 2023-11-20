@@ -5,6 +5,7 @@
 #include "compiler/parser.h"
 #include "compiler/name-resolver.h"
 #include "compiler/type-checker.h"
+#include "compiler/pruner.h"
 #include "compiler/const-capture-pass.h"
 #include "runtime/runtime.h"
 
@@ -60,6 +61,7 @@ void execute(const char* source_text, bool dump_all = false) {
     });
     resolve_names(ast);
     check_types(ast);
+    prune(ast);
     const_capture_pass(ast);
     if (dump_all)
         std::cout << std::make_pair(ast.pinned(), ast->dom.pinned()) << "\n";
