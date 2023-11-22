@@ -1085,12 +1085,8 @@ void ag_visit_sys_Thread(
 void ag_init() {
 	ag_current_thread = &ag_main_thread;
 }
-/*
 
-	Ðost from ag thread:
-
-*/
-
+// Used by FFI, not by Ag
 // Receiver must be locked.
 // Returns thread or NULL if receiver is dead.
 ag_thread* ag_prepare_post(AgWeak* recv, void* tramp, void* entry_point, int64_t params_count) {

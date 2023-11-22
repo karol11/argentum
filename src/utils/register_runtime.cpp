@@ -226,9 +226,9 @@ void register_runtime_content(struct ast::Ast& ast) {
 		{ "ag_unlock_thread_queue", FN(ag_unlock_thread_queue) }, // used in trampoline
 		{ "ag_get_thread_param", FN(ag_get_thread_param) }, // used in trampoline
 		{ "ag_prepare_post_from_ag", FN(ag_prepare_post_from_ag) }, // used in post~message
-		{ "ag_put_thread_param", FN(ag_post_param_from_ag) }, // used in post~message
-		{ "ag_put_thread_param_weak_ptr", FN(ag_post_weak_param_from_ag) }, // used in post~message
-		{ "ag_put_thread_param_own_ptr", FN(ag_post_own_param_from_ag) }, // used in post~message
+		{ "ag_post_param_from_ag", FN(ag_post_param_from_ag) }, // used in post~message
+		{ "ag_post_weak_param_from_ag", FN(ag_post_weak_param_from_ag) }, // used in post~message
+		{ "ag_post_own_param_from_ag", FN(ag_post_own_param_from_ag) }, // used in post~message
 		{ "ag_handle_main_thread", FN(ag_handle_main_thread) },
 
 		{ "ag_copy_sys_Container", FN(ag_copy_sys_Container) },

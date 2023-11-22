@@ -218,6 +218,7 @@ typedef void (*ag_trampoline) (AgObject* self, ag_fn entry_point, ag_thread* thr
 // 4. release params
 
 // Posting async messages from FFI depends on what thread is this FFI function works on.
+// // If it's an argentum thread, use:
 // thread* t = ag_prepare_post_from_ag(receiver_obj, entry_point, trampoline, params_count);
 // ag_post_*_param_from_ag...
 ag_thread* ag_prepare_post_from_ag      (AgWeak* receiver, ag_fn fn, ag_trampoline tramp, size_t params_count);
@@ -225,7 +226,7 @@ void       ag_post_param_from_ag        (uint64_t param);
 void       ag_post_weak_param_from_ag   (AgWeak* param);
 void       ag_post_own_param_from_ag    (ag_thread* th, AgObject* param);
 
-// If a call is originated from some thread created by FFI functions, or by external library (usual case):
+// If a call is originated from some thread created by FFI functions, or by external library (usual case), use:
 // ag_thread* t = ag_prepare_post(ag_retain_weak(receiver_obj), trampoline, entry_point, params_count);
 // if (t) {
 //    ag_post_*_param...
@@ -239,7 +240,7 @@ void       ag_finalize_post   (ag_thread* th);
 // Foreign function should put (using ag_put_thread_param) the same number of params in the same order
 // as the trampoline function invoked on AG-thread is going to read with ag_get_thread_param.
 
-// If a foreign function wants to store an object or a weak pointer in its own thread, it should call `ag_detach_*` before transfer.
+// If a foreign function wants to store an object or a weak pointer in its own thread, it should call `ag_detach_*` while on ag thread.
 // Detached objects can be passed as parameters to async messages, but they can't be receivers of async messages.
 void       ag_detach_own      (AgObject*);
 void       ag_detach_weak     (AgWeak*);
