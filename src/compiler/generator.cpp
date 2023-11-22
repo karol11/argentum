@@ -236,7 +236,6 @@ struct Generator : ast::ActionScanner {
 	llvm::Function* fn_put_thread_param = nullptr;   // void (int64 val)
 	llvm::Function* fn_put_thread_param_own_ptr = nullptr;   // void (?ag_hread*, Obj* val)
 	llvm::Function* fn_put_thread_param_weak_ptr = nullptr;   // void (?ag_hread*, Weak* val)
-	llvm::Function* fn_finalize_post_message = nullptr;   // void (?ag_hread*)
 	llvm::Function* fn_handle_main_thread = nullptr;   // int (void)
 	llvm::Function* fn_terminate = nullptr;   // void(void)
 	llvm::Function* fn_eq_mut = nullptr;   // bool(Obj*, Obj*)
@@ -435,27 +434,22 @@ struct Generator : ast::ActionScanner {
 		fn_prepare_post_message = llvm::Function::Create(
 			llvm::FunctionType::get(ptr_type, { ptr_type, ptr_type, ptr_type, int_type }, false),
 			llvm::Function::ExternalLinkage,
-			"ag_prepare_post_message",
+			"ag_prepare_post_from_ag",
 			*module);
 		fn_put_thread_param = llvm::Function::Create(
-			llvm::FunctionType::get(void_type, { ptr_type, int_type }, false),
+			llvm::FunctionType::get(void_type, { int_type }, false),
 			llvm::Function::ExternalLinkage,
-			"ag_put_thread_param",
+			"ag_post_param_from_ag",
 			*module);
 		fn_put_thread_param_own_ptr = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { ptr_type, ptr_type }, false),
 			llvm::Function::ExternalLinkage,
-			"ag_put_thread_param_own_ptr",
+			"ag_post_own_param_from_ag",
 			*module);
 		fn_put_thread_param_weak_ptr = llvm::Function::Create(
-			llvm::FunctionType::get(void_type, { ptr_type, ptr_type }, false),
-			llvm::Function::ExternalLinkage,
-			"ag_put_thread_param_weak_ptr",
-			*module);
-		fn_finalize_post_message = llvm::Function::Create(
 			llvm::FunctionType::get(void_type, { ptr_type }, false),
 			llvm::Function::ExternalLinkage,
-			"ag_finalize_post_message",
+			"ag_post_weak_param_from_ag",
 			*module);
 		fn_handle_main_thread = llvm::Function::Create(
 			llvm::FunctionType::get(int_type, {}, false),
@@ -1792,25 +1786,30 @@ struct Generator : ast::ActionScanner {
 		auto calle_type = dom::strict_cast<ast::TpDelegate>(callee.type);
 		size_t params_size = 0;
 		auto tramp = build_trampoline(calle_type, params_size);
+		vector<Val> params;
+		for (auto& p : node.params) {
+			params.push_back(compile(p));
+			make_retained_or_non_ptr(params.back());
+		}
 		llvm::Value* thread_ptr = builder->CreateCall( fn_prepare_post_message, {
 			builder->CreateExtractValue(callee.data, { 0 }),
 			builder->CreateExtractValue(callee.data, { 1 }),
 			tramp,
 			builder->getInt64(params_size) });
-		for (auto& p : node.params) {
+		for (auto& v : params) {
 			struct TypeSerializer : ast::TypeMatcher {
 				Generator& gen;
 				llvm::Value* thread;
 				llvm::Value* value;
 				TypeSerializer(Generator& gen, llvm::Value* thread, llvm::Value* value) : gen(gen), thread(thread), value(value) {}
 				void handle_64_bit() {
-					gen.builder->CreateCall(gen.fn_put_thread_param, { thread, gen.cast_to(value, gen.int_type) });
+					gen.builder->CreateCall(gen.fn_put_thread_param, { gen.cast_to(value, gen.int_type) });
 				}
 				void handle_own() {
 					gen.builder->CreateCall(gen.fn_put_thread_param_own_ptr, { thread, gen.cast_to(value, gen.ptr_type) });
 				}
 				void handle_weak() {
-					gen.builder->CreateCall(gen.fn_put_thread_param_weak_ptr, { thread, gen.cast_to(value, gen.ptr_type) });
+					gen.builder->CreateCall(gen.fn_put_thread_param_weak_ptr, { gen.cast_to(value, gen.ptr_type) });
 				}
 				void on_int64(ast::TpInt64& type) override { handle_64_bit(); }
 				void on_double(ast::TpDouble& type) override { handle_64_bit(); }
@@ -1818,11 +1817,9 @@ struct Generator : ast::ActionScanner {
 				void on_lambda(ast::TpLambda& type) override { assert(false); }
 				void on_delegate(ast::TpDelegate& type) override {
 					gen.builder->CreateCall(gen.fn_put_thread_param_weak_ptr, {
-						thread,
 						gen.cast_to(gen.builder->CreateExtractValue(value, { 0 }), gen.ptr_type)
 					});
 					gen.builder->CreateCall(gen.fn_put_thread_param, {
-						thread,
 						gen.cast_to(gen.builder->CreateExtractValue(value, { 1 }), gen.int_type)
 					});
 				}
@@ -1831,11 +1828,9 @@ struct Generator : ast::ActionScanner {
 				void on_optional(ast::TpOptional& type) override {
 					if (dom::isa<ast::TpInt64>(*type.wrapped)) {
 						gen.builder->CreateCall(gen.fn_put_thread_param, {
-							thread,
 							gen.cast_to(gen.builder->CreateExtractValue(value, { 0 }), gen.int_type)
 						});
 						gen.builder->CreateCall(gen.fn_put_thread_param, {
-							thread,
 							gen.cast_to(gen.builder->CreateExtractValue(value, { 1 }), gen.int_type)
 						});
 					} else if (dom::isa<ast::TpVoid>(*type.wrapped)) {
@@ -1853,12 +1848,9 @@ struct Generator : ast::ActionScanner {
 				void on_conform_weak(ast::TpConformWeak& type) override { handle_weak(); }
 				void on_no_ret(ast::TpNoRet& type) override { assert(false); }
 			};
-			auto v = compile(p);
-			make_retained_or_non_ptr(v);
 			TypeSerializer ts(*this, thread_ptr, v.data);
-			p->type()->match(ts);
+			v.type->match(ts);
 		}
-		builder->CreateCall(fn_finalize_post_message, { thread_ptr });
 	}
 
 	llvm::Value* get_data_ref(const weak<ast::Var>& var) {

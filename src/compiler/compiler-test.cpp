@@ -35,9 +35,8 @@ void void_void_tramp(AgObject* self, ag_fn entry_point, ag_thread* th) {
 }
 void callback_invoker(AgWeak* cb_data, ag_fn cb_entry_point) {
     ag_retain_weak(cb_data);
-    auto th = ag_prepare_post_message(cb_data, cb_entry_point, void_void_tramp, 0);
+    auto th = ag_prepare_post_from_ag(cb_data, cb_entry_point, void_void_tramp, 0);
     // post params here
-    ag_finalize_post_message(th);
 }
 
 void ag_assert_i_eq(int64_t expected, int64_t actual) {

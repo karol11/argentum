@@ -179,6 +179,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 	ast.mk_fn("hash", FN(ag_fn_sys_hash), new ast::ConstInt64, { ast.get_conform_ref(ast.object) });
 	ast.mk_fn("terminate", FN(ag_fn_sys_terminate), new ast::ConstVoid, { ast.tp_int64() });
 	ast.mk_fn("setMainObject", FN(ag_fn_sys_setMainObject), new ast::ConstVoid, { ast.tp_optional(ast.get_ref(ast.object))});
+	ast.mk_fn("weakExists", FN(ag_fn_sys_weakExists), new ast::ConstBool, { ast.get_weak(ast.object) });
 	ast.mk_fn("postTimer", FN(ag_fn_sys_postTimer), new ast::ConstVoid, {
 		ast.tp_int64(),
 		ast.tp_delegate({ ast.tp_void() })
@@ -224,11 +225,10 @@ void register_runtime_content(struct ast::Ast& ast) {
 		{ "ag_eq_shared", FN(ag_eq_shared) },
 		{ "ag_unlock_thread_queue", FN(ag_unlock_thread_queue) }, // used in trampoline
 		{ "ag_get_thread_param", FN(ag_get_thread_param) }, // used in trampoline
-		{ "ag_prepare_post_message", FN(ag_prepare_post_message) }, // used in post~message
-		{ "ag_put_thread_param", FN(ag_put_thread_param) }, // used in post~message
-		{ "ag_put_thread_param_weak_ptr", FN(ag_put_thread_param_weak_ptr) }, // used in post~message
-		{ "ag_put_thread_param_own_ptr", FN(ag_put_thread_param_own_ptr) }, // used in post~message
-		{ "ag_finalize_post_message", FN(ag_finalize_post_message) }, // used in post~message
+		{ "ag_prepare_post_from_ag", FN(ag_prepare_post_from_ag) }, // used in post~message
+		{ "ag_put_thread_param", FN(ag_post_param_from_ag) }, // used in post~message
+		{ "ag_put_thread_param_weak_ptr", FN(ag_post_weak_param_from_ag) }, // used in post~message
+		{ "ag_put_thread_param_own_ptr", FN(ag_post_own_param_from_ag) }, // used in post~message
 		{ "ag_handle_main_thread", FN(ag_handle_main_thread) },
 
 		{ "ag_copy_sys_Container", FN(ag_copy_sys_Container) },

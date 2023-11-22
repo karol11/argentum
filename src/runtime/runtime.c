@@ -658,6 +658,10 @@ AgObject* ag_fn_sys_getParent(AgObject* obj) {  // obj not null, result is nulla
 	return (AgObject*)(r);
 }
 
+bool ag_fn_sys_weakExists(AgWeak* w) {
+	return ag_not_null(w) && w->target != NULL;
+}
+
 void ag_fn_sys_terminate(int result) {
 	exit(result);
 }
@@ -826,36 +830,27 @@ bool ag_fn_sys_postTimer(int64_t at, AgWeak* receiver, ag_fn fn) {
 	return true;
 }
 
-// returns mtx-locked thread or NULL if receiver's thread is dead
-// receiver goes prelocked
-ag_thread* ag_prepare_post_message(AgWeak* receiver, ag_fn fn, ag_trampoline tramp, size_t params_count) {
-	ag_thread* th = ag_lock_thread(receiver);
-	if (!th)
-		return NULL;
-	if (!ag_current_thread) {
-		pthread_mutex_unlock(&th->mutex);
-		return NULL; // todo add support for non-ag threads
-	}
+// returns non-null mtx-locked thread
+// receiver must be prelocked
+ag_thread* ag_prepare_post_from_ag(AgWeak* receiver, ag_fn fn, ag_trampoline tramp, size_t params_count) {
+	ag_thread* th = (ag_thread*)receiver->thread;
+	ag_thread* me = ag_current_thread;
+	assert(th);
+	assert(me); // must be called on ag-thread
 	// no need to lock out-queue thread b/c it's our thread
-	ag_queue* q = &ag_current_thread->out;
+	ag_queue* q = &me->out;
 	ag_resize_queue(
 		q,
 		params_count + 4);  // params_count + params + trampoline + entry_point + receiver_weak
-	ag_put_thread_param(th, (uint64_t) tramp);
-	ag_put_thread_param(th, (uint64_t) receiver); // if weak posted to another thread, it's already mt-marked, no need to mark it here
-	ag_put_thread_param(th, (uint64_t) fn);
-	ag_put_thread_param(th, (uint64_t) params_count);
+	ag_write_queue(q, (uint64_t)tramp);
+	ag_write_queue(q, (uint64_t)receiver); // if weak posted to another thread, it's already mt-marked, no need to mark it here
+	ag_write_queue(q, (uint64_t)fn);
+	ag_write_queue(q, (uint64_t)params_count);
 	return th;
 }
 
-void ag_put_thread_param(ag_thread* th, uint64_t param) {
-	if (th)
-		ag_write_queue(&ag_current_thread->out, param);
-}
-
-void ag_finalize_post_message(ag_thread* th) {
-	if (th)
-		pthread_mutex_unlock(&th->mutex);
+void ag_post_param_from_ag(uint64_t param) {
+	ag_write_queue(&ag_current_thread->out, param);
 }
 
 static inline void ag_make_weak_mt(AgWeak* w) {
@@ -887,10 +882,9 @@ void ag_bound_own_to_thread(AgObject* ptr, ag_thread* th) {
 	}
 }
 
-void ag_put_thread_param_weak_ptr(ag_thread* th, AgWeak* param) {
-	if (ag_current_thread != th)
-		ag_make_weak_mt(param);
-	ag_put_thread_param(th, (uint64_t)param);
+void ag_post_weak_param_from_ag(AgWeak* param) {
+	ag_make_weak_mt(param);
+	ag_write_queue(&ag_current_thread->out, (uint64_t)param);
 }
 
 void ag_bound_field_to_thread(void* field, int type, void* ctx) {
@@ -904,10 +898,10 @@ void ag_bound_field_to_thread(void* field, int type, void* ctx) {
 			buf->counter_mt |= 1;
 	}
 }
-void ag_put_thread_param_own_ptr(ag_thread* th, AgObject* param) {
+void ag_post_own_param_from_ag(ag_thread* th, AgObject* param) {
 	if (ag_current_thread != th)
 		ag_bound_own_to_thread(param, th);
-	ag_put_thread_param(th, (uint64_t)param);
+	ag_write_queue(&ag_current_thread->out, (uint64_t)param);
 }
 
 void ag_init_retain_buffer() {
@@ -1090,4 +1084,59 @@ void ag_visit_sys_Thread(
 
 void ag_init() {
 	ag_current_thread = &ag_main_thread;
+}
+/*
+
+	Ðost from ag thread:
+
+*/
+
+// Receiver must be locked.
+// Returns thread or NULL if receiver is dead.
+ag_thread* ag_prepare_post(AgWeak* recv, void* tramp, void* entry_point, int64_t params_count) {
+	ag_thread* th = ag_lock_thread(recv);
+	if (!th) {
+		ag_release_weak(recv);
+		return NULL;
+	}
+	ag_queue* q = &th->in;
+	ag_resize_queue(
+		q,
+		params_count + 3);  // trampoline + entry_point + receiver_weak + params
+	ag_write_queue(q, (uint64_t)tramp);
+	ag_write_queue(q, (uint64_t)recv);
+	ag_write_queue(q, (uint64_t)entry_point);
+	return th;
+}
+
+void ag_finalize_post(ag_thread* th) {
+	if (th)
+		ag_unlock_and_notify_thread(th);
+}
+void ag_post_param(ag_thread* th, uint64_t param) {
+	if (th)
+		ag_write_queue(&th->in, param);
+}
+void ag_post_own_param(ag_thread* th, AgObject* param) {
+	if (th) {
+		if (ag_current_thread != th)
+			ag_bound_own_to_thread(param, th);
+		ag_write_queue(&th->in, (uint64_t)param);
+	} else {
+		ag_release_own(param);
+	}
+}
+void ag_post_weak_param(ag_thread* th, AgWeak* param) {
+	if (th) {
+		ag_make_weak_mt(param);
+		ag_write_queue(&th->in, (uint64_t)param);
+	} else {
+		ag_release_weak(param);
+	}
+}
+void ag_detach_own(AgObject* obj) {
+	ag_bound_own_to_thread(obj, NULL);
+}
+void ag_detach_weak(AgWeak* w) {
+	ag_make_weak_mt(w);
 }

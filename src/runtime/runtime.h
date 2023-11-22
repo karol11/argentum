@@ -148,6 +148,12 @@ bool      ag_eq_shared          (AgObject* a, AgObject* b);
 
 AgObject* ag_fn_sys_getParent   (AgObject* obj);   // obj not null
 
+// Checks if a weak target exists.
+// Works cross-threads.
+// Eventually consistent.
+// I.e. sometimes can return true for lost objects.
+bool      ag_fn_sys_weakExists  (AgWeak* w);
+
 int64_t   ag_m_sys_Object_getHash (AgObject* obj);
 bool      ag_m_sys_Object_equals  (AgObject* a, AgObject *b);
 
@@ -211,17 +217,32 @@ typedef void (*ag_trampoline) (AgObject* self, ag_fn entry_point, ag_thread* thr
 // 3. if (self != null) execute entry_point(self, params)
 // 4. release params
 
-// Foreign function that wants to call a callback from a random thread should:
-// 1. call ag_prepare_post_message and check its result for null (null means receiver is no longer exists)
-// 2. call ag_put_thread_param for each 64-bit parameter (some parameters, like optInt and delegate require two ag_put_thread_param calls).
-// 3. call ag_finalize_post_message
+// Posting async messages from FFI depends on what thread is this FFI function works on.
+// thread* t = ag_prepare_post_from_ag(receiver_obj, entry_point, trampoline, params_count);
+// ag_post_*_param_from_ag...
+ag_thread* ag_prepare_post_from_ag      (AgWeak* receiver, ag_fn fn, ag_trampoline tramp, size_t params_count);
+void       ag_post_param_from_ag        (uint64_t param);
+void       ag_post_weak_param_from_ag   (AgWeak* param);
+void       ag_post_own_param_from_ag    (ag_thread* th, AgObject* param);
+
+// If a call is originated from some thread created by FFI functions, or by external library (usual case):
+// ag_thread* t = ag_prepare_post(ag_retain_weak(receiver_obj), trampoline, entry_point, params_count);
+// if (t) {
+//    ag_post_*_param...
+//    ag_finalize_post();
+// }
+ag_thread* ag_prepare_post    (AgWeak* receiver, void* tramp, void* entry_point, int64_t params_count);
+void       ag_post_param      (ag_thread* th, uint64_t param);
+void       ag_post_own_param  (ag_thread* th, AgObject* param);
+void       ag_post_weak_param (ag_thread* th, AgWeak* param);
+void       ag_finalize_post   (ag_thread* th);
 // Foreign function should put (using ag_put_thread_param) the same number of params in the same order
 // as the trampoline function invoked on AG-thread is going to read with ag_get_thread_param.
-ag_thread* ag_prepare_post_message      (AgWeak* receiver, ag_fn fn, ag_trampoline tramp, size_t params_count);
-void       ag_put_thread_param          (ag_thread* th, uint64_t param);
-void       ag_put_thread_param_weak_ptr (ag_thread* th, AgWeak* param);
-void       ag_put_thread_param_own_ptr  (ag_thread* th, AgObject* param);
-void       ag_finalize_post_message     (ag_thread* th);
+
+// If a foreign function wants to store an object or a weak pointer in its own thread, it should call `ag_detach_*` before transfer.
+// Detached objects can be passed as parameters to async messages, but they can't be receivers of async messages.
+void       ag_detach_own      (AgObject*);
+void       ag_detach_weak     (AgWeak*);
 
 //trampoline api
 uint64_t ag_get_thread_param    (ag_thread* th);
