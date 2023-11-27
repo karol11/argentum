@@ -79,15 +79,6 @@ void ag_free(void* data) {
 
 #endif
 
-#define AG_THREAD_QUEUE_SIZE 8192
-
-typedef struct ag_queue_tag {
-	int64_t* start;
-	int64_t* end;
-	int64_t* read_pos;
-	int64_t* write_pos;
-} ag_queue;
-
 typedef struct ag_thread_tag {
 	ag_queue        in;
 	ag_queue        out;
@@ -637,11 +628,6 @@ bool ag_m_sys_String_equals(AgObject* a, AgObject* b) {
 	return strcmp(((AgString*)a)->ptr, ((AgString*)b)->ptr);
 }
 
-static void ag_init_queue(ag_queue* q) {
-	q->read_pos = q->write_pos = q->start = AG_ALLOC(sizeof(int64_t) * AG_THREAD_QUEUE_SIZE);
-	q->end = q->start + AG_THREAD_QUEUE_SIZE;
-}
-
 static void ag_init_thread(ag_thread* th) {
 	ag_init_queue(&th->in);
 	ag_init_queue(&th->out);
@@ -667,48 +653,6 @@ bool ag_fn_sys_setMainObject(AgObject* s) {
 	th->root = s;
 	AG_TRACE0("set main object]");
 	return true;
-}
-
-void ag_resize_queue(ag_queue* q, size_t space_needed) {
-	size_t free_space = q->read_pos > q->write_pos
-		? q->write_pos - q->read_pos
-		: (q->end - q->start) - (q->write_pos - q->read_pos);
-	if (free_space < space_needed) {
-		uint64_t new_size = (q->end - q->start) * 2 + space_needed;
-		uint64_t* new_buf = AG_ALLOC(sizeof(uint64_t) * new_size);
-		if (!new_buf)
-			exit(-42);
-		if (q->read_pos > q->write_pos) {
-			size_t r_size = q->end - q->read_pos;
-			size_t w_size = q->write_pos - q->start;
-			memcpy(new_buf + new_size - r_size, q->read_pos, sizeof(uint64_t) * (r_size));
-			memcpy(new_buf, q->start, sizeof(uint64_t) * (w_size));
-			AG_FREE(q->start);
-			q->read_pos = new_buf + new_size - r_size;
-			q->write_pos = new_buf + w_size;
-		} else {
-			size_t size = q->write_pos - q->read_pos;
-			memcpy(new_buf, q->read_pos, sizeof(uint64_t) * size);
-			AG_FREE(q->start);
-			q->read_pos = new_buf;
-			q->write_pos = new_buf + size;
-		}
-		q->start = new_buf;
-		q->end = new_buf + new_size;
-	}
-}
-
-uint64_t ag_read_queue(ag_queue* q) {
-	uint64_t r = *q->read_pos;
-	if (++q->read_pos == q->end)
-		q->read_pos = q->start;
-	return r;
-}
-
-void ag_write_queue(ag_queue* q, uint64_t param) {
-	*q->write_pos = param;
-	if (++q->write_pos == q->end)
-		q->write_pos = q->start;
 }
 
 uint64_t ag_get_thread_param(ag_thread* th) {  // for trampolines
