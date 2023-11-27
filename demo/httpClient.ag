@@ -1,0 +1,45 @@
+const xGet = *"GET";
+const xPost = *"POST";
+const xDelete = *"DELETE";
+const xPut = *"PUT";
+
+get(-String url, onEnd&(Response)) {
+	Resuest.setUrl(url).execute(onEnd)
+}
+  
+class Request {
+    url = *"";
+	verb = xGet;
+	body = *Blob;
+	headers = SharedArray(String); // Headers go in form "key: val". Allows same keys, preservers order. 
+
+	setUrl(val -String) this { url := *val }
+	setVerb(val -String) this { verb := *val }
+	setBody(val -Blob) this { body := *val }
+	addHeader(val -String) this { headers(val) }
+	-execute(onEnd&(Response)) {
+		executeRequestInternal(Response.setRequest(*this), onEnd)
+	}
+}
+class Response {
+	request = *Request;
+	status = 0;
+	headers = SharedMap(String, String);
+	body = Blob;
+
+	setRequset(val *Request) this { request := val }
+}
+
+// test simple() {
+//	 get("http://aglang.org", app.&onGetAglangOrg(r Response){
+//     log(`code=${r.status} size=${r.body.length}`)
+//     r.headers.each(name val \ log(`header ${name}: ${val}{LF}`))
+//   });
+// }
+
+const xInternalHttpClient = HttpClient.start();
+class HttpClient {
+	start();
+}
+fn destroyHttpClient(client HttpClient);
+fn executeRequestInternal(response Response, onEnd&(Response));
