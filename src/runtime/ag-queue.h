@@ -1,6 +1,8 @@
 #ifndef AG_QUEUE_H_
 #define AG_QUEUE_H_
 
+#include <stdint.h>
+
 #define AG_THREAD_QUEUE_SIZE 8192
 
 typedef struct ag_queue {

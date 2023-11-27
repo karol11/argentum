@@ -2897,8 +2897,11 @@ struct Generator : ast::ActionScanner {
 				continue;
 			} else {
 				auto disp_name = ast::format_str("ag_disp_", cls->get_name());
-				info.dispatcher = llvm::Function::Create(dispatcher_fn_type, llvm::Function::InternalLinkage,
-					disp_name, module.get());
+				info.dispatcher = llvm::Function::Create(
+					dispatcher_fn_type,
+					llvm::Function::ExternalLinkage,
+					disp_name,
+					module.get());
 				if (di_builder) {
 					info.dispatcher->setSubprogram(
 						di_builder->createFunction(

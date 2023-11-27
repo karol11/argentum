@@ -1011,4 +1011,5 @@ AgString* ag_make_str(const char* start, const char* end) {
 	s->buffer = NULL;
 	s->head.dispatcher = ag_disp_sys_String;
 	s->head.ctr_mt |= AG_CTR_SHARED;
+	return s;
 }

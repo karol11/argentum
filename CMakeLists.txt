@@ -28,6 +28,9 @@ set(ag_rtl_sources
     src/runtime/runtime.c
     src/runtime/blob.h
     src/runtime/blob.c
+    src/runtime/ag-threads.h
+    src/runtime/ag-queue.h
+    src/runtime/ag-queue.c
     src/runtime/array/array-base-inc.h
     src/runtime/array/own-array.h
     src/runtime/array/own-array.c
@@ -122,6 +125,8 @@ add_library (ag_runtime STATIC
     ${ag_rtl_sources}
     src/runtime/sdl-bindings.h
     src/runtime/sdl-bindings.c
+    src/runtime/curl-bindings.c
 )
+target_compile_definitions(ag_runtime PRIVATE AG_STANDALONE_COMPILER_MODE)
 set_property(TARGET ag_runtime PROPERTY C_STANDARD 11)
 set_property(TARGET ag_runtime PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
