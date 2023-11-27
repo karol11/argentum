@@ -3320,6 +3320,12 @@ llvm::orc::ThreadSafeModule generate_code(ltm::pin<ast::Ast> ast, bool add_debug
 	return gen.build();
 }
 
+#ifdef AG_STANDALONE_COMPILER_MODE
+// `ag_disp_sys_String` defined by linker
+#else
+ag_dispatcher_t ag_disp_sys_String;
+#endif
+
 int64_t execute(llvm::orc::ThreadSafeModule& module, ast::Ast& ast, bool dump_ir) {
 #ifdef AG_STANDALONE_COMPILER_MODE
 	return -1;
@@ -3346,6 +3352,8 @@ int64_t execute(llvm::orc::ThreadSafeModule& module, ast::Ast& ast, bool dump_ir
 	}
 	check(lib->define(llvm::orc::absoluteSymbols(move(runtime_exports))));
 	check(jit->addIRModule(std::move(module)));
+	auto f_str_disp = check(jit->lookup("ag_disp_sys_String"));
+	ag_disp_sys_String = f_str_disp.toPtr<void**(uint64_t)>();
 	auto f_main = check(jit->lookup("main"));
 	auto main_addr = f_main.toPtr<void()>();
 	for (auto& m : ast.modules) {
@@ -3360,6 +3368,7 @@ int64_t execute(llvm::orc::ThreadSafeModule& module, ast::Ast& ast, bool dump_ir
 	}
 	main_addr();
 	assert(ag_leak_detector_ok());
+	ag_disp_sys_String = nullptr;
 	return 0;
 #endif
 }

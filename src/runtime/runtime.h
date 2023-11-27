@@ -87,6 +87,12 @@ typedef struct {
 	uintptr_t       wb_p;        // pointer_to_weak_block || (pointer_to_parent|AG_F_PARENT)
 } AgObject;
 
+#ifdef AG_STANDALONE_COMPILER_MODE
+void** ag_disp_sys_String(uint64_t interface_and_method_ordinal);
+#else
+extern ag_dispatcher_t ag_disp_sys_String;
+#endif
+
 typedef struct {
 	AgObject*  target;
 	uintptr_t  wb_ctr_mt;    // number_of_weaks pointing here << 4 | 1 if mt | 2 to indicate weak
@@ -226,7 +232,7 @@ void       ag_post_param_from_ag        (uint64_t param);
 void       ag_post_weak_param_from_ag   (AgWeak* param);
 void       ag_post_own_param_from_ag    (ag_thread* th, AgObject* param);
 
-// If a call is originated from some thread created by FFI functions, or by external library (usual case), use:
+// If a call is originated from non-ag-thread (one created by FFI functions, or by external library - usual case), use:
 // ag_thread* t = ag_prepare_post(ag_retain_weak(receiver_obj), trampoline, entry_point, params_count);
 // if (t) {
 //    ag_post_*_param...
@@ -248,6 +254,12 @@ void       ag_detach_weak     (AgWeak*);
 //trampoline api
 uint64_t ag_get_thread_param    (ag_thread* th);
 void     ag_unlock_thread_queue (ag_thread* th);
+
+// If both start and end passed, returns string with bytes start...end.
+// If end = null, start expected to be null-terminated.
+// If start = null, returns null.
+// Returns immutable shared tring
+AgString* ag_make_str(const char* start, const char* end);
 
 int ag_handle_main_thread();
 

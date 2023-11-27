@@ -997,3 +997,18 @@ void ag_detach_own(AgObject* obj) {
 void ag_detach_weak(AgWeak* w) {
 	ag_make_weak_mt(w);
 }
+
+AgString* ag_make_str(const char* start, const char* end) {
+	if (!start)
+		return NULL;
+	size_t size = end ? end - start : strlen(start);
+	AgString* s = (AgString*)ag_allocate_obj(sizeof(AgString));
+	s->buffer = (AgStringBuffer*)ag_alloc(sizeof(AgStringBuffer) + size);
+	s->buffer->counter_mt = 2;
+	ag_memcpy(s->buffer->data, start, size);
+	s->buffer->data[size] = 0;
+	s->ptr = s->buffer->data;
+	s->buffer = NULL;
+	s->head.dispatcher = ag_disp_sys_String;
+	s->head.ctr_mt |= AG_CTR_SHARED;
+}
