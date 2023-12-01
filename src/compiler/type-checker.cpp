@@ -917,7 +917,13 @@ struct Typer : ast::ActionMatcher {
 				auto tp = ct.second->type = find_type(ct.second->initializer)->type();
 				if (auto as_opt = dom::strict_cast<ast::TpOptional>(tp))
 					tp = as_opt->wrapped;
-				if (dom::isa<ast::TpOwn>(*tp) || dom::isa<ast::TpRef>(*tp) || dom::isa<ast::TpWeak>(*tp)) {
+				else if (dom::isa<ast::TpVoid>(*tp))
+					ct.second->error("Constant cannot be of type void.");
+				if (dom::isa<ast::TpOwn>(*tp)
+					|| dom::isa<ast::TpRef>(*tp)
+					|| dom::isa<ast::TpWeak>(*tp)
+					|| dom::isa<ast::TpConformRef>(*tp)
+					|| dom::isa<ast::TpConformWeak>(*tp)) {
 					ct.second->error("Constants cannot be mutable objects @own, ref or &weak. Make them *frozen or &*frozen weaks.");
 				}
 			}
