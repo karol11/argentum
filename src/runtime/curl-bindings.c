@@ -1,3 +1,4 @@
+#include <assert.h>
 #include "runtime.h"
 #include "map/map-base.h"
 #include "ag-threads.h"
@@ -44,7 +45,7 @@ static size_t header_callback(char* buffer, size_t isize, size_t nitems, void* u
 	if (delim) {
 		ag_m_sys_SharedMap_setAt(
 			((ag_http_task*)userdata)->reponse->headers,
-			ag_make_str(buffer, delim),
+			ag_make_str(buffer, delim - buffer),
 			ag_make_str(delim + 1, size - (delim - buffer) - 1));
 	}
 	return size;
@@ -68,22 +69,22 @@ static void delete_task(ag_http_task* task) {
 	curl_easy_cleanup(task->easy);
 	if (task->headers)
 		curl_slist_free_all(task->headers);
-	ag_release_own(task->reponse);
+	ag_release_own(&task->reponse->header);
 	ag_release_weak(task->on_end_data);
 	ag_free(task);
 }
 
 static void create_task(
-	ag_http_task root_task,
+	ag_http_task* root_task,
 	AgHttpResponse* resp,
 	AgWeak* on_end_data,
 	void* on_end_proc)
 {
 	ag_http_task* task = ag_alloc(sizeof(ag_http_task));
-	task->next = root_task.next;
+	task->next = root_task->next;
+	task->prev = root_task;
 	task->next->prev = task;
-	task->prev = &root_task;
-	task->prev->next = &task;
+	task->prev->next = task;
 	task->reponse = resp;
 	task->on_end_data = on_end_data;
 	task->on_end_proc = on_end_proc;
@@ -110,7 +111,7 @@ static void create_task(
 }
 
 void trampoline(AgObject* self, ag_fn entry_point, ag_thread* th) {
-	AgObject* response = ag_get_thread_param(th);
+	AgObject* response = (AgObject*)ag_get_thread_param(th);
 	ag_unlock_thread_queue(th);
 	((void (*)(AgObject*, AgObject*))entry_point)(self, response);
 	ag_release_own_nn(response);
@@ -128,7 +129,7 @@ void* http_thread_proc(void* unused) {
 			uint64_t on_end_data = ag_read_queue(&ag_http_queue);
 			uint64_t on_end_proc = ag_read_queue(&ag_http_queue);
 			pthread_mutex_unlock(&ag_http_mutex);
-			create_task(root_task, (AgHttpResponse*)resp, (AgWeak*)on_end_data, on_end_proc);
+			create_task(&root_task, (AgHttpResponse*)resp, (AgWeak*)on_end_data, (void*)on_end_proc);
 			pthread_mutex_lock(&ag_http_mutex);
 		}
 		if (root_task.next == &root_task) {
@@ -147,7 +148,7 @@ void* http_thread_proc(void* unused) {
 				task->reponse->status = code;
 				ag_thread* th = ag_prepare_post(task->on_end_data, trampoline, task->on_end_proc, 1);
 				if (th) {
-					ag_post_own_param(th, task->reponse);
+					ag_post_own_param(th, &task->reponse->header);
 					ag_finalize_post(th);
 					task->reponse = NULL;
 					task->on_end_data = NULL;
@@ -164,18 +165,19 @@ terminate:
 	return NULL;
 }
 
-void ag_m_httpClient_HttpClient_start(void* unused) {
+void* ag_m_httpClient_HttpClient_httpClient_start(void* cl) {
 	assert(ag_curl_multi == NULL);
 	pthread_mutex_init(&ag_http_mutex, NULL);
 	pthread_cond_init(&ag_http_cvar, NULL);
 	ag_init_queue(&ag_http_queue);
 	ag_curl_multi = curl_multi_init();
 	pthread_create(&ag_http_thread, NULL, http_thread_proc, NULL);
+	return cl;
 }
 
 void ag_fn_httpClient_executeRequestInternal(AgHttpResponse* response, AgWeak* on_end_data, void* on_end_proc) {
 	assert(ag_curl_multi != NULL);
-	ag_detach_own(response);
+	ag_detach_own(&response->header);
 	ag_detach_weak(on_end_data);
 	pthread_mutex_lock(&ag_http_mutex);
 	ag_resize_queue(&ag_http_queue, 3);
@@ -196,7 +198,7 @@ void ag_fn_httpClient_destroyHttpClient(void* unused) {
 	curl_multi_wakeup(&ag_curl_multi);
 	pthread_cond_broadcast(&ag_http_cvar);
 	void* unused_res;
-	pthread_join(&ag_http_thread, unused_res);
+	pthread_join(&ag_http_thread, &unused_res);
 	pthread_mutex_destroy(&ag_http_mutex);
 	pthread_cond_destroy(&ag_http_cvar);
 	curl_multi_cleanup(ag_curl_multi);
