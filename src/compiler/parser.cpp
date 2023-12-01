@@ -83,15 +83,14 @@ struct Parser {
 			auto get_this = make<ast::Get>();
 			get_this->var = fn->names[0];
 			fn->type_expression = get_this;
-			expect("{");
 		} else {
 			fn->type_expression = parse_maybe_void_type();
-			if (match(";")) {
-				fn->is_platform = true;
-				return;
-			}
-			expect("{");
 		}
+		if (match(";")) {
+			fn->is_platform = true;
+			return;
+		}
+		expect("{");
 		parse_statement_sequence(fn->body);
 		if (as_method && as_method->is_factory) {
 			fn->body.push_back(fn->type_expression);  // this
