@@ -255,11 +255,8 @@ void       ag_detach_weak     (AgWeak*);
 uint64_t ag_get_thread_param    (ag_thread* th);
 void     ag_unlock_thread_queue (ag_thread* th);
 
-// If both start and end passed, returns string with bytes start...end.
-// If end = null, start expected to be null-terminated.
-// If start = null, returns null.
 // Returns immutable shared tring
-AgString* ag_make_str(const char* start, const char* end);
+AgString* ag_make_str(const char* start, size_t size);
 
 int ag_handle_main_thread();
 

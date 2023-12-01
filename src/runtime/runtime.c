@@ -998,10 +998,7 @@ void ag_detach_weak(AgWeak* w) {
 	ag_make_weak_mt(w);
 }
 
-AgString* ag_make_str(const char* start, const char* end) {
-	if (!start)
-		return NULL;
-	size_t size = end ? end - start : strlen(start);
+AgString* ag_make_str(const char* start, size_t size) {
 	AgString* s = (AgString*)ag_allocate_obj(sizeof(AgString));
 	s->buffer = (AgStringBuffer*)ag_alloc(sizeof(AgStringBuffer) + size);
 	s->buffer->counter_mt = 2;
