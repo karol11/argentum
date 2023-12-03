@@ -900,7 +900,6 @@ struct Generator : ast::ActionScanner {
 			str->setLinkage(llvm::GlobalValue::InternalLinkage);
 		}
 		result->data = str;
-		builder->CreateCall(fn_retain_shared, str);
 		result->lifetime = Val::Static{};
 	}
 
