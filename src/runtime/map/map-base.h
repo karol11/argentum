@@ -87,7 +87,7 @@ AgMapVal ag_map_delete(
         AgMapBucket* term = i + map->capacity;                                      \
         for (; i < term; i++) {                                                     \
             if (i->key) {                                                           \
-                visitor(i->key, AG_VISIT_OWN, ctx);                                 \
+                visitor(&i->key, AG_VISIT_OWN, ctx);                                \
                 VAL_VISITOR;                                                        \
             }                                                                       \
         }                                                                           \

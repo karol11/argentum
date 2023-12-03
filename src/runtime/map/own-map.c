@@ -63,5 +63,5 @@ void ag_visit_sys_Map(
     void   (*visitor)(void*, int, void*),
     void*  ctx)
 {
-    AG_MAP_VISIT(if (i->val.ptr_val) visitor(i->val.ptr_val, AG_VISIT_OWN, ctx))
+    AG_MAP_VISIT(if (i->val.ptr_val) visitor(&i->val.ptr_val, AG_VISIT_OWN, ctx))
 }

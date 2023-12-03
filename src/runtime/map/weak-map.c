@@ -59,5 +59,5 @@ void ag_visit_sys_WeakMap(
     void   (*visitor)(void*, int, void*),
     void* ctx)
 {
-    AG_MAP_VISIT(if (i->val.weak_val) visitor(i->val.weak_val, AG_VISIT_WEAK, ctx))
+    AG_MAP_VISIT(if (i->val.weak_val) visitor(&i->val.weak_val, AG_VISIT_WEAK, ctx))
 }
