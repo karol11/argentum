@@ -34,12 +34,12 @@ class Array {
     }
     deleteAt(i int) {
         setOptAt(i, ?T);
-        moveItems(i, i + 1, itemsCount);
+        move(i, i + 1, itemsCount);
         itemsCount -= 1;
     }
     allocate(count int) {
         itemsCount + count >= capacity()
-            ? insertItems(itemsCount, (itemsCount + 20) / 4 + count);
+            ? insert(itemsCount, (itemsCount + 20) / 4 + count);
     }
     push(n int, generator ()@T) {
         allocate(n);
@@ -58,10 +58,10 @@ class Array {
 
 class WeakArray {
     -size() int { capacity() }
-    resize(n int) this { insertItems(0, n) }
+    resize(n int) this { insert(0, n) }
     append(item &T) {
         n = capacity();
-        insertItems(n, 1);
+        insert(n, 1);
         this[n] := item
     }
     -contain(predicate (T)bool) bool {
