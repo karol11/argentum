@@ -2825,7 +2825,6 @@ struct Generator : ast::ActionScanner {
 
 	llvm::orc::ThreadSafeModule build() {
 		std::unordered_set<pin<ast::Class>> special_copy_and_dispose = {
-			cast<ast::Class>(ast->blob->base_class),
 			ast->blob,
 			ast->own_array,
 			ast->weak_array,

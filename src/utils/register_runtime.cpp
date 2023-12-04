@@ -28,7 +28,6 @@ void register_runtime_content(struct ast::Ast& ast) {
 	obj_get_hash->used = true;
 	auto obj_equals = ast.mk_method(mut::ANY, ast.object, "equals", FN(ag_m_sys_Object_equals), new ast::ConstBool, { ast.get_conform_ref(ast.object) });
 	obj_equals->used = true;
-	ast.mk_method(mut::ANY, ast.blob, "capacity", FN(ag_m_sys_Blob_capacity), new ast::ConstInt64, {});
 	ast.blob = ast.mk_class("Blob", {
 		ast.mk_field("_count", new ast::ConstInt64()),
 		ast.mk_field("_bytes", new ast::ConstInt64())  // ptr
@@ -109,7 +108,6 @@ void register_runtime_content(struct ast::Ast& ast) {
 		ast.mk_method(mut::MUTATING, ast.weak_array, "move", FN(ag_m_sys_WeakArray_move), new ast::ConstBool, { ast.tp_int64(), ast.tp_int64(), ast.tp_int64() });
 		ast.mk_method(mut::ANY, ast.weak_array, "getAt", FN(ag_m_sys_WeakArray_getAt), make_ptr_result(new ast::MkWeakOp, t_cls), { ast.tp_int64() });
 		ast.mk_method(mut::MUTATING, ast.weak_array, "setAt", FN(ag_m_sys_WeakArray_setAt), new ast::ConstVoid, { ast.tp_int64(), ast.get_weak(t_cls) });
-		ast.mk_method(mut::MUTATING, ast.weak_array, "delete", FN(ag_m_sys_WeakArray_delete), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
 	}
 	{
 		auto shared_array_cls = ast.mk_class("SharedArray", {
@@ -123,7 +121,6 @@ void register_runtime_content(struct ast::Ast& ast) {
 		ast.mk_method(mut::MUTATING, shared_array_cls, "move", FN(ag_m_sys_SharedArray_move), new ast::ConstBool, { ast.tp_int64(), ast.tp_int64(), ast.tp_int64() });
 		ast.mk_method(mut::ANY, shared_array_cls, "getAt", FN(ag_m_sys_SharedArray_getAt), make_opt_result(make_ptr_result(new ast::FreezeOp, t_cls)), { ast.tp_int64() });
 		ast.mk_method(mut::MUTATING, shared_array_cls, "setAt", FN(ag_m_sys_SharedArray_setAt), new ast::ConstVoid, { ast.tp_int64(), ast.get_shared(t_cls) });
-		ast.mk_method(mut::MUTATING, shared_array_cls, "delete", FN(ag_m_sys_SharedArray_delete), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
 	}
 	ast.string_cls = ast.mk_class("String", {
 		ast.mk_field("_cursor", new ast::ConstInt64),

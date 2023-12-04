@@ -68,14 +68,6 @@ void execute(const char* source_text, bool dump_all = false) {
     generate_and_execute(ast, false, dump_all);
 }
 
-TEST(Parser, Map) {
-    execute(R"-(
-      m = sys_Map(sys_String, sys_String);
-      m["One"] := @"Hello";
-      sys_assertIEq(m["One"]?_.getCh():0, 'H')
-    )-");
-}
-
 TEST(Parser, Ints) {
     execute("sys_assertIEq(7, (2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1)))");
 }
@@ -436,7 +428,7 @@ TEST(Parser, BlobsAndIndexes) {
             setAt(i int, v int) { set64At(i, v) }
         }
         b = Blob;
-        b.insertItems(0, 3);
+        b.insert(0, 3 * 8);
         b[1] := 42;
         c = @b;
         assertIEq(42, c[1])
@@ -465,7 +457,7 @@ TEST(Parser, Arrays) {
             y = 0;
         }
         a = sys_Array(Node);
-        a.insertItems(0, 10);
+        a.insert(0, 10);
         a[0] := Node;
         a[1] := Node;
         a[1] ? {
@@ -486,7 +478,7 @@ TEST(Parser, WeakArrays) {
         }
         n = Node;
         a = sys_WeakArray(Node);
-        a.insertItems(0, 10);
+        a.insert(0, 10);
         a[0] := &n;
         a[1] := &n;
         c = @a;
@@ -498,7 +490,7 @@ TEST(Parser, WeakArrays) {
 TEST(Parser, SharedArrays) {
     execute(R"(
         a = sys_SharedArray(sys_String);
-        a.insertItems(0, 10);
+        a.insert(0, 10);
         a[0] := "Asdf";
         a[1] := "Qwer";
         c = @a;
@@ -520,7 +512,7 @@ TEST(Parser, RetOwnPtr) {
             r
         }
         a = sys_Array(Node);
-        a.insertItems(0, 1);
+        a.insert(0, 1);
         a[0] := nodeAt(42, 33);  // no copy here!
         sys_assertIEq(42, a[0] ? _.x : -1)
     )");
@@ -580,7 +572,7 @@ TEST(Parser, StringOperations) {
                 size = capacity();
                 growStep = 100;
                 pos + 5 >= size ?
-                    insertItems(size, growStep);
+                    insert(size, growStep);
                 pos := putChAt(pos, codePoint)
             }
             append(s sys_String) this {
@@ -682,7 +674,7 @@ TEST(Parser, GetParentArray) {
             getParent
         }
         a = Array(Object);
-        a.insertItems(0, 10);
+        a.insert(0, 10);
         a[0] := Object;
         assert(a[0] && par(_) && _==a, "a[0].p==a");
         v = a[0];
@@ -769,7 +761,7 @@ TEST(Parser, StringInterpolation) {
                 size = capacity();
                 growStep = 100;
                 pos + 5 >= size ?
-                    insertItems(size, growStep);
+                    insert(size, growStep);
                 pos := putChAt(pos, codePoint)
             }
             putStr(x -String) this {
@@ -820,7 +812,7 @@ TEST(Parser, ReopenGenerics) {
     execute(R"-(
         class sys_WeakArray{
             append(item T) T {
-                insertItems(capacity(), 1);
+                insert(capacity(), 1);
                 this[capacity() - 1] := &item;
                 item
             }
@@ -862,10 +854,18 @@ TEST(Parser, GenericInstAsType) {
         }
         myFn({
            a = Array(String);
-           a.insertItems(0, 1);
+           a.insert(0, 1);
            a[0] := @"Aloha";
            a
         })
+    )-");
+}
+
+TEST(Parser, Map) {
+    execute(R"-(
+      m = sys_Map(sys_String, sys_String);
+      m["One"] := @"Hello";
+      sys_assertIEq(m["One"]?_.getCh():0, 'H')
     )-");
 }
 
@@ -991,7 +991,7 @@ TEST(Parser, ReturnFromLambdaParam) {
         class Array {
             append(t()@T) {
                 c = capacity();
-                insertItems(c, 1);
+                insert(c, 1);
                 this[c] := t();
             }
         }
