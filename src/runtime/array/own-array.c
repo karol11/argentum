@@ -11,20 +11,20 @@
 
 #include "array-base-inc.h"
 
-AgObject* ag_m_sys_Array_setOptAt(AgBlob* b, uint64_t index, AgObject* val) {
-	if (index >= b->size)
-		return 0;
-	AG_RETAIN_OWN(val, &b->head);
-	int64_t prev = b->data[index];
+AgObject* ag_m_sys_Array_setOptAt(AgBaseArray* c, uint64_t at, AgObject* val) {
+	if (at >= c->items_count)
+		return NULL;
+	AG_RETAIN_OWN(val, &c->head);
+	void* prev = c->items[at];
 	ag_set_parent((AgObject*)prev, 0);
-	b->data[index] = (int64_t) val;
+	c->items[at] = (void*) val;
 	return (AgObject*) prev;
 }
 
-bool ag_m_sys_Array_spliceAt(AgBlob* b, uint64_t index, AgObject* val) {
-	if (index < b->size) {
-		AgObject** dst = ((AgObject**)(b->data)) + index;
-		if (ag_splice(val, &b->head)) {
+bool ag_m_sys_Array_spliceAt(AgBaseArray* c, uint64_t at, AgObject* val) {
+	if (at < c->items_count) {
+		AgObject** dst = ((AgObject**)c->items) + at;
+		if (ag_splice(val, &c->head)) {
 			ag_release_own(*dst);
 			*dst = val;
 			return true;
