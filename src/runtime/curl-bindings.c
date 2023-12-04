@@ -3,6 +3,8 @@
 #include "map/map-base.h"
 #include "ag-threads.h"
 #include "ag-queue.h"
+#include "blob.h"
+#include "array/array-base.h"
 #include "../../curl/include/curl/curl.h"
 
 typedef struct AgHttpRequest {
@@ -10,7 +12,7 @@ typedef struct AgHttpRequest {
 	AgString* url;
 	AgString* verb;
 	AgBlob* body;
-	AgBlob* headers;
+	AgBaseArray* headers;  // SharedArray(String)
 } AgHttpRequest;
 
 typedef struct AgHttpResponse {
@@ -36,17 +38,24 @@ pthread_cond_t ag_http_cvar;
 ag_queue ag_http_queue;
 pthread_t ag_http_thread;
 CURLM* ag_curl_multi = NULL;
+int ag_http_client_counter = 0;
 
 static size_t header_callback(char* buffer, size_t isize, size_t nitems, void* userdata) {
 	if (((ag_http_task*)userdata)->on_end_data->target == NULL)
 		return 0;  // raise CURLE_WRITE_ERROR
 	size_t size = nitems * isize;
-	char* delim = memchr(buffer, size, ':');
+	char* delim = memchr(buffer, ':', size);
 	if (delim) {
-		ag_m_sys_SharedMap_setAt(
-			((ag_http_task*)userdata)->reponse->headers,
-			ag_make_str(buffer, delim - buffer),
-			ag_make_str(delim + 1, size - (delim - buffer) - 1));
+		AgObject* key = &ag_make_str(buffer, delim - buffer)->head;
+		for (delim++; delim < buffer + size && *delim == ' ';)
+			delim++;
+		char* last = buffer + size - 1;
+		while (*last == '\n' || *last == '\r')
+			--last;
+		AgObject* val = &ag_make_str(delim, last - delim + 1)->head;
+		ag_m_sys_SharedMap_setAt(((ag_http_task*)userdata)->reponse->headers, key, val);
+		ag_release_shared_nn(key);
+		ag_release_shared_nn(val);
 	}
 	return size;
 }
@@ -56,9 +65,9 @@ static size_t body_callback(char* ptr, size_t isize, size_t nmemb, void* userdat
 		return 0;  // raise CURLE_WRITE_ERROR
 	size_t size = nmemb * isize;
 	AgBlob* body = ((ag_http_task*)userdata)->reponse->body;
-	size_t at = body->size;
+	size_t at = body->bytes_count;
 	ag_make_blob_fit(body, at + size);
-	ag_memcpy(body->data + at, ptr, size);
+	ag_memcpy(body->bytes + at, ptr, size);
 	return size;
 }
 
@@ -93,12 +102,14 @@ static void create_task(
 	AgHttpRequest* req = task->reponse->request;
 	curl_easy_setopt(task->easy, CURLOPT_URL, req->url->ptr);
 	curl_easy_setopt(task->easy, CURLOPT_CUSTOMREQUEST, req->verb->ptr);
-	if (req->body->size) {
-		curl_easy_setopt(task->easy, CURLOPT_POSTFIELDS, req->body->data);
-		curl_easy_setopt(task->easy, CURLOPT_POSTFIELDSIZE, req->body->size);
+	if (req->body->bytes_count) {
+		curl_easy_setopt(task->easy, CURLOPT_POSTFIELDS, req->body->bytes);
+		curl_easy_setopt(task->easy, CURLOPT_POSTFIELDSIZE, req->body->bytes_count);
 	}
-	for (AgString* i = (AgString*)req->headers->data, *e = i + req->headers->size; i < e; ++i)
-		task->headers = curl_slist_append(task->headers, i->ptr);
+	for (AgString* i = (AgString*)req->headers->items, *e = i + req->headers->items_count; i < e; ++i) {
+		if (i)
+			task->headers = curl_slist_append(task->headers, i->ptr);
+	}
 	if (task->headers)
 		curl_easy_setopt(task->easy, CURLOPT_HTTPHEADER, task->headers);
 	curl_easy_setopt(task->easy, CURLOPT_SUPPRESS_CONNECT_HEADERS, 1L);
@@ -107,6 +118,7 @@ static void create_task(
 	curl_easy_setopt(task->easy, CURLOPT_WRITEFUNCTION, body_callback);
 	curl_easy_setopt(task->easy, CURLOPT_WRITEDATA, task);
 	curl_easy_setopt(task->easy, CURLOPT_PRIVATE, task);
+	curl_easy_setopt(task->easy, CURLOPT_SSL_VERIFYPEER, FALSE); // TEMP
 	curl_multi_add_handle(ag_curl_multi, task->easy);
 }
 
@@ -118,6 +130,7 @@ void trampoline(AgObject* self, ag_fn entry_point, ag_thread* th) {
 }
 
 void* http_thread_proc(void* unused) {
+	ag_init_this_thread();
 	ag_http_task root_task;
 	root_task.next = root_task.prev = &root_task;
 	for (;;) {
@@ -162,16 +175,20 @@ terminate:
 	pthread_mutex_unlock(&ag_http_mutex);
 	while (root_task.next != &root_task)
 		delete_task(root_task.next);
+	ag_flush_retain_release();
 	return NULL;
 }
 
-void* ag_m_httpClient_HttpClient_httpClient_start(void* cl) {
+void* ag_m_httpClient_HttpClient_httpClient_start(AgObject* cl) {
 	assert(ag_curl_multi == NULL);
+	ag_http_client_counter++;
+	ag_init_this_thread();
 	pthread_mutex_init(&ag_http_mutex, NULL);
 	pthread_cond_init(&ag_http_cvar, NULL);
 	ag_init_queue(&ag_http_queue);
 	ag_curl_multi = curl_multi_init();
 	pthread_create(&ag_http_thread, NULL, http_thread_proc, NULL);
+	ag_retain_shared_nn(cl);  // as result
 	return cl;
 }
 
@@ -189,8 +206,13 @@ void ag_fn_httpClient_executeRequestInternal(AgHttpResponse* response, AgWeak* o
 	pthread_cond_broadcast(&ag_http_cvar);
 }
 
+void ag_fn_httpClient_afterCopyHttpClient(void* unused) {
+	ag_http_client_counter++;
+}
 void ag_fn_httpClient_destroyHttpClient(void* unused) {
 	assert(ag_curl_multi != NULL);
+	if (--ag_http_client_counter != 0)
+		return;
 	pthread_mutex_lock(&ag_http_mutex);
 	ag_resize_queue(&ag_http_queue, 1);
 	ag_write_queue(&ag_http_queue, 0);
