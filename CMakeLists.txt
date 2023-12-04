@@ -32,6 +32,8 @@ set(ag_rtl_sources
     src/runtime/ag-queue.h
     src/runtime/ag-queue.c
     src/runtime/array/array-base-inc.h
+    src/runtime/array/array-base.h
+    src/runtime/array/array-base.c
     src/runtime/array/own-array.h
     src/runtime/array/own-array.c
     src/runtime/array/weak-array.h

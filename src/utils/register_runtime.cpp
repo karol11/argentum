@@ -25,16 +25,18 @@ void register_runtime_content(struct ast::Ast& ast) {
 	ast.object = ast.mk_class("Object");
 	ast.object->used = true;
 	auto obj_get_hash = ast.mk_method(mut::ANY, ast.object, "getHash", FN(ag_m_sys_Object_getHash), new ast::ConstInt64, {});
+	obj_get_hash->used = true;
 	auto obj_equals = ast.mk_method(mut::ANY, ast.object, "equals", FN(ag_m_sys_Object_equals), new ast::ConstBool, { ast.get_conform_ref(ast.object) });
-	auto container = ast.mk_class("Container", {
-		ast.mk_field("_size", new ast::ConstInt64),
-		ast.mk_field("_data", new ast::ConstInt64) });
-	ast.mk_method(mut::ANY, container, "capacity", FN(ag_m_sys_Container_capacity), new ast::ConstInt64, {});
-	ast.mk_method(mut::MUTATING, container, "insertItems", FN(&ag_m_sys_Container_insertItems), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
-	ast.mk_method(mut::MUTATING, container, "moveItems", FN(&ag_m_sys_Container_moveItems), new ast::ConstBool, { ast.tp_int64(), ast.tp_int64(), ast.tp_int64() });
-
-	ast.blob = ast.mk_class("Blob");
-	ast.blob->overloads[container];
+	obj_equals->used = true;
+	ast.mk_method(mut::ANY, ast.blob, "capacity", FN(ag_m_sys_Blob_capacity), new ast::ConstInt64, {});
+	ast.blob = ast.mk_class("Blob", {
+		ast.mk_field("_count", new ast::ConstInt64()),
+		ast.mk_field("_bytes", new ast::ConstInt64())  // ptr
+	});
+	ast.mk_method(mut::ANY, ast.blob, "capacity", FN(ag_m_sys_Blob_capacity), new ast::ConstInt64, {});
+	ast.mk_method(mut::MUTATING, ast.blob, "insert", FN(&ag_m_sys_Blob_insert), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
+	ast.mk_method(mut::MUTATING, ast.blob, "delete", FN(ag_m_sys_Blob_delete), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
+	ast.mk_method(mut::MUTATING, ast.blob, "copy", FN(ag_m_sys_Blob_copy), new ast::ConstBool, { ast.tp_int64(), ast.get_conform_ref(ast.blob), ast.tp_int64(), ast.tp_int64() });
 	ast.mk_method(mut::ANY, ast.blob, "get8At", FN(ag_m_sys_Blob_get8At), new ast::ConstInt64, { ast.tp_int64() });
 	ast.mk_method(mut::MUTATING, ast.blob, "set8At", FN(ag_m_sys_Blob_set8At), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
 	ast.mk_method(mut::ANY, ast.blob, "get16At", FN(ag_m_sys_Blob_get16At), new ast::ConstInt64, { ast.tp_int64() });
@@ -43,8 +45,6 @@ void register_runtime_content(struct ast::Ast& ast) {
 	ast.mk_method(mut::MUTATING, ast.blob, "set32At", FN(ag_m_sys_Blob_set32At), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
 	ast.mk_method(mut::ANY, ast.blob, "get64At", FN(ag_m_sys_Blob_get64At), new ast::ConstInt64, { ast.tp_int64() });
 	ast.mk_method(mut::MUTATING, ast.blob, "set64At", FN(ag_m_sys_Blob_set64At), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
-	ast.mk_method(mut::MUTATING, ast.blob, "deleteBytes", FN(ag_m_sys_Blob_deleteBytes), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
-	ast.mk_method(mut::MUTATING, ast.blob, "copyBytesTo", FN(ag_m_sys_Blob_copyBytesTo), new ast::ConstBool, { ast.tp_int64(), ast.get_conform_ref(ast.blob), ast.tp_int64(), ast.tp_int64() });
 	ast.mk_method(mut::MUTATING, ast.blob, "putChAt", FN(ag_m_sys_Blob_putChAt), new ast::ConstInt64, { ast.tp_int64(), ast.tp_int64() });
 
 	ast.str_builder = ast.mk_class("StrBuilder");
@@ -78,32 +78,49 @@ void register_runtime_content(struct ast::Ast& ast) {
 		opt_ref_to_t->p[1] = ref;
 		return opt_ref_to_t;
 	};
-	ast.own_array = ast.mk_class("Array");
-	ast.own_array->overloads[container];
+	ast.own_array = ast.mk_class("Array", {
+		ast.mk_field("_itemsCount", new ast::ConstInt64()),
+		ast.mk_field("_items", new ast::ConstInt64())  // ptr
+	});
 	{
 		auto t_cls = add_class_param(ast.own_array);
 		auto ref_to_t_res = make_ptr_result(new ast::RefOp, t_cls);
 		auto opt_ref_to_t_res = make_opt_result(ref_to_t_res);
 		auto own_to_t = ast.get_own(t_cls);
 		auto opt_own_to_t = ast.tp_optional(own_to_t);
+		ast.mk_method(mut::ANY, ast.own_array, "capacity", FN(ag_m_sys_Array_capacity), new ast::ConstInt64, {});
+		ast.mk_method(mut::MUTATING, ast.own_array, "insert", FN(&ag_m_sys_Array_insert), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
+		ast.mk_method(mut::MUTATING, ast.own_array, "delete", FN(ag_m_sys_Array_delete), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
+		ast.mk_method(mut::MUTATING, ast.own_array, "move", FN(ag_m_sys_Array_move), new ast::ConstBool, { ast.tp_int64(), ast.tp_int64(), ast.tp_int64() });
 		ast.mk_method(mut::ANY, ast.own_array, "getAt", FN(ag_m_sys_Array_getAt), opt_ref_to_t_res, { ast.tp_int64() });
 		ast.mk_method(mut::MUTATING, ast.own_array, "setAt", FN(ag_m_sys_Array_setAt), new ast::ConstVoid, { ast.tp_int64(), own_to_t });
 		ast.mk_method(mut::MUTATING, ast.own_array, "setOptAt", FN(ag_m_sys_Array_setOptAt), opt_ref_to_t_res, { ast.tp_int64(), opt_own_to_t });
-		ast.mk_method(mut::MUTATING, ast.own_array, "delete", FN(ag_m_sys_Array_delete), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
 		ast.mk_method(mut::MUTATING, ast.own_array, "spliceAt", FN(ag_m_sys_Array_spliceAt), new ast::ConstBool, { ast.tp_int64(), ast.tp_optional(ast.get_ref(t_cls)) });
 	}
-	ast.weak_array = ast.mk_class("WeakArray");
-	ast.weak_array->overloads[container];
+	ast.weak_array = ast.mk_class("WeakArray", {
+		ast.mk_field("_itemsCount", new ast::ConstInt64()),
+		ast.mk_field("_items", new ast::ConstInt64())  // ptr
+	});
 	{
 		auto t_cls = add_class_param(ast.weak_array);
+		ast.mk_method(mut::ANY, ast.weak_array, "capacity", FN(ag_m_sys_WeakArray_capacity), new ast::ConstInt64, {});
+		ast.mk_method(mut::MUTATING, ast.weak_array, "insert", FN(&ag_m_sys_WeakArray_insert), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
+		ast.mk_method(mut::MUTATING, ast.weak_array, "delete", FN(ag_m_sys_WeakArray_delete), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
+		ast.mk_method(mut::MUTATING, ast.weak_array, "move", FN(ag_m_sys_WeakArray_move), new ast::ConstBool, { ast.tp_int64(), ast.tp_int64(), ast.tp_int64() });
 		ast.mk_method(mut::ANY, ast.weak_array, "getAt", FN(ag_m_sys_WeakArray_getAt), make_ptr_result(new ast::MkWeakOp, t_cls), { ast.tp_int64() });
 		ast.mk_method(mut::MUTATING, ast.weak_array, "setAt", FN(ag_m_sys_WeakArray_setAt), new ast::ConstVoid, { ast.tp_int64(), ast.get_weak(t_cls) });
 		ast.mk_method(mut::MUTATING, ast.weak_array, "delete", FN(ag_m_sys_WeakArray_delete), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
 	}
 	{
-		auto shared_array_cls = ast.mk_class("SharedArray");
-		shared_array_cls->overloads[container];
+		auto shared_array_cls = ast.mk_class("SharedArray", {
+			ast.mk_field("_itemsCount", new ast::ConstInt64()),
+			ast.mk_field("_items", new ast::ConstInt64())  // ptr
+		});
 		auto t_cls = add_class_param(shared_array_cls);
+		ast.mk_method(mut::ANY, shared_array_cls, "capacity", FN(ag_m_sys_SharedArray_capacity), new ast::ConstInt64, {});
+		ast.mk_method(mut::MUTATING, shared_array_cls, "insert", FN(&ag_m_sys_SharedArray_insert), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
+		ast.mk_method(mut::MUTATING, shared_array_cls, "delete", FN(ag_m_sys_SharedArray_delete), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
+		ast.mk_method(mut::MUTATING, shared_array_cls, "move", FN(ag_m_sys_SharedArray_move), new ast::ConstBool, { ast.tp_int64(), ast.tp_int64(), ast.tp_int64() });
 		ast.mk_method(mut::ANY, shared_array_cls, "getAt", FN(ag_m_sys_SharedArray_getAt), make_opt_result(make_ptr_result(new ast::FreezeOp, t_cls)), { ast.tp_int64() });
 		ast.mk_method(mut::MUTATING, shared_array_cls, "setAt", FN(ag_m_sys_SharedArray_setAt), new ast::ConstVoid, { ast.tp_int64(), ast.get_shared(t_cls) });
 		ast.mk_method(mut::MUTATING, shared_array_cls, "delete", FN(ag_m_sys_SharedArray_delete), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
@@ -233,9 +250,6 @@ void register_runtime_content(struct ast::Ast& ast) {
 		{ "ag_post_own_param_from_ag", FN(ag_post_own_param_from_ag) }, // used in post~message
 		{ "ag_handle_main_thread", FN(ag_handle_main_thread) },
 
-		{ "ag_copy_sys_Container", FN(ag_copy_sys_Container) },
-		{ "ag_dtor_sys_Container", FN(ag_dtor_sys_Container) },
-		{ "ag_visit_sys_Container", FN(ag_visit_sys_Container) },
 		{ "ag_copy_sys_Blob", FN(ag_copy_sys_Blob) },
 		{ "ag_dtor_sys_Blob", FN(ag_dtor_sys_Blob) },
 		{ "ag_visit_sys_Blob", FN(ag_visit_sys_Blob) },
