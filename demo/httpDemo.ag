@@ -1,0 +1,18 @@
+using httpClient { get, Response }
+using sys { Blob, log, String, setMainObject }
+using string;
+
+const xTestUrl = "https://aglang.org";
+// const xTestUrl = "https://localhost";
+
+class App {}
+app = App;
+setMainObject(app);
+
+get(xTestUrl, app.&onFetched(resp Response){
+    log(`Result code=${resp.status}: `);
+    s = String;
+    s.fromBlob(resp.body, 0, resp.body.capacity());
+    log(s);
+    setMainObject(?App);
+})
