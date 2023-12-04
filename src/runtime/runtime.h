@@ -83,7 +83,7 @@ typedef struct {
 typedef void** (*ag_dispatcher_t) (uint64_t interface_and_method_ordinal);
 typedef struct {
 	ag_dispatcher_t dispatcher;
-	uintptr_t       ctr_mt;      // number_of_owns_and_refs point here << 4 | 1 if mt
+	uintptr_t       ctr_mt;      // number_of_owns_and_refs point here << 4 | AG_CTR_* flags
 	uintptr_t       wb_p;        // pointer_to_weak_block || (pointer_to_parent|AG_F_PARENT)
 } AgObject;
 
@@ -99,12 +99,6 @@ typedef struct {
 	uintptr_t  org_pointer_to_parent;  // copy of obj->parent
 	ag_thread* thread;       // pointer to ag_thread struct
 } AgWeak;
-
-typedef struct {
-	AgObject head;
-	uint64_t size;
-	int64_t* data;
-} AgBlob;
 
 typedef struct {
 	size_t counter_mt; // number_of_strings pointing here << 1 | 1 if mt
@@ -180,8 +174,6 @@ void      ag_dtor_sys_String        (AgString* str);
 void      ag_visit_sys_String       (AgString* ptr, void(*visitor)(void*, int, void*), void* ctx);
 int32_t   ag_m_sys_String_getCh     (AgString* s);
 int32_t   ag_m_sys_String_peekCh    (AgString* s);
-bool      ag_m_sys_String_fromBlob  (AgString* s, AgBlob* b, int at, int count);
-int64_t   ag_m_sys_Blob_putChAt     (AgBlob* b, int at, int codepoint);
 int64_t   ag_m_sys_String_getHash   (AgObject* obj);
 bool      ag_m_sys_String_equals    (AgObject* a, AgObject* b);
 
@@ -246,6 +238,14 @@ void       ag_finalize_post   (ag_thread* th);
 // Foreign function should put (using ag_put_thread_param) the same number of params in the same order
 // as the trampoline function invoked on AG-thread is going to read with ag_get_thread_param.
 
+// Should be called before the first ag_detach/ag_post is called.
+// Usually it's called when the first thread is created.
+// Can be safely called multile times.
+void ag_init_this_thread();
+
+// Should be called before thread proc ended.
+void ag_flush_retain_release();
+
 // If a foreign function wants to store an object or a weak pointer in its own thread, it should call `ag_detach_*` while on ag thread.
 // Detached objects can be passed as parameters to async messages, but they can't be receivers of async messages.
 void       ag_detach_own      (AgObject*);
@@ -255,7 +255,7 @@ void       ag_detach_weak     (AgWeak*);
 uint64_t ag_get_thread_param    (ag_thread* th);
 void     ag_unlock_thread_queue (ag_thread* th);
 
-// Returns immutable shared tring
+// Returns immutable shared string
 AgString* ag_make_str(const char* start, size_t size);
 
 int ag_handle_main_thread();

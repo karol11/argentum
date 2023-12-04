@@ -544,18 +544,6 @@ void ag_release_str(AgString* s) {
 		ag_free(s->buffer);
 }
 
-bool ag_m_sys_String_fromBlob(AgString* s, AgBlob* b, int at, int count) {
-	if ((at + count) / sizeof(uint64_t) >= b->size)
-		return false;
-	ag_release_str(s);
-	s->buffer = (AgStringBuffer*) ag_alloc(sizeof(AgStringBuffer) + count);
-	s->buffer->counter_mt = 2;
-	ag_memcpy(s->buffer->data, ((char*)(b->data)) + at, count);
-	s->buffer->data[count] = 0;
-	s->ptr = s->buffer->data;
-	return true;
-}
-
 AgObject* ag_fn_sys_getParent(AgObject* obj) {  // obj not null, result is nullable
 	if (obj->ctr_mt & AG_CTR_SHARED)
 		return 0;
@@ -754,7 +742,7 @@ void ag_bound_field_to_thread(void* field, int type, void* ctx) {
 	} else if (type == AG_VISIT_OWN){
 		ag_bound_own_to_thread(*(AgObject**)field, (ag_thread*)ctx);
 	} else if (type == AG_VISIT_STRING_BUF) {
-		AgStringBuffer* buf = *(AgStringBuffer**)field;
+		AgStringBuffer* buf = (AgStringBuffer*)field;
 		if ((buf->counter_mt & 1) == 0)
 			buf->counter_mt |= 1;
 	}
@@ -765,13 +753,17 @@ void ag_post_own_param_from_ag(ag_thread* th, AgObject* param) {
 	ag_write_queue(&ag_current_thread->out, (uint64_t)param);
 }
 
-void ag_init_retain_buffer() {
+void ag_init_this_thread() {
 	if (ag_retain_buffer)
 		return;
 	AG_TRACE0("init retain buffer");
 	ag_retain_buffer = AG_ALLOC(sizeof(intptr_t) * AG_RETAIN_BUFFER_SIZE);
 	ag_retain_pos = ag_retain_buffer;
 	ag_release_pos = ag_retain_buffer + AG_RETAIN_BUFFER_SIZE;
+	if (ag_current_thread == &ag_main_thread) {
+		pthread_mutex_init(&ag_retain_release_mutex, NULL);
+		pthread_mutex_init(&ag_threads_mutex, NULL);
+	}
 }
 
 void ag_maybe_flush_retain_release() {
@@ -782,7 +774,7 @@ void ag_maybe_flush_retain_release() {
 void* ag_thread_proc(ag_thread* th) {
 	ag_current_thread = th;
 	AG_TRACE0("thread_proc[");
-	ag_init_retain_buffer();
+	ag_init_this_thread();
 	struct timespec now;
 	pthread_mutex_lock(&th->mutex);
 	for (;;) {
@@ -879,11 +871,7 @@ int ag_handle_main_thread() {
 AgThread* ag_m_sys_Thread_start(AgThread* th, AgObject* root) {
 	AG_TRACE("thread start [root AgThread=%p root=%p", th, root);
 	ag_thread* t = NULL;
-	if (!ag_alloc_thread) { // it's first thread creation
-		ag_init_retain_buffer();
-		pthread_mutex_init(&ag_retain_release_mutex, NULL);
-		pthread_mutex_init(&ag_threads_mutex, NULL);
-	}
+	ag_init_this_thread();
 	pthread_mutex_lock(&ag_threads_mutex);
 	if (ag_thread_free) {
 		t = ag_thread_free;
@@ -992,20 +980,22 @@ void ag_post_weak_param(ag_thread* th, AgWeak* param) {
 	}
 }
 void ag_detach_own(AgObject* obj) {
+	assert(ag_fn_sys_getParent(obj) == NULL);
+	ag_retain_pin(obj);
 	ag_bound_own_to_thread(obj, NULL);
 }
 void ag_detach_weak(AgWeak* w) {
+	ag_retain_weak(w);
 	ag_make_weak_mt(w);
 }
 
 AgString* ag_make_str(const char* start, size_t size) {
 	AgString* s = (AgString*)ag_allocate_obj(sizeof(AgString));
 	s->buffer = (AgStringBuffer*)ag_alloc(sizeof(AgStringBuffer) + size);
-	s->buffer->counter_mt = 2;
+	s->buffer->counter_mt = 1 << 1 | 0;
 	ag_memcpy(s->buffer->data, start, size);
 	s->buffer->data[size] = 0;
 	s->ptr = s->buffer->data;
-	s->buffer = NULL;
 	s->head.dispatcher = ag_disp_sys_String;
 	s->head.ctr_mt |= AG_CTR_SHARED;
 	return s;
