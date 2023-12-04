@@ -31,12 +31,12 @@ void ag_fn_sdlFfi_destroyRenderer(int64_t rendererId) {
 
 void ag_fn_sdlFfi_waitEvent(AgBlob* event) {
     ag_make_blob_fit(event, sizeof(SDL_Event));
-    SDL_WaitEvent((SDL_Event*)event->data);
+    SDL_WaitEvent((SDL_Event*)event->bytes);
 }
 
 void ag_fn_sdlFfi_pollEvent(AgBlob* event) {
     ag_make_blob_fit(event, sizeof(SDL_Event));
-    SDL_PollEvent((SDL_Event*)event->data);
+    SDL_PollEvent((SDL_Event*)event->bytes);
 }
 
 void ag_fn_sdlFfi_delay(int64_t millisec) {

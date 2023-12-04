@@ -2,6 +2,7 @@
 #define _AG_SDL_BINDINGS_H_
 
 #include "../runtime/runtime.h"
+#include "runtime/blob.h"
 
 #ifdef __cplusplus
 extern "C" {
