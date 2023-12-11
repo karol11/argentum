@@ -21,7 +21,11 @@ endif()
 if(NOT DEFINED SDL2_IMAGE_LIBRARIES)
     get_target_property(SDL2_IMAGE_LIBRARIES SDL2_image::SDL2_image IMPORTED_IMPLIB)
 endif()
-include_directories(${CMAKE_CURRENT_LIST_DIR}/src ${SDL2_INCLUDE_DIRS} ${SDL2_IMAGE_INCLUDE_DIRS})
+find_package(CURL REQUIRED PATHS ../curl/lib/cmake/CURL)
+if(NOT DEFINED CURL_INCLUDE_DIR)
+    get_target_property(CURL_INCLUDE_DIR CURL::libcurl INTERFACE_INCLUDE_DIRECTORIES)
+endif()
+include_directories(${CMAKE_CURRENT_LIST_DIR}/src ${SDL2_INCLUDE_DIRS} ${SDL2_IMAGE_INCLUDE_DIRS} ${CURL_INCLUDE_DIR})
 
 set(ag_rtl_sources
     src/runtime/runtime.h

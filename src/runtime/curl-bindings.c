@@ -5,7 +5,7 @@
 #include "ag-queue.h"
 #include "blob.h"
 #include "array/array-base.h"
-#include "../../curl/include/curl/curl.h"
+#include "curl/curl.h"
 
 typedef struct AgHttpRequest {
 	AgObject header;
