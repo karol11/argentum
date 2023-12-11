@@ -5,6 +5,7 @@
 #include "ag-queue.h"
 #include "blob.h"
 #include "array/array-base.h"
+#include "map/shared-map.h"
 #include "curl/curl.h"
 
 typedef struct AgHttpRequest {
@@ -118,7 +119,7 @@ static void create_task(
 	curl_easy_setopt(task->easy, CURLOPT_WRITEFUNCTION, body_callback);
 	curl_easy_setopt(task->easy, CURLOPT_WRITEDATA, task);
 	curl_easy_setopt(task->easy, CURLOPT_PRIVATE, task);
-	curl_easy_setopt(task->easy, CURLOPT_SSL_VERIFYPEER, FALSE); // TEMP
+	curl_easy_setopt(task->easy, CURLOPT_SSL_VERIFYPEER, false); // TEMP
 	curl_multi_add_handle(ag_curl_multi, task->easy);
 }
 
@@ -220,7 +221,7 @@ void ag_fn_httpClient_destroyHttpClient(void* unused) {
 	curl_multi_wakeup(&ag_curl_multi);
 	pthread_cond_broadcast(&ag_http_cvar);
 	void* unused_res;
-	pthread_join(&ag_http_thread, &unused_res);
+	pthread_join(ag_http_thread, &unused_res);
 	pthread_mutex_destroy(&ag_http_mutex);
 	pthread_cond_destroy(&ag_http_cvar);
 	curl_multi_cleanup(ag_curl_multi);

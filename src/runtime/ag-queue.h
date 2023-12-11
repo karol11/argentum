@@ -13,7 +13,7 @@ typedef struct ag_queue {
 } ag_queue;
 
 void ag_init_queue(ag_queue* q);
-void ag_resize_queue(ag_queue* q, size_t space_needed);
+void ag_resize_queue(ag_queue* q, uint64_t space_needed);
 
 static inline uint64_t ag_read_queue(ag_queue* q) {
 	uint64_t r = *q->read_pos;

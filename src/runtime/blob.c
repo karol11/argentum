@@ -111,7 +111,7 @@ int64_t ag_m_sys_Blob_putChAt(AgBlob* b, int at, int codepoint) {
 }
 
 bool ag_m_sys_String_fromBlob(AgString* s, AgBlob* b, int at, int count) {
-	ag_release_str(s);
+	ag_release_pin(&s->head);
 	if ((at + count) / sizeof(uint64_t) >= b->bytes_count) {
 		s->buffer = NULL;
 		s->ptr = "";
