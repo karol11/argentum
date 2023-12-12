@@ -1,0 +1,52 @@
+using sys { String, Blob }
+
+class Sqlite {
+    internal = 0;
+    open(fileName String, flags int) ?Sqlite;
+    query(sql String, flags int) Query {
+        r = Query;
+        internalQuery(r, sql, flags);
+        r
+    }
+}
+fn afterCopySqlite(c Sqlite) { c.internal := 0; }
+fn onDisposeSqlite(c Sqlite);
+
+class Row{
+    internal = 0;
+    intAt(at int) int;
+    doubleAt(at int) double;
+    stringAt(at int) String;
+    blobAt(at int, result Blob);
+}
+fn afterCopyRow(r Row) { q.internnal := 0; }
+fn onDisposeRow(r Row);
+
+class Query {
+    +Row;
+    setString(at int, val String) this;
+    setInt(at int, val int) this;
+    setBlob(at int, val int) this;
+    execute(onRow(Row)) {
+        loop internalStep(this) ? onRow(this)
+    }
+    internalStep() bool;
+}
+
+test example(){
+    page = 0;
+    Connection.open("mydb.sqlite", 0) ?=c {
+        c.query("
+            SELECT id, name, avatar
+            FROM table
+            LIMIT 20, ?
+        ")
+        .setInt(1, page)
+        .execute() r \log("{}
+            <a href='/user/{r.intAt(0)}'>
+              <img src='/ava/{r.intAt(2)}.jpg'>
+              <div>{r.stringAt(1)}</div>
+            </a>
+        ")
+    }
+}
