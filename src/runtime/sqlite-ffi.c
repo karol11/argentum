@@ -1,6 +1,6 @@
 #include "runtime.h"
 #include "blob.h"
-#include "../../../sqlite/sqlite3.h"
+#include "../third-party/sqlite/sqlite3.h"
 
 typedef struct {
     AgObject header;
@@ -17,9 +17,10 @@ AgSqlite* ag_m_sqliteFfi_Sqlite_sqliteFfi_connect(
     AgString* file_name,
     int flags)
 {
-    return sqlite3_open_v2(file_name->ptr, &con->con, flags, NULL)
-        ? ag_retain_pin_nn(con)
-        : NULL;
+    if (sqlite3_open_v2(file_name->ptr, &con->con, flags, NULL) != SQLITE_OK)
+        return NULL;
+    ag_retain_pin_nn(&con->header);
+    return con;
 }
 
 void ag_fn_sqliteFfi_onDisposeSqlite(AgSqlite* con) {
@@ -33,9 +34,10 @@ AgSqliteQuery* ag_m_sqliteFfi_Sqlite_internalQuery(
     AgString* sql,
     int flags)
 {
-    return sqlite3_prepare_v3(con->con, sql->ptr, INT_MAX, flags, &q->stmt, NULL)
-        ? ag_retain_pin_nn(q)
-        : NULL;
+    if (sqlite3_prepare_v3(con->con, sql->ptr, INT_MAX, flags, &q->stmt, NULL) != SQLITE_OK)
+        con->con = NULL;
+    ag_retain_pin_nn(&q->header);
+    return q;
 }
 
 void ag_fn_sqliteFfi_onDisposeRow(AgSqliteQuery* q) {
@@ -68,17 +70,20 @@ void ag_m_sqliteFfi_Row_sqliteFfi_blobAt(AgSqliteQuery* q, int at, AgBlob* resul
 
 AgSqliteQuery* ag_m_sqliteFfi_Query_sqliteFfi_setString(AgSqliteQuery* q, int at, AgString* val) {
     sqlite3_bind_text(q->stmt, at, val->ptr, strlen(val->ptr), SQLITE_TRANSIENT);  // TODO: optimize after String/Cursor refactoring
-    return ag_retain_pin_nn(q);
+    ag_retain_pin_nn(&q->header);
+    return q;
 }
 
 AgSqliteQuery* ag_m_sqliteFfi_Query_sqliteFfi_setBlob(AgSqliteQuery* q, int at, AgBlob* val) {
     sqlite3_bind_blob(q->stmt, at, val->bytes, val->bytes_count, SQLITE_TRANSIENT); // It's mutable, so copy
-    return ag_retain_pin_nn(q);
+    ag_retain_pin_nn(&q->header);
+    return q;
 }
 
 AgSqliteQuery* ag_m_sqliteFfi_Query_sqliteFfi_setInt(AgSqliteQuery* q, int at, int64_t val) {
     sqlite3_bind_int64(q->stmt, at, val);
-    return ag_retain_pin_nn(q);
+    ag_retain_pin_nn(&q->header);
+    return q;
 }
 
 bool ag_m_sqliteFfi_Query_sqliteFfi_internalStep(AgSqliteQuery* q) {

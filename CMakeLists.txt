@@ -136,3 +136,12 @@ add_library (ag_runtime STATIC
 target_compile_definitions(ag_runtime PRIVATE AG_STANDALONE_COMPILER_MODE)
 set_property(TARGET ag_runtime PROPERTY C_STANDARD 11)
 set_property(TARGET ag_runtime PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+
+add_library (ag_sqlite STATIC
+    third-party/sqlite/sqlite3.h
+    third-party/sqlite/sqlite3.c
+    src/runtime/sqlite-ffi.c
+)
+target_compile_definitions(ag_sqlite PRIVATE AG_STANDALONE_COMPILER_MODE)
+set_property(TARGET ag_sqlite PROPERTY C_STANDARD 11)
+set_property(TARGET ag_sqlite PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
