@@ -1,0 +1,19 @@
+using sys { log }
+using sqliteFfi { Sqlite }
+using string;
+
+page = 0;
+Sqlite.open("mydb.sqlite", 0) ?=c {
+    c.query("
+        SELECT id, name, avatar
+        FROM table
+        LIMIT 20, ?
+    ", 0)
+    .setInt(1, page)
+    .execute() r \log("{}
+        <a href='/user/{r.intAt(0)}'>
+            <img src='/ava/{r.intAt(2)}.jpg'>
+            <div>{r.stringAt(1)}</div>
+        </a>
+    ")
+};

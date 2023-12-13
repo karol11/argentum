@@ -12,7 +12,7 @@ typedef struct {
     sqlite3_stmt* stmt;
 } AgSqliteQuery;
 
-AgSqlite* ag_m_sqliteFfi_Sqlite_sqliteFfi_connect(
+AgSqlite* ag_m_sqliteFfi_Sqlite_sqliteFfi_open(
     AgSqlite* con,
     AgString* file_name,
     int flags)
@@ -28,13 +28,13 @@ void ag_fn_sqliteFfi_onDisposeSqlite(AgSqlite* con) {
         sqlite3_close_v2(con->con);
 }
 
-AgSqliteQuery* ag_m_sqliteFfi_Sqlite_internalQuery(
+AgSqliteQuery* ag_m_sqliteFfi_Sqlite_sqliteFfi_internalQuery(
     AgSqlite* con,
     AgSqliteQuery* q,
     AgString* sql,
     int flags)
 {
-    if (sqlite3_prepare_v3(con->con, sql->ptr, INT_MAX, flags, &q->stmt, NULL) != SQLITE_OK)
+    if (sqlite3_prepare_v3(con->con, sql->ptr, -1, flags, &q->stmt, NULL) != SQLITE_OK)
         con->con = NULL;
     ag_retain_pin_nn(&q->header);
     return q;
