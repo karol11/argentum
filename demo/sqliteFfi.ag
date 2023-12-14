@@ -29,7 +29,7 @@ class Query {
     setInt(at int, val int) this;
     setBlob(at int, val int) this;
     execute(onRow(Row)) {
-        loop (internalStep() ? onRow(this))
+        loop !(internalStep() ? onRow(this))
     }
     internalStep() bool;
 }

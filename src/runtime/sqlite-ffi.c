@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include "runtime.h"
 #include "blob.h"
 #include "../third-party/sqlite/sqlite3.h"
@@ -17,8 +18,11 @@ AgSqlite* ag_m_sqliteFfi_Sqlite_sqliteFfi_open(
     AgString* file_name,
     int flags)
 {
-    if (sqlite3_open_v2(file_name->ptr, &con->con, flags, NULL) != SQLITE_OK)
+    int r = sqlite3_open_v2(file_name->ptr, &con->con, flags, NULL);
+    if (r != SQLITE_OK) {
+        fprintf(stderr, "sqlite3_open_v2 %s", sqlite3_errstr(r));
         return NULL;
+    }
     ag_retain_pin_nn(&con->header);
     return con;
 }
