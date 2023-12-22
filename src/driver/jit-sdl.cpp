@@ -47,28 +47,26 @@ int main(int argc, char* argv[]) {
         auto ast = own<Ast>::make();
         using FN = void(*)();
         ast->platform_exports.insert({
-            FN(ag_fn_sdlFfi_sdlInit),
-            FN(ag_fn_sdlFfi_createWindow),
-            FN(ag_fn_sdlFfi_createRenderer),
-            FN(ag_fn_sdlFfi_waitEvent),
-            FN(ag_fn_sdlFfi_pollEvent),
-            FN(ag_fn_sdlFfi_setRendererDrawColor),
-            FN(ag_fn_sdlFfi_rendererClear),
-            FN(ag_fn_sdlFfi_rendererFillRect),
-            FN(ag_fn_sdlFfi_rendererPresent),
-            FN(ag_fn_sdlFfi_createTextureFromSurface),
-            FN(ag_fn_sdlFfi_setTextureAlphaMod),
-            FN(ag_fn_sdlFfi_setTextureColorMod),
-            FN(ag_fn_sdlFfi_blt),
-            FN(ag_fn_sdlFfi_freeSurface),
-            FN(ag_fn_sdlFfi_destroyTexture),
-            FN(ag_fn_sdlFfi_destroyRenderer),
-            FN(ag_fn_sdlFfi_destroyWindow),
-            FN(ag_fn_sdlFfi_delay),
-            FN(ag_fn_sdlFfi_sdlQuit),
-            FN(ag_fn_sdlFfi_imgInit),
-            FN(ag_fn_sdlFfi_imgLoad),
-            FN(ag_fn_sdlFfi_imgQuit) });
+            FN(ag_m_sdl_Sdl_sdl_init),
+            FN(ag_m_sdl_Sdl_sdl_pollEvent),
+            FN(ag_destroy_sdl_Sdl),
+            FN(ag_m_sdl_Window_sdl_init),
+            FN(ag_destroy_sdl_Window),
+            FN(ag_m_sdl_Window_sdl_fill),
+            FN(ag_m_sdl_Window_sdl_fillRect),
+            FN(ag_m_sdl_Window_sdl_blt),
+            FN(ag_m_sdl_Window_sdl_flip),
+            FN(ag_m_sdl_Texture_sdl_load),
+            FN(ag_destroy_sdl_Texture),
+            FN(ag_m_sdl_Texture_sdl_setAlphaMod),
+            FN(ag_m_sdl_Texture_sdl_setTextureColorMod),
+            FN(ag_m_sdl_Font_sdl_load),
+            FN(ag_m_sdl_Font_sdl_name),
+            FN(ag_m_sdl_Font_sdl_style),
+            FN(ag_m_sdl_Font_sdl_stylesCount),
+            FN(ag_m_sdl_Font_sdl_renderTo),
+            FN(ag_m_sdl_Font_sdl_fit),
+            FN(ag_m_sdl_Font_sdl_measure) });
         std::cout << "Parsing " << argv[1] << std::endl;
         parse(ast, argv[2], [&](auto name) {
             return read_file(ast::format_str(argv[1], "/", name, ".ag"));

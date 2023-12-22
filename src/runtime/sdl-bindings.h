@@ -8,35 +8,37 @@
 extern "C" {
 #endif
 
-int64_t ag_fn_sdlFfi_sdlInit         (int64_t flags);
-void    ag_fn_sdlFfi_sdlQuit         ();
+typedef struct AgSdl AgSdl;
+typedef struct AgSdlWindow AgSdlWindow;
+typedef struct AgSdlTexture AgSdlTexture;
+typedef struct AgSdlFont AgSdlFont;
+typedef struct AgSdlRect AgSdlRect;
 
-int64_t ag_fn_sdlFfi_createWindow    (AgString* title, int64_t x, int64_t y, int64_t w, int64_t h, int64_t flags);
-void    ag_fn_sdlFfi_destroyWindow   (int64_t windowId);
+bool ag_m_sdl_Sdl_sdl_init(AgSdl* thiz, int64_t sdl_flags, int64_t img_flags);
+AgBlob* ag_m_sdl_Sdl_sdl_pollEvent(AgSdl* thiz);
+void ag_destroy_sdl_Sdl(AgSdl* thiz);
 
-int64_t ag_fn_sdlFfi_createRenderer  (int64_t windowId, int64_t index, int64_t flags);
-void    ag_fn_sdlFfi_destroyRenderer (int64_t rendererId);
+bool ag_m_sdl_Window_sdl_init(AgSdlWindow* thiz, AgString* title, AgSdlRect* bounds, int64_t flags, int64_t r_flags);
+void ag_destroy_sdl_Window(AgSdlWindow* thiz);
+void ag_m_sdl_Window_sdl_fill(AgSdlWindow* thiz, int64_t color);
+void ag_m_sdl_Window_sdl_fillRectXYWH(AgSdlWindow* thiz, int64_t x, int64_t y, int64_t w, int64_t h, int64_t color);
+void ag_m_sdl_Window_sdl_fillRect(AgSdlWindow* thiz, AgSdlRect* r, int64_t color);
+void ag_m_sdl_Window_sdl_bltXYWH(AgSdlWindow* thiz, AgSdlTexture* tex, int64_t sx, int64_t sy, int64_t sw, int64_t sh, int64_t dx, int64_t dy, int64_t dw, int64_t dh);
+void ag_m_sdl_Window_sdl_blt(AgSdlWindow* thiz, AgSdlTexture* tex, AgSdlRect* s, AgSdlRect* d);
+void ag_m_sdl_Window_sdl_flip(AgSdlWindow* thiz);
 
-void    ag_fn_sdlFfi_waitEvent       (AgBlob* event);
-void    ag_fn_sdlFfi_pollEvent       (AgBlob* event);
-void    ag_fn_sdlFfi_delay           (int64_t millisec);
+bool ag_m_sdl_Texture_sdl_load(AgSdlTexture* tex, AgSdlWindow* w, AgString* file_name);
+void ag_destroy_sdl_Texture(AgSdlTexture* tex);
+void ag_m_sdl_Texture_sdl_setAlphaMod(AgSdlTexture* tex, int64_t multiplier);
+void ag_m_sdl_Texture_sdl_setTextureColorMod(AgSdlTexture* tex, int64_t color);
 
-void    ag_fn_sdlFfi_setRendererDrawColor (int64_t rendererId, int64_t r, int64_t g, int64_t b, int64_t a);
-void    ag_fn_sdlFfi_rendererClear        (int64_t rendererId);
-void    ag_fn_sdlFfi_rendererFillRect     (int64_t rendererId, int64_t x, int64_t y, int64_t w, int64_t h);
-void    ag_fn_sdlFfi_blt                  (int64_t rendererId, int64_t textureId, int64_t sx, int64_t sy, int64_t sw, int64_t sh, int64_t dx, int64_t dy, int64_t dw, int64_t dh);
-void    ag_fn_sdlFfi_rendererPresent      (int64_t rendererId);
-
-int64_t ag_fn_sdlFfi_createTextureFromSurface (int64_t rendererId, int64_t surfaceId);
-void    ag_fn_sdlFfi_destroyTexture           (int64_t textureId);
-void    ag_fn_sdlFfi_setTextureAlphaMod       (int64_t texId, int64_t multiplier);
-void    ag_fn_sdlFfi_setTextureColorMod       (int64_t textureId, int64_t color);
-
-int64_t ag_fn_sdlFfi_imgInit (int64_t flags);
-void    ag_fn_sdlFfi_imgQuit ();
-
-int64_t ag_fn_sdlFfi_imgLoad        (AgString* file_name);
-void    ag_fn_sdlFfi_freeSurface (int64_t surfaceId);
+bool ag_m_sdl_Font_sdl_load(AgSdlFont* thiz, AgString* fontName, int style);
+AgString* ag_m_sdl_Font_sdl_name(AgSdlFont* thiz);
+AgString* ag_m_sdl_Font_sdl_style(AgSdlFont* thiz);
+int64_t ag_m_sdl_Font_sdl_stylesCount(AgSdlFont* thiz);
+void ag_m_sdl_Font_sdl_renderTo(AgSdlFont* thiz, AgSdlTexture* r, AgString* str, int ptSize, int flags, AgSdlWindow* wnd);
+int64_t ag_m_sdl_Font_sdl_fit(AgSdlFont* thiz, AgString* s, int64_t ptSize, int64_t flags, int64_t width);
+int64_t ag_m_sdl_Font_sdl_measure(AgSdlFont* thiz, AgString* str, int64_t ptSize, int64_t flags, AgSdlRect* extents);
 
 #ifdef __cplusplus
 }  // extern "C"

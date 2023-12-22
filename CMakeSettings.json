@@ -22,6 +22,11 @@
           "type": "PATH"
         },
         {
+          "name": "SDL2_ttf_DIR",
+          "value": "D:/cpp/SDL2_ttf-2.20.2/cmake",
+          "type": "PATH"
+        },
+        {
           "name": "LLVM_DIR",
           "value": "D:/cpp/llvm-17.0.4-dbg/lib/cmake/llvm",
           "type": "PATH"
@@ -50,6 +55,11 @@
           "type": "PATH"
         },
         {
+          "name": "SDL2_ttf_DIR",
+          "value": "D:/cpp/SDL2_ttf-2.20.2/cmake",
+          "type": "PATH"
+        },
+        {
           "name": "LLVM_DIR",
           "value": "D:/cpp/llvm-17.0.4-rel/lib/cmake/llvm",
           "type": "PATH"
@@ -75,6 +85,11 @@
         {
           "name": "SDL2_image_DIR",
           "value": "D:/cpp/SDL2_image-2.6.3/cmake",
+          "type": "PATH"
+        },
+        {
+          "name": "SDL2_ttf_DIR",
+          "value": "D:/cpp/SDL2_ttf-2.20.2/cmake",
           "type": "PATH"
         },
         {

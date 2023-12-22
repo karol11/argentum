@@ -1,5 +1,4 @@
 using sys { String }
-using sdlFfi;
 
 const xEventQuit = 256;
 const xRendererAccelerated = 2;
@@ -8,62 +7,57 @@ const xImgPng = 2;
 const xInitEverything = 0x7231;
 const xDefaultPos = 0x1FFF0000;
 
-//
-// High level safe API
-//
-class Sdl {
-    initVideo() bool {
-        sdlFfi_sdlInit(xInitEverything) == 0 &&
-        sdlFfi_imgInit(xImgJpg | xImgPng) != 0
-    }
-    eventLoop(handler (Event)) {
-        e = Event;
-        loop{
-            sdlFfi_pollEvent(e);
-            handler(e);
-            sdlFfi_delay(1000/30);
-            e[0] == xEventQuit
-        }
-    }
-}
-fn disposeSdl(sdl Sdl) {
-    sdlFfi_imgQuit();
-    sdlFfi_sdlQuit();
+class Rect{
+   x = 0;
+   y = 0;
+   w = 0;
+   h = 0;
+   xywh(vx int, vy int, vw int, vh int) this {
+      x := vx;
+      y := vy;
+      w := vw;
+      h := vh
+   }
+   ltrb(l int, t int, r int, b int) this {
+      x := l;
+      y := t;
+      w := r - l;
+      h := b - t
+   }
+   cwh(cx int, cy int, vw int, vh int) this {
+      x := cx - vw / 2;
+      y := cy - vh / 2;
+      w := vw;
+      h := vh
+   }
+   cx() int { x + w / 2 }
+   cy() int { y + h / 2 }
+   left() int { x }
+   top() int { y }
+   right() int { x + w }
+   bottom() int { y + h }
 }
 
+class Sdl {
+    internalEvent Blob;
+
+    init(sdlFlags int, sdlImageFlags int) bool;
+    pollEvent() ?Event;
+}
+fn disposeSdl(sdl Sdl);
+
 class Window {
-    handle = 0;
-    renderer = 0;
-    createCentered(title -String, w int, h int) bool {
-        destroyWindow(this);
-        handle := sdlFfi_createWindow(title, xDefaultPos, xDefaultPos, w, h, 0);
-        renderer := handle == 0 ? 0 : sdlFfi_createRenderer(handle, -1, xRendererAccelerated);
-        renderer != 0
-    }
-    fill(color int) {
-        renderer != 0 ? {
-            sdlFfi_setRendererDrawColor(renderer, color, color >> 8, color >> 16, color >> 24);
-            sdlFfi_rendererClear(renderer)
-        }
-    }
-    fillRect(x int, y int, w int, h int, color int) {
-        renderer != 0 ? {
-            sdlFfi_setRendererDrawColor(renderer, color, color >> 8, color >> 16, color >> 24);
-            sdlFfi_rendererFillRect(renderer, x, y, w, h);
-        }
-    }
-    blt(tex Texture, sx int, sy int, sw int, sh int, dx int, dy int, dw int, dh int){
-        renderer != 0 && tex.id != 0 ?
-            sdlFfi_blt(renderer, tex.id, sx, sy, sw, sh, dx, dy, dw, dh);
-    }
-    flip() {
-        renderer != 0 ? sdlFfi_rendererPresent(renderer);
-    }
+    internalWndHandle = 0;
+    internalRendererHandle = 0;
+    init(title -String, bounds -Rect, wndFlags int, rendFlags int);
+    fill(color int);
+    fillRectXYWH(x int, y int, w int, h int, color int);
+    fillRect(r -Rect, color int);
+    bltXYWH(tex Texture, sx int, sy int, sw int, sh int, dx int, dy int, dw int, dh int);
+    blt(tex Texture, src -Rect, dst -Rect);
+    flip();
 }
-fn destroyWindow(w Window) {
-    w.renderer != 0 ? sdlFfi_destroyRenderer(w.renderer);
-    w.handle != 0 ? sdlFfi_destroyWindow(w.handle);
-}
+fn destroyWindow(w Window);
 fn afterCopyWindow(w Window) { w.handle := w.renderer := 0 }
 
 class Event {
@@ -73,17 +67,9 @@ class Event {
 
 class Texture{
     id = 0;
-    init(wnd Window, fileName -String) bool {
-        wnd.renderer != 0 && {
-            surface = sdlFfi_imgLoad(fileName);
-            surface != 0 && {
-                disposeTexture(this);
-                id := sdlFfi_createTextureFromSurface(wnd.renderer, surface);
-                sdlFfi_freeSurface(surface);
-                id != 0
-            }
-        }
-    }
+    w = 0;
+    h = 0;
+    load(wnd Window, fileName -String);
     setAlphaMod(multiplier int) {
         id != 0 ? sdlFfi_setTextureAlphaMod(id, multiplier);
     }
@@ -91,6 +77,46 @@ class Texture{
         id != 0 ? sdlFfi_setTextureColorMod(id, color);
     }
 }
-fn disposeTexture(t Texture) {
-    t.id != 0 ? sdlFfi_destroyTexture(t.id)
+fn disposeTexture(t Texture);
+fn afterCopyTexture(t Texture) { t.id := 0 }
+
+class Font{
+    id = 0;
+
+    load(fontName -String, style int) bool;
+
+    name() String;
+    style() String;
+    stylesCount() int;
+
+    // Create bitmap image of a string
+    // flags - italic, bold, underline
+    renderTo(res Texture, s -String, ptSize int, flags int, w Window);
+    render(s -String, w Window, ptSize int, flags int) @Texture {
+        res = Texture;
+        renderTo(s, ptSize, flags, res);
+        res
+    }
+
+    // Measure how many characters fits in width.
+    fit(s -String, ptSize int, flags int, width int) int;
+
+    // Get the font metrics of the string.
+    // Extents Rect filled with metrics of string portion that fits:
+    // r.x = -startBearingX
+    // r.y = -ascent
+    // r.w = endBearingX - startBearingX
+    // r.h = ascent + descent
+    // So to align multiple text on base line Y, they should be rendered at Y + extent.y.
+    // Max height of line of different fonts is max(extent.h).
+    // Horisontal step between adjuscent text spans A and B of the same line is result of measure.
+    // Safe left margin to fit all pixels of all lines is min(extent.x) and it's usually negative.
+    // Safe right margin of all lines = max(lineLastBasePoint+lastExtent.x+lastExtent.width)
+    // Safe top margin of the first line = min(baselinePosY + extent.y)
+    // SafeBotton margin = max(baseline + extent.y + extent.h)
+    // Line width for alignments (center, right) should be measused as sum(results of measure)
+    // Returns horisontsl step of base point.
+    measure(s -String, ptSize int, flags int, extents Rect) int;
 }
+fn disposeFont(f Font);
+fn afterCopyFont(f Font) { f.id := 0 }
