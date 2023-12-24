@@ -48,5 +48,4 @@ const xInternalHttpClient = (*HttpClient).start();
 class HttpClient {
     *start() this;
 }
-fn destroyHttpClient(client HttpClient);
-fn afterCopyHttpClient(client HttpClient);
+fn disposeHttpClient(client HttpClient);

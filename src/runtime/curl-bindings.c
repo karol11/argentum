@@ -39,7 +39,6 @@ pthread_cond_t ag_http_cvar;
 ag_queue ag_http_queue;
 pthread_t ag_http_thread;
 CURLM* ag_curl_multi = NULL;
-int ag_http_client_counter = 0;
 
 static size_t header_callback(char* buffer, size_t isize, size_t nitems, void* userdata) {
 	if (((ag_http_task*)userdata)->on_end_data->target == NULL)
@@ -182,7 +181,6 @@ terminate:
 
 void* ag_m_httpClient_HttpClient_httpClient_start(AgObject* cl) {
 	assert(ag_curl_multi == NULL);
-	ag_http_client_counter++;
 	ag_init_this_thread();
 	pthread_mutex_init(&ag_http_mutex, NULL);
 	pthread_cond_init(&ag_http_cvar, NULL);
@@ -207,12 +205,8 @@ void ag_fn_httpClient_executeRequestInternal(AgHttpResponse* response, AgWeak* o
 	pthread_cond_broadcast(&ag_http_cvar);
 }
 
-void ag_fn_httpClient_afterCopyHttpClient(void* unused) {
-	ag_http_client_counter++;
-}
-void ag_fn_httpClient_destroyHttpClient(void* unused) {
-	assert(ag_curl_multi != NULL);
-	if (--ag_http_client_counter != 0)
+void ag_fn_httpClient_disposeHttpClient(void* unused) {
+	if (ag_curl_multi == NULL)
 		return;
 	pthread_mutex_lock(&ag_http_mutex);
 	ag_resize_queue(&ag_http_queue, 1);
