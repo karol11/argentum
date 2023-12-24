@@ -49,7 +49,7 @@ fn disposeSdl(sdl Sdl);
 class Window {
     internalWndHandle = 0;
     internalRendererHandle = 0;
-    init(title -String, bounds -Rect, wndFlags int, rendFlags int);
+    init(title -String, bounds -Rect, wndFlags int, rendFlags int) bool;
     fill(color int);
     fillRectXYWH(x int, y int, w int, h int, color int);
     fillRect(r -Rect, color int);

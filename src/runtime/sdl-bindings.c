@@ -50,7 +50,7 @@ AgBlob* ag_m_sdl_Sdl_sdl_pollEvent(AgSdl* thiz) {
         : NULL;
 }
 
-void ag_destroy_sdl_Sdl(AgSdl* thiz) {
+void ag_fn_sdl_disposeSdl(AgSdl* thiz) {
     if (thiz->event->bytes_count) {
         TTF_Quit();
         IMG_Quit();
@@ -64,7 +64,7 @@ bool ag_m_sdl_Window_sdl_init(AgSdlWindow* thiz, AgString* title, AgSdlRect* bou
     return thiz->sdl_wnd && thiz->sdl_rend;
 }
 
-void ag_destroy_sdl_Window(AgSdlWindow* thiz) {
+void ag_fn_sdl_disposeWindow(AgSdlWindow* thiz) {
     if (thiz->sdl_rend)
         SDL_DestroyRenderer(thiz->sdl_rend);
     if (thiz->sdl_wnd)
@@ -113,7 +113,7 @@ bool ag_m_sdl_Texture_sdl_load(AgSdlTexture* tex, AgSdlWindow* w, AgString* file
 }
 
 bool ag_sdl_surface_to_texture(AgSdlTexture* tex, AgSdlWindow* w, SDL_Surface* s) {
-    ag_destroy_sdl_Texture(tex);
+    ag_fn_sdl_disposeTexture(tex);
     if (s) {
         tex->sdl_tex = SDL_CreateTextureFromSurface(w->sdl_rend, s);
         tex->w = s->w;
@@ -126,7 +126,7 @@ bool ag_sdl_surface_to_texture(AgSdlTexture* tex, AgSdlWindow* w, SDL_Surface* s
     return tex->sdl_tex != NULL;
 }
 
-void ag_destroy_sdl_Texture(AgSdlTexture* tex) {
+void ag_fn_sdl_disposeTexture(AgSdlTexture* tex) {
     if (tex->sdl_tex)
         SDL_DestroyTexture(tex->sdl_tex);
 }
@@ -136,7 +136,7 @@ void ag_m_sdl_Texture_sdl_setAlphaMod(AgSdlTexture* tex, int64_t multiplier) {
         SDL_SetTextureAlphaMod(tex->sdl_tex, (int)multiplier);
 }
 
-void ag_m_sdl_Texture_sdl_setTextureColorMod(AgSdlTexture* tex, int64_t color) {
+void ag_m_sdl_Texture_sdl_setColorMod(AgSdlTexture* tex, int64_t color) {
     if (tex->sdl_tex)
         SDL_SetTextureColorMod(
             tex->sdl_tex,
@@ -148,6 +148,11 @@ void ag_m_sdl_Texture_sdl_setTextureColorMod(AgSdlTexture* tex, int64_t color) {
 bool ag_m_sdl_Font_sdl_load(AgSdlFont* thiz, AgString* fontName, int style) {
     thiz->sdl_font = TTF_OpenFontIndex(fontName->ptr, 16, style);
     return thiz->sdl_font != NULL;
+}
+
+void ag_fn_sdl_disposeFont(AgSdlFont* fnt) {
+    if (fnt->sdl_font)
+        TTF_CloseFont(fnt->sdl_font);
 }
 
 AgString* ag_m_sdl_Font_sdl_name(AgSdlFont* thiz) {
