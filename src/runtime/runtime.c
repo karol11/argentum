@@ -565,6 +565,9 @@ void ag_fn_sys_terminate(int result) {
 void ag_fn_sys_log(AgString* s) {
 	fputs(s->ptr, stdout);
 }
+uint64_t ag_fn_sys_nowMs() {
+	return clock() / (CLOCKS_PER_SEC / 1000);
+}
 
 int64_t ag_fn_sys_hash(AgObject* obj) {  // Shared
 	if (!obj)

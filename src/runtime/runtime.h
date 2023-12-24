@@ -190,6 +190,7 @@ void      ag_fn_sys_terminate     (int);
 bool      ag_fn_sys_setMainObject (AgObject* root); // root must be not owned, returns true on success
 void      ag_fn_sys_log           (AgString* s);
 int64_t   ag_fn_sys_hash          (AgObject* s);
+uint64_t  ag_fn_sys_nowMs         ();
 
 //
 // Thread
