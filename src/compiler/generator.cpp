@@ -1206,13 +1206,14 @@ struct Generator : ast::ActionScanner {
 			builder->SetInsertPoint(exit_bb);
 		}
 		active_breaks = move(prev_breaks);
-		for (; !consts_to_dispose.empty(); consts_to_dispose.pop_back()) {
-			builder->CreateCall(fn_dispose, {
-				builder->CreateLoad(ptr_type, consts_to_dispose.back().data)
-			});
-		}
 		if (&node == &*ast->starting_module->entry_point) {
-			builder->CreateRet(builder->CreateCall(fn_handle_main_thread, {}));
+			auto main_ret_val = builder->CreateCall(fn_handle_main_thread, {});
+			for (; !consts_to_dispose.empty(); consts_to_dispose.pop_back()) {
+				builder->CreateCall(fn_dispose, {
+					builder->CreateLoad(ptr_type, consts_to_dispose.back().data)
+					});
+			}
+			builder->CreateRet(main_ret_val);
 		} else if (isa<ast::TpVoid>(*fn_result.type)) {
 			builder->CreateRetVoid();
 		} else {
