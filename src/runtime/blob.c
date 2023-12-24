@@ -111,15 +111,14 @@ int64_t ag_m_sys_Blob_putChAt(AgBlob* b, int at, int codepoint) {
 }
 
 bool ag_m_sys_String_fromBlob(AgString* s, AgBlob* b, int at, int count) {
-	ag_release_pin(&s->head);
-	if ((at + count) / sizeof(uint64_t) >= b->bytes_count) {
+	if (at + count >= b->bytes_count) {
 		s->buffer = NULL;
 		s->ptr = "";
 		return false;
 	}
 	s->buffer = (AgStringBuffer*)ag_alloc(sizeof(AgStringBuffer) + count);
 	s->buffer->counter_mt = 2;
-	ag_memcpy(s->buffer->data, ((char*)(b->bytes)) + at, count);
+	ag_memcpy(s->buffer->data, b->bytes + at, count);
 	s->buffer->data[count] = 0;
 	s->ptr = s->buffer->data;
 	return true;
