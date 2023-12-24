@@ -111,7 +111,7 @@ int64_t ag_m_sys_Blob_putChAt(AgBlob* b, int at, int codepoint) {
 }
 
 bool ag_m_sys_String_fromBlob(AgString* s, AgBlob* b, int at, int count) {
-	if (at + count >= b->bytes_count) {
+	if (at + count > b->bytes_count) {
 		s->buffer = NULL;
 		s->ptr = "";
 		return false;
