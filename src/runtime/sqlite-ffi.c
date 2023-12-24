@@ -27,7 +27,7 @@ AgSqlite* ag_m_sqliteFfi_Sqlite_sqliteFfi_open(
     return con;
 }
 
-void ag_fn_sqliteFfi_onDisposeSqlite(AgSqlite* con) {
+void ag_fn_sqliteFfi_disposeSqlite(AgSqlite* con) {
     if (con->con)
         sqlite3_close_v2(con->con);
 }
@@ -44,7 +44,7 @@ AgSqliteQuery* ag_m_sqliteFfi_Sqlite_sqliteFfi_internalQuery(
     return q;
 }
 
-void ag_fn_sqliteFfi_onDisposeRow(AgSqliteQuery* q) {
+void ag_fn_sqliteFfi_disposeRow(AgSqliteQuery* q) {
     if (q->stmt)
         sqlite3_finalize(q->stmt);
 }

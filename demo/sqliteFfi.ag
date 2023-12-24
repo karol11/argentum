@@ -11,7 +11,7 @@ class Sqlite {
     internalQuery(q Query, sql -String, flags int);
 }
 fn afterCopySqlite(c Sqlite) { c.internal := 0; }
-fn onDisposeSqlite(c Sqlite);
+fn disposeSqlite(c Sqlite);
 
 class Row{
     internal = 0;
@@ -21,7 +21,7 @@ class Row{
     blobAt(at int, result Blob);
 }
 fn afterCopyRow(r Row) { r.internal := 0; }
-fn onDisposeRow(r Row);
+fn disposeRow(r Row);
 
 class Query {
     +Row;
