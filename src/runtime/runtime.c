@@ -566,7 +566,8 @@ void ag_fn_sys_log(AgString* s) {
 	fputs(s->ptr, stdout);
 }
 uint64_t ag_fn_sys_nowMs() {
-	return clock() / (CLOCKS_PER_SEC / 1000);
+	struct timespec now;
+	return timespec_get(&now, TIME_UTC) ? timespec_to_ms(&now) : 0;
 }
 
 int64_t ag_fn_sys_hash(AgObject* obj) {  // Shared
@@ -803,7 +804,7 @@ void* ag_thread_proc(ag_thread* th) {
 			}
 			AG_TRACE0("thread_proc handle incoming]");
 			pthread_mutex_lock(&th->mutex);
-		} else if (th->timer_ms && timespec_get(&now, TIME_UTC) && timespec_to_ms(&now) <= th->timer_ms) {
+		} else if (th->timer_ms && timespec_get(&now, TIME_UTC) && timespec_to_ms(&now) >= th->timer_ms) {
 			th->timer_ms = 0;
 			AgObject* timer_object = ag_deref_weak(th->timer_proc_param);
 			if (timer_object) {
