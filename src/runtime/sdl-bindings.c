@@ -40,7 +40,7 @@ bool ag_m_sdl_Sdl_sdl_init(AgSdl* thiz, int64_t sdl_flags, int64_t img_flags) {
     ag_make_blob_fit(thiz->event, sizeof(SDL_Event));
     return
         SDL_Init((int)sdl_flags) == 0 &&
-        IMG_Init((int)img_flags) == 0 &&
+        IMG_Init((int)img_flags) == img_flags &&
         TTF_Init() == 0;
 }
 
@@ -140,9 +140,9 @@ void ag_m_sdl_Texture_sdl_setColorMod(AgSdlTexture* tex, int64_t color) {
     if (tex->sdl_tex)
         SDL_SetTextureColorMod(
             tex->sdl_tex,
-            (int8_t)(color & 0xff),
-            (int8_t)(color >> 8) & 0xff,
-            (int8_t)(color >> 16) & 0xff);
+            (int8_t)((color >> 16) & 0xff),
+            (int8_t)((color >> 8) & 0xff),
+            (int8_t)color & 0xff);
 }
 
 bool ag_m_sdl_Font_sdl_load(AgSdlFont* thiz, AgString* fontName, int style) {
@@ -191,12 +191,10 @@ void ag_m_sdl_Font_sdl_renderTo(AgSdlFont* thiz, AgSdlTexture* r, AgString* str,
     ag_sdl_surface_to_texture(
         r,
         wnd,
-        TTF_RenderUTF8_Shaded(
+        TTF_RenderUTF8_Blended(
             thiz->sdl_font,
             str->ptr,
-            (SDL_Color) { 255, 255, 255, 255 },
-            (SDL_Color) { 0, 0, 0, 0 }));
-
+            (SDL_Color) { 255, 255, 255, 255 }));
 }
 
 int64_t ag_m_sdl_Font_sdl_fit(AgSdlFont* thiz, AgString* s, int64_t ptSize, int64_t flags, int64_t width) {
