@@ -304,7 +304,7 @@ struct Var : Node {
 	own<Type> type;
 	string name;
 	own<Action> initializer;  // Can be null for lambda parameter. If not null, defines the local initial value or param default value and type.
-	size_t lexical_depth = 0;
+	size_t lexical_depth = 0; // lexical depth at which var is declared
 	bool captured = false;
 	bool is_mutable = false;
 	bool is_const = false;

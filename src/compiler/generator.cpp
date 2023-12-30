@@ -161,6 +161,7 @@ struct Generator : ast::ActionScanner {
 	unordered_map<pin<ast::AbstractClass>, ClassInfo> classes;  // for classes and class instances
 	unordered_map<pin<ast::Method>, MethodInfo> methods;
 	unordered_map<pin<ast::Function>, llvm::Function*> functions;
+	vector<function<void()>> execute_in_global_scope;
 	struct BreakTrace {
 		llvm::BasicBlock* bb;
 		Val result;
@@ -726,7 +727,10 @@ struct Generator : ast::ActionScanner {
 			if (isa<ast::TpWeak>(*as_opt->wrapped) || isa<ast::TpConformWeak>(*as_opt->wrapped) || isa<ast::TpFrozenWeak>(*as_opt->wrapped)) {
 				builder->CreateCall(fn_release_weak, { cast_to(ptr, ptr_type) });
 			} else if (isa<ast::TpDelegate>(*as_opt->wrapped)) {
-				builder->CreateCall(fn_release_weak, { builder->CreateExtractValue(ptr, {0}) });
+				builder->CreateCall(fn_release_weak, {
+					builder->CreateExtractValue(
+						cast_to(ptr, delegate_struct),
+						{0}) });
 			} else if (isa<ast::TpRef>(*as_opt->wrapped) || (isa<ast::TpOwn>(*as_opt->wrapped) && is_local)) {
 				builder->CreateCall(fn_release_pin, { cast_to(ptr, ptr_type) });
 			} else if (isa<ast::TpShared>(*as_opt->wrapped) || isa<ast::TpConformRef>(*as_opt->wrapped)) {
@@ -738,7 +742,10 @@ struct Generator : ast::ActionScanner {
 			if (isa<ast::TpWeak>(*type) || isa<ast::TpConformWeak>(*type) || isa<ast::TpFrozenWeak>(*type)) {
 				builder->CreateCall(fn_release_weak, { cast_to(ptr, ptr_type) });
 			} else if (isa<ast::TpDelegate>(*type)) {
-				builder->CreateCall(fn_release_weak, { builder->CreateExtractValue(ptr, {0}) });
+				builder->CreateCall(fn_release_weak, {
+					builder->CreateExtractValue(
+						cast_to(ptr, delegate_struct),
+						{0})});
 			} else if (isa<ast::TpRef>(*type) || (isa<ast::TpOwn>(*type) && is_local)) {
 				build_release_ptr_not_null(ptr);  // inlined ag_release_pin_nn
 			} else if (isa<ast::TpShared>(*type) || isa<ast::TpConformRef>(*type)) {
@@ -1442,15 +1449,27 @@ struct Generator : ast::ActionScanner {
 	}
 
 	void on_immediate_delegate(ast::ImmediateDelegate& node) override {
+		if (dom::isa<ast::MkInstance>(*node.base)) {
+			result->data = builder->CreateInsertValue(
+				builder->CreateInsertValue(
+					llvm::UndefValue::get(delegate_struct),
+					null_weak,
+					{ 0 }),
+				null_weak,
+				{ 1 });
+			return;
+		}
 		auto dl_fn = llvm::Function::Create(
 			lambda_to_llvm_fn(node, node.type()),
 			llvm::Function::InternalLinkage,
 			ast::format_str("ag_dl_", node.module->name, "_", node.name),
 			module.get());
-		auto prev_fn = current_ll_fn;
-		current_ll_fn = dl_fn;
-		compile_fn_body(node, ast::format_str("ag_dl_", node.module->name, "_", node.name));
-		current_ll_fn = prev_fn;
+		execute_in_global_scope.push_back([&, dl_fn] {
+			auto prev_fn = current_ll_fn;
+			current_ll_fn = dl_fn;
+			compile_fn_body(node, ast::format_str("ag_dl_", node.module->name, "_", node.name));
+			current_ll_fn = prev_fn;
+		});
 		auto base = compile(node.base);
 		llvm::Value* base_weak_val = nullptr;
 		if (dom::isa<ast::TpWeak>(*base.type)) {
@@ -1556,8 +1575,7 @@ struct Generator : ast::ActionScanner {
 					return r;
 				},
 				[&] {
-					auto opt_t = ast->tp_optional(result_type);
-					return Val{ opt_t, make_opt_val(make_opt_none(result_type), opt_t), Val::Static{} };
+					return Val{ result_type, make_opt_none(result_type), Val::Static{}};
 				});
 		} else {
 			bool is_fn = isa<ast::TpFunction>(*node.callee->type());
@@ -1921,7 +1939,7 @@ struct Generator : ast::ActionScanner {
 			result->type = node.type();  // @T->T and base-dependent conversions
 			auto addr = builder->CreateStructGEP(class_fields, base.data, node.field->offset);
 			build_release(
-				builder->CreateLoad(ptr_type, addr),
+				builder->CreateLoad(class_fields->getElementType(node.field->offset), addr),
 				node.field->initializer->type(),
 				false);  // not local, clear parent
 			builder->CreateStore(result->data, addr);
@@ -3085,7 +3103,7 @@ struct Generator : ast::ActionScanner {
 				for (auto& field : cls->fields) {
 					build_release(
 						builder.CreateLoad(
-							ptr_type,
+							info.fields->getElementType(field->offset),
 							builder.CreateStructGEP(info.fields, result, field->offset)),
 						field->initializer->type(),
 						false);  // not local, clear parent
@@ -3292,6 +3310,11 @@ struct Generator : ast::ActionScanner {
 				current_ll_fn = fn;
 				compile_fn_body(*test.second, ast::format_str("ag_test_", m.first, "_", test.first));
 			}
+		}
+		while (!execute_in_global_scope.empty()) {
+			auto fn = move(execute_in_global_scope.back());
+			execute_in_global_scope.pop_back();
+			fn();
 		}
 		if (di_builder)
 			di_builder->finalize();
