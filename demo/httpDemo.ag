@@ -12,7 +12,7 @@ setMainObject(app);
 get(xTestUrl, app.&onFetched(resp Response){
     log(`Result code=${resp.status}: `);
     s = String;
-    s.fromBlob(resp.body, 0, resp.body.capacity());
+    s.fromBlob(resp.body, 0, 40);
     log(s);
     setMainObject(?App);
 })

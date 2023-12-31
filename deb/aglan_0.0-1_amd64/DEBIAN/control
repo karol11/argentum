@@ -1,7 +1,7 @@
 Package: aglan
 Version: 0.0-1
 Architecture: amd64
-Depends: g++, libsdl2-2.0-0, libsdl2-image-dev
+Depends: g++, libsdl2-2.0-0, libsdl2-image-dev, libsdl2-ttf-dev
 Maintainer: Andrey Kalmatskiy <admin@aglang.org>
 Description: Compiler, runtime library and examples of the Argentum programming language.
  Argentum is a strictly typed, compiled, modular, object-oriented, functional, multithreaded,

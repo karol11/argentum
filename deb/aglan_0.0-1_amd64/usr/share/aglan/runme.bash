@@ -22,14 +22,14 @@ fi
 pushd "$dir_name" > /dev/null
 cp -n /usr/share/aglan/demo-src/* .
 
-demo_list=("helloWorld" "fizzBuzz" "bottles" "threadTest" "graph" "demo")
+demo_list=("helloWorld" "sceneDemo" "fizzBuzz" "bottles" "threadTest" "graph" "demo" "sqliteDemo" "httpDemo")
 for demo in "${demo_list[@]}"; do
     echo -e "${YELLOW}================ $demo ==================${GREEN}"
     cat "$demo.ag"
     echo -e "${NC}"
     read -p "Press Enter to run..."
     agc -src . -start "$demo" -o "$demo.o"
-    gcc -no-pie "$demo.o" /usr/lib/aglan/libag_runtime.a -L/usr/lib/x86_64-linux-gnu -lSDL2 -lSDL2_image -o "$demo"
+    gcc -no-pie "$demo.o" /usr/lib/aglan/libag_runtime.a /usr/lib/aglan/libag_sqlite.a -L/usr/lib/x86_64-linux-gnu -lSDL2 -lSDL2_image -lSDL2_ttf -l:libcurl.so -o "$demo"
     echo -e "${GREEN}"
     "./$demo"
     echo -e "${NC}"
