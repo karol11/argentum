@@ -1,0 +1,321 @@
+using sys { Object, Array, nowMs, String }
+using sdl { Sdl, Rect, Texture, Window, Font }
+using utils { forRange }
+using array;
+
+class Scene {
+    +Window;
+    initScene(title *String, w int, h int) {
+        sdl.init(sdl_xInitEverything, sdl_xImgJpg | sdl_xImgPng );
+        init(title, Rect.xywh(sdl_xDefaultPos, sdl_xDefaultPos, w, h), 0, sdl_xRendererAccelerated);
+    }
+    nextFrame() {
+        frameStartMs = nowMs();
+        loop !(sdl.pollEvent() ? {
+            _[0] == sdl_xEventQuit ? sys_setMainObject(?sys_Object);
+        });
+        roots.each(i \ i.render());
+        flip();
+        animators.plow(a \ a.step(1000/60));
+        sys_postTimer(frameStartMs + 1000/60, this.nextFrame);
+    }
+    sdl = Sdl;
+    defFont = Font;
+    x = 0;
+    y = 0;
+    opacity = 255;
+//    scaleX = 0x1_0000;
+//    scaleY = 0x1_0000;
+//    clip = Rect;
+    roots = Array(Item);
+    animators = Array(Animator);
+}
+
+class Animator {
+    step(deltaMs int) bool { false }
+}
+
+class DelayAnimator{
+    +Animator{
+        step(deltaMs int) bool {
+            dur -= deltaMs;
+            dur <= 0 ? handler();
+            dur > 0
+        }
+    }
+    init(durationMs int, onEnd&()) {
+        dur := durationMs;
+        handler := onEnd;
+    }
+    handler = Object.&dummyVoid(){};
+    dur = 0;
+}
+
+class XYAnimator {
+    +Animator{
+        step(deltaMs int) bool {
+            isInProgress = dur > deltaMs;
+            isInProgress ? {
+                setter(
+                    x += (dstX - x) * deltaMs / dur,
+                    y += (dstY - y) * deltaMs / dur);
+                dur -= deltaMs;
+            } : setter(dstX, dstY);
+            isInProgress
+        }
+    }
+    setter = Object.&dummyXY(x int, y int){};
+    x = 0;
+    y = 0;
+    dstX = 0;
+    dstY = 0;
+    dur = 0;
+    init(startX int, startY int, endX int, endY int, durationMs int, setter&(int, int)) this {
+        x := startX;
+        y := startY;
+        dstX := endX;
+        dstY := endY;
+        dur := durationMs;
+        this.setter := setter;
+    }
+}
+
+class ArgbAnimator {
+    +Animator{
+        step(deltaMs int) bool {
+            isInProgress = dur > deltaMs;
+            isInProgress ? {
+                a += (dstA - a) * deltaMs / dur;
+                r += (dstR - r) * deltaMs / dur;
+                g += (dstG - g) * deltaMs / dur;
+                b += (dstB - b) * deltaMs / dur;
+                setter((a << 24) | (r << 16) | (g << 8) | b);
+                dur -= deltaMs;
+            } : setter((dstA << 24) | (dstR << 16) | (dstG << 8) | dstB);
+            isInProgress
+        }
+    }
+    setter = Object.&dummyARGB(argb int){};
+    a = 0;
+    r = 0;
+    g = 0;
+    b = 0;
+    dstA = 0;
+    dstR = 0;
+    dstG = 0;
+    dstB = 0;
+    dur = 0;
+    init(start int, end int, durationMs int, setter&(int)) this {
+        a := start >> 24 & 0xff;
+        r := start >> 16 & 0xff;
+        g := start >> 8 & 0xff;
+        b := start & 0xff;
+        dstA := end >> 24 & 0xff;
+        dstR := end >> 16 & 0xff;
+        dstG := end >> 8 & 0xff;
+        dstB := end & 0xff;
+        dur := durationMs;
+        this.setter := setter;
+    }
+}
+
+class ValAnimator {
+    +Animator{
+        step(deltaMs int) bool {
+            isInProgress = dur > deltaMs;
+            isInProgress ? {
+                setter(v += (dstV - v) * deltaMs / dur);
+                dur -= deltaMs;
+            } : setter(dstV);
+            isInProgress
+        }
+    }
+    setter = Object.&dummyV(v int){};
+    v = 0;
+    dstV = 0;
+    dur = 0;
+    init(startV int, endV int, durationMs int, setter&(int)) this {
+        v := startV;
+        dstV := endV;
+        dur := durationMs;
+        this.setter := setter;
+    }
+}
+
+class Modifier{
+    do(c Scene){}
+    undo(c Scene){}
+}
+
+class Opacity {
+    +Modifier {
+        do(c Scene) {
+            saved := c.opacity;
+            c.opacity := c.opacity * val >> 8;
+        }
+        undo(c Scene) {
+            c.opacity := saved;
+        }
+    }
+    set(v int) this { val := v }
+    animate(s Scene, dst int, durationMs int) this {
+        s.animators.append(ValAnimator.init(val, dst, durationMs, this.&opacitySetter(v int){
+            val := v;
+        }))
+    } 
+    val = 255;
+    saved = 0;
+}
+
+class Item{
+    render() {}
+    x = 0;
+    y = 0;
+    scene = &Scene;
+    call(s Scene) this { scene := &s }
+    setPos(x int, y int) this {
+        this.x := x;
+        this.y := y;
+    }
+    animatePos(dx int, dy int, durMs int) this {
+        scene?_.animators.append(XYAnimator.init(x, y, dx, dy, durMs, this.&posSetter(vx int, vy int){
+            x := vx;
+            y := vy;    
+        }))
+    }
+}
+
+class Image{
+    +Item{
+        render() {
+            scene ? {
+                img.setAlphaMod(color >> 24 * _.opacity >> 8);
+                img.setColorMod(color & 0xff_ff_ff);
+                bltRect(_, 0, 0, img.w, img.h, 0, 0, img.w, img.h);
+            }
+        }
+    }
+    bltRect(s Scene, srcX int, srcY int, srcW int, srcH int, dstX int, dstY int, dstW int, dstH int) {
+        s.bltXYWH(img,
+            srcX, srcY, srcW, srcH,
+            x + s.x + dstX,
+            y + s.y + dstY,
+            dstW,
+            dstH);
+    }
+    load(name -String) this {
+        scene ? img.load(_, name);
+    }
+    setColor(c int) this { color := c }
+    animateColor(dst int, durationMs int) this {
+        scene?_.animators.append(ArgbAnimator.init(color, dst, durationMs, this.&colorSetter(v int){
+            color := v;
+        }))
+    }
+
+    color = 0xff_ff_ff_ff;
+    img = Texture;
+}
+
+class Label{
+    +Image;
+    init(font &Font, size int, style int, text *String) this {
+        this.font := font;
+        this.size := size;
+        this.style := style;
+        setText(text);
+    }
+    setText(text *String) {
+        this.text := text;
+        scene ?=s
+        font ?=f
+           f.renderTo(img, text, size, style, s);
+    }
+    font = &Font;
+    size = 14;
+    style = 0;
+    text = *"";
+}
+
+class Frame{
+    +Image {
+        render() {
+            scene ? {
+                img.setAlphaMod(color >> 24 * _.opacity >> 8);
+                img.setColorMod(color & 0xff_ff_ff);
+                w = max(width, img.w);
+                h = max(height, img.h);
+                srcLastX = img.w - right;
+                dstLastX = w - right;
+                srcLastY = img.h - bottom;
+                dstLastY = h - bottom;
+                srcMiddleW = srcLastX - left;
+                srcMiddleH = srcLastY - top;
+                dstMiddleW = dstLastX - left;
+                dstMiddleH = dstLastY - top;
+
+                bltRect(_, 0,        0, left,       top, 0,        0, left,       top);
+                bltRect(_, left,     0, srcMiddleW, top, left,     0, dstMiddleW, top);
+                bltRect(_, srcLastX, 0, right,      top, dstLastX, 0, right,      top);
+
+                bltRect(_, 0,        top, left,       srcMiddleH, 0,        top, left,       dstMiddleH);
+                bltRect(_, left,     top, srcMiddleW, srcMiddleH, left,     top, dstMiddleW, dstMiddleH);
+                bltRect(_, srcLastX, top, right,      srcMiddleH, dstLastX, top, right,      dstMiddleH);
+
+                bltRect(_, 0,        srcLastY, left,       bottom, 0,        dstLastY, left,       bottom);
+                bltRect(_, left,     srcLastY, srcMiddleW, bottom, left,     dstLastY, dstMiddleW, bottom);
+                bltRect(_, srcLastX, srcLastY, right,      bottom, dstLastX, dstLastY, right,      bottom);
+            }
+        }
+    }
+    init(fileName *String, leftWidth int, topWidth int, rightWidth int, bottomWidth int) this {
+        load(fileName);
+        left := leftWidth;
+        right := rightWidth;
+        top := topWidth;
+        bottom := bottomWidth;
+    }
+    setSize(w int, h int) this {
+        width := w;
+        height := h;
+    }
+    animateSize(dstW int, dstH int, durationMs int) this {
+        scene?_.animators.append(XYAnimator.init(width, height, dstW, dstH, durationMs, this.&setFrameSize(w int, h int){
+            width := w;
+            height := h;
+        }));
+    }
+    width = 0;
+    height = 0;
+
+    left = 0;
+    top = 0;
+    right = 0;
+    bottom = 0;
+}
+
+class Group {
+    +Item {
+        render() {
+            scene ?=c {
+                c.x += x;
+                c.y += y;
+                modifiers.each(m \ m.do(c));
+                items.each(i \ i.render());
+                forRange(-modifiers.size(), 0, i \modifiers[1+i]?_.undo(c));
+                c.x -= x;
+                c.y -= y;    
+            }
+        }
+    }
+    add(item ()@Item) this {
+        items.append(item())
+    }
+    addModifier(m ()@Modifier) this {
+        modifiers.append(m())
+    }
+    items = Array(Item);
+    modifiers = Array(Modifier);
+}
+
+fn max(a int, b int) int { a > b ? a : b }

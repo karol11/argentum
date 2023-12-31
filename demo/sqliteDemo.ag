@@ -3,8 +3,8 @@ using sqliteFfi { Sqlite }
 using string;
 
 page = 0;
-Sqlite.open("mydb.sqlite", 2) ?=c {
-    c.query("
+Sqlite.open("mydb.sqlite", 2) ?
+    _.query("
         SELECT "id", "name", "avatar"
         FROM "table"
         LIMIT ?, 20
@@ -15,5 +15,4 @@ Sqlite.open("mydb.sqlite", 2) ?=c {
             <img src='/ava/{r.stringAt(2)}.jpg'>
             <div>{r.stringAt(1)}</div>
         </a>
-    ")
-};
+    ");

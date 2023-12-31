@@ -10,7 +10,7 @@ class SharedMap {
 }
 
 a = "alpha bravo charlie delta".split(' ');
-log(`hash=${sys_hash(a)} `);
+log(`hash=${a.getHash()} `);
 v = a.findFirst(i\i.equalsCS("delta"));
 log(v
    ? *`found at ${_}`

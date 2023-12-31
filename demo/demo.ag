@@ -1,4 +1,4 @@
-using sdl { Window, Sdl, Texture }
+using sdl { Window, Sdl, Texture, Rect }
 using utils { Random, forRange }
 using gui { Actor, Group }
 
@@ -12,26 +12,36 @@ class Scene{
     star = Texture;
     background = Texture;
     foreground = Texture;
+    helloWorld = Texture;
 
     init() ?Scene {
-        sdl.initVideo() &&
-        w.createCentered("Hello from Argentum!", 800, 600) &&
-        background.init(w, "back.jpg") &&
-        foreground.init(w, "fore.png") &&
-        flare.init(w, "round.png") &&
-        star.init(w, "star.png") ? this
-    }
-    run() {
-        push(10, Flare.initAtBottom(this));
-        sdl.eventLoop() e {
-            w.blt(background, 0, 0, 800, 600, 0, 0, 800, 600);
-            paint(w);
-            w.blt(foreground, 0, 0, 800, 600, 0, 0, 800, 600);
-            w.flip();
-            rnd.get(0, (size() / 2) + 1) == 0 ?
-                append(Flare.initAtBottom(this));
-            tick(1000/30);
+        sdl.init(sdl_xInitEverything, sdl_xImgJpg | sdl_xImgPng ) &&
+        w.init(
+            "Hello from Argentum!",
+            Rect.xywh(sdl_xDefaultPos, sdl_xDefaultPos, 800, 600),
+            0,
+            sdl_xRendererAccelerated)  &&
+        background.load(w, "back.jpg") &&
+        foreground.load(w, "fore.png") &&
+        flare.load(w, "round.png") &&
+        star.load(w, "star.png") ? {
+            push(10, Flare.initAtBottom(this));
+            this
         }
+    }
+    onFrame() {
+        frameStartMs = sys_nowMs();
+        loop !(sdl.pollEvent() ? {
+            _[0] == sdl_xEventQuit ? sys_setMainObject(?sys_Object);
+        });
+        w.bltXYWH(background, 0, 0, 800, 600, 0, 0, 800, 600);
+        paint(w);
+        w.bltXYWH(foreground, 0, 0, 800, 600, 0, 0, 800, 600);
+        w.flip();
+        rnd.get(0, (size() / 2) + 1) == 0 ?
+            append(Flare.initAtBottom(this));
+        tick(1000/30);
+        sys_postTimer(frameStartMs + 1000/30, this.onFrame);
     }
 }
 
@@ -42,7 +52,7 @@ class Flare {
                 _.setColorMod(color);
                 _.setAlphaMod(fade >> 8);
                 size = fade >> 8 >> 2;
-                dst.blt(_, 0, 0, 64, 64, x >> 16 - size/2, y >> 16 - size/2, size, size);
+                dst.bltXYWH(_, 0, 0, 64, 64, x >> 16 - size/2, y >> 16 - size/2, size, size);
             }
         }
         tick(milliseconds int) bool {
@@ -95,7 +105,7 @@ class Sparkles {
     +Actor {
         paint(dst Window) {
             scene? distributeInCircle(_.rnd, r, r) x y {
-                dst.fillRect(this.x + x, this.y + y, 1, 1, color);
+                dst.fillRectXYWH(this.x + x, this.y + y, 1, 1, color);
             }
         }
         tick(milliseconds int) bool { (r -= 1) > 0 }
@@ -128,4 +138,7 @@ fn distributeInCircle(rnd Random, count int, r int, callback (int, int)) {
     };
 }
 
-Scene.init()?_.run();
+Scene.init() ? {
+    sys_setMainObject(_);
+    _.onFrame()
+};

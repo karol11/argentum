@@ -1,0 +1,25 @@
+using scene { Scene, Group, Image, Label, Opacity, Frame }
+using sdl { Font }
+
+class App {
+    +Scene;
+    start() {
+        initScene("Ag", 800, 600);
+        defFont.load("NotoSerif-Bold.ttf", 0);
+        roots.append(Group(this)
+            .add(Image(this).load("back.jpg"))
+            .add(Group(this).setPos(300, 600).animatePos(300, 0, 1000).addModifier(Opacity.set(0).animate(this, 255, 2000))
+                .add(Image(this).load("star.png").setColor(0xff_ff_00_ff))
+                .add(Label(this).init(&defFont, 24, 3, "Argentum").setPos(0, 10).animatePos(40, 10, 1000)))
+            .add(Label(this).init(&defFont, 48, 0, "Year 2024!").setColor(0x80_ff_00_00).animateColor(0xFF_00_ff_ff, 3000).animatePos(300, 280, 2500))
+            .add(Frame(this).init("frame.png", 3, 3, 3, 3).setPos(400, 300).animatePos(200, 100, 500).setSize(10, 10).animateSize(400, 400, 500).animateColor(0x00_20_20_00,4000))
+        );
+        nextFrame();
+    }
+    defFont = Font;
+}
+
+// test
+app = App;
+sys_setMainObject(app);
+app.start();

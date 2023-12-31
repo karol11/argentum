@@ -1,4 +1,4 @@
-using sys { String }
+using sys { String, Blob }
 
 const xEventQuit = 256;
 const xRendererAccelerated = 2;
@@ -12,6 +12,12 @@ class Rect{
    y = 0;
    w = 0;
    h = 0;
+   set(src -Rect) {
+    x := src.x;
+    y := src.y;
+    w := src.w;
+    h := src.h;
+   }
    xywh(vx int, vy int, vw int, vh int) this {
       x := vx;
       y := vy;
@@ -39,7 +45,7 @@ class Rect{
 }
 
 class Sdl {
-    internalEvent Blob;
+    internalEvent = Event;
 
     init(sdlFlags int, sdlImageFlags int) bool;
     pollEvent() ?Event;
@@ -58,7 +64,7 @@ class Window {
     flip();
 }
 fn destroyWindow(w Window);
-fn afterCopyWindow(w Window) { w.handle := w.renderer := 0 }
+fn afterCopyWindow(w Window) { w.internalWndHandle := w.internalRendererHandle := 0 }
 
 class Event {
     +sys_Blob;
@@ -69,16 +75,12 @@ class Texture{
     id = 0;
     w = 0;
     h = 0;
-    load(wnd Window, fileName -String);
-    setAlphaMod(multiplier int) {
-        id != 0 ? sdlFfi_setTextureAlphaMod(id, multiplier);
-    }
-    setColorMod(color int) {
-        id != 0 ? sdlFfi_setTextureColorMod(id, color);
-    }
+    load(wnd Window, fileName -String) bool;
+    setAlphaMod(multiplier int);
+    setColorMod(color int);
 }
 fn disposeTexture(t Texture);
-fn afterCopyTexture(t Texture) { t.id := 0 }
+fn afterCopyTexture(t Texture) { t.id := t.w := t.h := 0 }
 
 class Font{
     id = 0;
@@ -92,9 +94,9 @@ class Font{
     // Create bitmap image of a string
     // flags - italic, bold, underline
     renderTo(res Texture, s -String, ptSize int, flags int, w Window);
-    render(s -String, w Window, ptSize int, flags int) @Texture {
+    render(s -String, ptSize int, flags int, w Window) @Texture {
         res = Texture;
-        renderTo(s, ptSize, flags, res);
+        renderTo(res, s, ptSize, flags, w);
         res
     }
 

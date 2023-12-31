@@ -3,7 +3,7 @@ using sys { Blob, log, String, setMainObject }
 using string;
 
 const xTestUrl = "https://aglang.org";
-// const xTestUrl = "https://localhost";
+//const xTestUrl = "http://localhost";
 
 class App {}
 app = App;
