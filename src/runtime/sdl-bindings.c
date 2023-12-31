@@ -151,8 +151,8 @@ bool ag_m_sdl_Font_sdl_load(AgSdlFont* thiz, AgString* fontName, int style) {
 }
 
 void ag_fn_sdl_disposeFont(AgSdlFont* fnt) {
-    if (fnt->sdl_font)
-        TTF_CloseFont(fnt->sdl_font);
+//    if (fnt->sdl_font)
+//        TTF_CloseFont(fnt->sdl_font);  // It crashes with font NotoSerif-Bold.ttf
 }
 
 AgString* ag_m_sdl_Font_sdl_name(AgSdlFont* thiz) {
