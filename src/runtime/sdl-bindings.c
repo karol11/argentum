@@ -1,3 +1,4 @@
+#include <limits.h>
 #include "../runtime/runtime.h"
 #include "../runtime/blob.h"
 #include "../runtime/sdl-bindings.h"
@@ -108,10 +109,6 @@ void ag_m_sdl_Window_sdl_flip(AgSdlWindow* thiz) {
     SDL_RenderPresent(thiz->sdl_rend);
 }
 
-bool ag_m_sdl_Texture_sdl_load(AgSdlTexture* tex, AgSdlWindow* w, AgString* file_name) {
-    return ag_sdl_surface_to_texture(tex, w, IMG_Load(file_name->ptr));
-}
-
 bool ag_sdl_surface_to_texture(AgSdlTexture* tex, AgSdlWindow* w, SDL_Surface* s) {
     ag_fn_sdl_disposeTexture(tex);
     if (s) {
@@ -124,6 +121,10 @@ bool ag_sdl_surface_to_texture(AgSdlTexture* tex, AgSdlWindow* w, SDL_Surface* s
         tex->w = tex->h = 0;
     }
     return tex->sdl_tex != NULL;
+}
+
+bool ag_m_sdl_Texture_sdl_load(AgSdlTexture* tex, AgSdlWindow* w, AgString* file_name) {
+    return ag_sdl_surface_to_texture(tex, w, IMG_Load(file_name->ptr));
 }
 
 void ag_fn_sdl_disposeTexture(AgSdlTexture* tex) {
