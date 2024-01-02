@@ -133,8 +133,8 @@ void* http_thread_proc(void* unused) {
 	ag_init_this_thread();
 	ag_http_task root_task;
 	root_task.next = root_task.prev = &root_task;
+	pthread_mutex_lock(&ag_http_mutex);
 	for (;;) {
-		pthread_mutex_lock(&ag_http_mutex);
 		while (ag_http_queue.read_pos != ag_http_queue.write_pos) {
 			uint64_t resp = ag_read_queue(&ag_http_queue);
 			if (resp == 0)
@@ -169,6 +169,7 @@ void* http_thread_proc(void* unused) {
 				delete_task(task);
 			}
 			curl_multi_poll(ag_curl_multi, NULL, 0, 0, &count);
+			pthread_mutex_lock(&ag_http_mutex);
 		}
 	}
 terminate:
