@@ -809,181 +809,168 @@ struct Parser {
 			expect("'");
 			return r;
 		}
-		if (match_ns("`"))
-			return handle_fat_string("${}", true);
-		if (match_ns("\"")) {
-			auto r = make<ast::ConstString>();
-			for (;;) {
-				auto prev_cur = cur;
-				int c = get_utf8(&cur);
-				pos += (int32_t) (cur - prev_cur);
-				if (!c)
-					error("incomplete string constant");
-				if (c < ' ') {
-					if (c == '\n' || c == '\r') {
-						cur--;
-						return handle_fat_string(r->value, false);
-					}
-					error("control characters in the string constant");
-				}
-				if (c == '"')
-						break;
-				if (c == '\\') {
-					if (*cur == '\\') {
-						c = '\\';
-					} else if (*cur == '"') {
-						c = '"';
-					} else if (*cur == 'n') {
-						c = '\n';
-					} else if (*cur == 'r') {
-						c = '\r';
-					} else if (*cur == 't') {
-						c = '\t';
-					} else {
-						c = 0;
-						for (int d = get_digit(*cur); d < 16; cur++, pos++, d = get_digit(*cur))
-							c = c * 16 + d;
-						if (c == 0 || c > 0x10ffff)
-							error("character code is outside the range 1..10ffff");
-						if (*cur != '\\')
-							error("expected closing '\\'");
-					}
-					cur++;
-					pos++;
-				}
-				put_utf8(c, &r->value, [](void* ctx, int c) {
-					*(string*)ctx += c;
-					return 1;
-				});
-			}
-			match_ws();
-			return r;
-		}
+		if (match_ns("$\""))
+			return StringParser(this, "${").handle_single_line();
+		if (match_ns("\""))
+			return StringParser(this, "{").handle_maybe_multiline();
 		if (is_id_head(*cur))
 			return mk_get("name");
 		error("syntax error");
 	}
-
-	pin<Action> handle_fat_string(const string& format, bool single_line) {
-		const char* c = format.c_str();
+	struct StringParser {
+		Parser& p;
+		bool stop_on_quote = true;
 		string prefix;
-		for (;; c++) {
-			if (*c == '.') prefix += ' ';
-			else if (*c == 't') prefix += '\t';
-			else break;
-		}
 		int tabstops = 0;
-		for (; *c >= '0' && *c <= '9'; c++)
-			tabstops = tabstops * 10 + *c - '0';
-		string open_escape_str = "";
-		char close_escape_char = 0;
-		while (*c >= '#' && *c <= '&')
-			open_escape_str += *c++;
-		if (*c == '{') {
-			open_escape_str += '{';
-			close_escape_char = '}';
-		} else if (*c == '(') {
-			open_escape_str += '(';
-			close_escape_char = ')';
-		} else if (*c == '[') {
-			open_escape_str += '[';
-			close_escape_char = ']';
-		} else if (!open_escape_str.empty()) {
-			error("Expected {[( at the end of the open escape sequence");
-		}
-		if (close_escape_char != 0) {
-			if (c[1] != close_escape_char)
-				error("Expected ", close_escape_char, " at format string ", c);
-			c += 2;
-		}
+		string open_escape_str;
+		char close_escape_char = '}';
 		string eoln;
-		for (;; c++) {
-			if (*c == 'n') eoln += "\n";
-			else if (*c == 'r') eoln += "\r";
-			else break;
-		}
-		if (eoln.empty())
-			eoln = "\n";
 		string last_suffix;
-		while (*c == '/') {
-			last_suffix += eoln;
-			if (*++c == '+') {
-				c++;
-				last_suffix += prefix;
-			}
-		}
-		if (*c != 0)
-			error("Unexpected symbols in format string at ", c);
-		if (!single_line) {
-			match_eoln();
-			skip_spaces();
-		}
-		auto base_indent = pos;
-		auto current_part = make<ast::ConstString>();
-		current_part->value = prefix;
 		vector<pin<Action>> parts;
-		for (;;) {
-			for (; !match_eoln(); cur++) {
-				if (!open_escape_str.empty() && match_ns(open_escape_str.c_str())) {
-					if (*cur == close_escape_char) {
-						cur++;
+		pin<ast::ConstString> current_part;
+
+		StringParser(Parser* p, string open_escape_str)
+			: p(*p), open_escape_str(move(open_escape_str)) {
+			current_part = p->make<ast::ConstString>();
+		}
+
+		pin<Action> handle_single_line() {
+			if (!parse_single_line())
+				p.error("string literal is not closed with \"");
+			return finalize();
+		}
+
+		pin<Action> finalize() {
+			current_part->value += last_suffix;
+			if (!current_part->value.empty() || parts.empty())
+				parts.push_back(current_part);
+			if (parts.size() == 1)
+				return parts[0];
+			auto inst = make_at_location<ast::MkInstance>(*parts[0]);
+			inst->cls = p.ast->str_builder.pinned();
+			pin<Action> r = inst;
+			for (auto& part : parts)
+				r = p.fill(make_at_location<ast::ToStrOp>(*part), r, part);
+			auto delegate = p.make<ast::GetField>();
+			delegate->base = r;
+			delegate->field_name = "toStr";
+			auto call = make_at_location<ast::Call>(*parts[0]);
+			call->callee = delegate;
+			return call;
+		}
+
+		pin<Action> handle_maybe_multiline() {
+			const char* start = p.cur;
+			if (parse_single_line())
+				return finalize();
+			if (!parts.empty())
+				p.error("expected \"");
+			parse_string_format(start);
+			auto base_indent = p.pos;
+			auto current_part = p.make<ast::ConstString>();
+			current_part->value = prefix;
+			for (;;) {
+				parse_single_line();
+				p.skip_spaces();
+				if (p.pos < base_indent)
+					break;
+				current_part->value += eoln;
+				current_part->value += prefix;
+				if (p.pos > base_indent) {
+					char c = ' ';
+					int count = p.pos - base_indent;
+					if (tabstops) {
+						if (count % tabstops != 0)
+							p.error("Indent is not aligned to tab width");
+						count /= tabstops;
+						c = '\t';
+					}
+					for (count++; --count;)
+						current_part->value += c;
+				}
+			}
+			p.expect("\"");
+			return finalize();
+		}
+
+		bool parse_single_line() {  // returns true if matched quote
+			for (; !p.match_eoln(); p.cur++) {
+				if (!*p.cur)
+					p.error("string constant is not terminated");
+				if (!open_escape_str.empty() && p.match_ns(open_escape_str.c_str())) {
+					if (*p.cur == close_escape_char) {
+						p.cur++;
 						current_part->value += open_escape_str;
 					} else {
-						if (!current_part->value.empty())
-							parts.push_back(current_part);
-						match_ws();
-						parts.push_back(parse_expression());
-						if (*cur != close_escape_char)
-							error("Expected ", close_escape_char);
-						current_part = make<ast::ConstString>();
+						p.match_ws();
+						auto expression = p.parse_expression();
+						if (auto expr_as_string = dom::strict_cast<ast::ConstString>(expression)) {
+							current_part->value += expr_as_string->value;
+						} else {
+							if (!current_part->value.empty())
+								parts.push_back(current_part);
+							parts.push_back(expression);
+							current_part = p.make<ast::ConstString>();
+						}
+						if (*p.cur != close_escape_char)
+							p.error("Expected ", close_escape_char);
 					}
-				} else if (single_line && *cur == '`') {
-					cur++;
-					match_ws();
-					goto break_single_line;
+				} else if (stop_on_quote && p.match("\"")) {
+					return true;
 				} else {
-					current_part->value += *cur;
+					current_part->value += *p.cur;
 				}
 			}
-			if (single_line)
-				error("Incomplete single line `string`");
-			skip_spaces();
-			if (pos < base_indent)
-				break;
-			current_part->value += eoln;
-			current_part->value += prefix;
-			if (pos > base_indent) {
-				char c = ' ';
-				int count = pos - base_indent;
-				if (tabstops) {
-					if (count % tabstops != 0)
-						error("Indent is not aligned to tab width");
-					count /= tabstops;
-					c = '\t';
-				}
-				for (count++; --count;)
-					current_part->value += c;
+			return false;
+		}
+
+		void parse_string_format(const char* c) {
+			for (;; c++) {
+				if (*c == '.') prefix += ' ';
+				else if (*c == 't') prefix += '\t';
+				else break;
 			}
- 		}
-		expect("\"");
-	break_single_line:
-		current_part->value += last_suffix;
-		if (!current_part->value.empty() || parts.empty())
-			parts.push_back(current_part);
-		if (parts.size() == 1)
-			return parts[0];
-		auto inst = make_at_location<ast::MkInstance>(*parts[0]);
-		inst->cls = ast->str_builder.pinned();
-		pin<Action> r = inst;
-		for (auto& p : parts)
-			r = fill(make_at_location<ast::ToStrOp>(*p), r, p);
-		auto delegate = make<ast::GetField>();
-		delegate->base = r;
-		delegate->field_name = "toStr";
-		auto call = make<ast::Call>();
-		call->callee = delegate;
-		return call;
-	}
+			for (; *c >= '0' && *c <= '9'; c++)
+				tabstops = tabstops * 10 + *c - '0';
+			open_escape_str = "";
+			close_escape_char = 0;
+			while (*c >= '#' && *c <= '&')
+				open_escape_str += *c++;
+			if (*c == '{') {
+				open_escape_str += '{';
+				close_escape_char = '}';
+			} else if (*c == '(') {
+				open_escape_str += '(';
+				close_escape_char = ')';
+			} else if (*c == '[') {
+				open_escape_str += '[';
+				close_escape_char = ']';
+			} else if (!open_escape_str.empty()) {
+				p.error("Expected {[( at the end of the open escape sequence");
+			}
+			if (close_escape_char != 0) {
+				if (c[1] != close_escape_char)
+					p.error("Expected ", close_escape_char, " at format string ", c);
+				c += 2;
+			}
+			for (;; c++) {
+				if (*c == 'n') eoln += "\n";
+				else if (*c == 'r') eoln += "\r";
+				else break;
+			}
+			if (eoln.empty())
+				eoln = "\n";
+			while (*c == '\\') {
+				last_suffix += eoln;
+				if (*++c == '+') {
+					c++;
+					last_suffix += prefix;
+				}
+			}
+			if (*c != 0)
+				p.error("Unexpected symbols in format string at ", c);
+		}
+	};
 
 	template<typename T, typename VT>
 	pin<Action> mk_const(VT&& v) {
