@@ -801,13 +801,18 @@ struct Parser {
 			r->var_name = "_";
 			return r;
 		}
-		if (match_ns("'")) {
-			auto r = make<ast::ConstInt64>();
-			r->value = get_utf8(&cur);
-			if (!r->value)
-				error("incomplete character constant");
-			expect("'");
-			return r;
+		if (match("char_")) {
+			auto param = parse_expression_in_parethesis();
+			if (auto param_as_str = dom::strict_cast<ast::ConstString>(param)) {
+				auto r = make<ast::ConstInt64>();
+				const char* c = param_as_str->value.c_str();
+				r->value = get_utf8(&c);
+				if (!r->value)
+					error("incomplete character constant");
+				return r;
+			} else {
+				error("so far only literal strings are supported as char_ parameter");
+			}
 		}
 		if (match_ns("$\""))
 			return StringParser(this, "${").handle_single_line();
