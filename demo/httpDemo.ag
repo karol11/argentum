@@ -10,9 +10,9 @@ app = App;
 setMainObject(app);
 
 get(xTestUrl, app.&onFetched(resp Response){
-    log(`Result code=${resp.status}: `);
+    log("Result code={resp.status}: ");
     s = String;
-    s.fromBlob(resp.body, 0, 40);
+    s.fromBlob(resp.body, 0, resp.body.capacity());
     log(s);
     setMainObject(?App);
 })

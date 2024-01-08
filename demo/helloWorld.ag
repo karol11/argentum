@@ -1,1 +1,1 @@
-sys_log("Hello world\n");
+sys_log("Hello world");
