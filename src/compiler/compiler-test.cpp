@@ -600,19 +600,21 @@ TEST(Parser, LiteralStrings) {
         a.getCh(); // a="i"
         b = @a;
         a.getCh(); // a=""   b"i"
-        sys_assertIEq(1, b.getCh() == 'i' && a.getCh() == 0 ? 1:0)
+        sys_assert(b.getCh() == 'i', "b.ch()=='i'");
+        sys_assert(a.getCh() == 0, "a.ch()==0");
+        c = @$"{}";
+        sys_assert(c.getCh() == '{', $"c.ch()=={");
     )");
 }
 
 TEST(Parser, StringEscapes) {
     execute(R"-(
         using sys { assertIEq }
-        s = @"\n\t\r\"\\\1090e\\65\!";
+        s = @"{utf32_(0x0a, 9, 0x0d, '"', 0x1090e, 0x65)}!";
         assertIEq(0x0a, s.getCh());
         assertIEq(9, s.getCh());
         assertIEq(0x0d, s.getCh());
         assertIEq('"', s.getCh());
-        assertIEq('\', s.getCh());
         assertIEq(0x1090e, s.getCh());
         assertIEq(0x65, s.getCh());
         assertIEq('!', s.getCh());
@@ -742,7 +744,7 @@ TEST(Parser, Consts) {
 
 TEST(Parser, Multiline) {
     execute(R"-(
-      sys_log("..../
+      sys_log("....\
          Multiline
          string
       ");
@@ -781,13 +783,13 @@ TEST(Parser, StringInterpolation) {
                 r
             }
       }
-      sys_log(`Hi {2*2}!`);
-      sys_log("${}/
-         Name=${
+      sys_log("Hi {2*2}!");
+      sys_log("{}\
+         Name={
             1 < 2
                 ? "asdf"
                 : "zxcv"}
-         Age=${2 * 2}
+         Age={2 * 2}
       ");
     )-");
 }

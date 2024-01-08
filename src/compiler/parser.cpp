@@ -801,31 +801,30 @@ struct Parser {
 			r->var_name = "_";
 			return r;
 		}
-		if (match("char_")) {
-			auto param = parse_expression_in_parethesis();
-			if (auto param_as_str = dom::strict_cast<ast::ConstString>(param)) {
-				auto r = make<ast::ConstInt64>();
-				const char* c = param_as_str->value.c_str();
-				r->value = get_utf8(&c);
-				if (!r->value)
-					error("incomplete character constant");
-				return r;
-			} else {  // Todo: remove after const evaluation pass
-				error("so far only literal strings are supported as char_ parameter");
-			}
+		if (match_ns("'")) {
+			auto r = make<ast::ConstInt64>();
+			r->value = get_utf8(&cur);
+			if (!r->value)
+				error("incomplete character constant");
+			expect("'");
+			return r;
 		}
 		if (match("utf32_")) {
-			auto param = parse_expression_in_parethesis();
-			if (auto param_as_int = dom::strict_cast<ast::ConstInt64>(param)) {
-				auto r = make<ast::ConstString>();
-				put_utf8(param_as_int->value, &r->value, [](void* dst, int byte) {
-					*((string*)dst) += (char)byte;
-					return 1;
-				});
-				return r;
-			} else {  // Todo: remove after const evaluation pass
-				error("so far only literal numbers are supported as utf32_ parameter");
-			}
+			expect("(");
+			auto r = make<ast::ConstString>();
+			do {
+				auto param = parse_expression();
+				if (auto param_as_int = dom::strict_cast<ast::ConstInt64>(param)) {
+					put_utf8(param_as_int->value, &r->value, [](void* dst, int byte) {
+						*((string*)dst) += (char)byte;
+						return 1;
+					});
+				} else {  // Todo: remove after const evaluation pass
+					error("so far only literal numbers are supported as utf32_ parameter");
+				}
+			} while (match(","));
+			expect(")");
+			return r;
 		}
 		if (match_ns("$\""))
 			return StringParser(this, "${").handle_single_line();
@@ -883,9 +882,10 @@ struct Parser {
 				return finalize();
 			if (!parts.empty())
 				p.error("expected \"");
+			p.skip_spaces();
 			parse_string_format(start);
+			stop_on_quote = false;
 			auto base_indent = p.pos;
-			auto current_part = p.make<ast::ConstString>();
 			current_part->value = prefix;
 			for (;;) {
 				parse_single_line();
@@ -985,7 +985,7 @@ struct Parser {
 					last_suffix += prefix;
 				}
 			}
-			if (*c != 0)
+			if (*c != '\n' && *c != '\r')
 				p.error("Unexpected symbols in format string at ", c);
 		}
 	};
