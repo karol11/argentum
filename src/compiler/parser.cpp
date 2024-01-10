@@ -1,6 +1,7 @@
 #include "compiler/parser.h"
 
 #include <iostream>
+#include <functional>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -21,7 +22,8 @@ using std::vector;
 using std::variant;
 using std::optional;
 using std::nullopt;
-using std::get_if; 
+using std::function;
+using std::get_if;
 using std::pow;
 using ltm::weak;
 using ltm::own;
@@ -108,6 +110,7 @@ struct Parser {
 		}
 		return method;
 	}
+
 	ast::LongName expect_long_name(const char* message, pin<ast::Module> def_module) {
 		auto id = expect_id(message);
 		if (!match("_"))
@@ -119,6 +122,7 @@ struct Parser {
 		else
 			error("module ", id, " is not visible from module ", module->name);
 	}
+
 	pin<ast::AbstractClass> get_class_by_name(const char* message) {
 		auto [c_name, m] = expect_long_name(message, nullptr);
 		if (!m) {
@@ -136,6 +140,7 @@ struct Parser {
 		}
 		return m->get_class(c_name, line, pos);
 	}
+
 	pin<ast::AbstractClass> parse_class_with_params(const char* message, bool allow_class_param) {
 		auto r = get_class_by_name(message);
 		if (dom::isa<ast::ClassParam>(*r) && !allow_class_param)
@@ -151,6 +156,7 @@ struct Parser {
 		expect(")");
 		return ast->get_class_instance(move(params));
 	}
+
 	pin<ast::Module> parse(module_text_provider_t module_text_provider)
 	{
 		if (modules_in_dep_path.count(module_name) != 0) {
@@ -447,24 +453,81 @@ struct Parser {
 		return parse_elses();
 	}
 
+	pin<ast::MkLambda> maybe_parse_lambda() {
+		// if matched `\{ - creates ast::lambda and parses
+		//      \single_expr maybe using _ as lambda w/o params or with 1 param
+		//      `name `name single_expr as lambda with n params
+		//      { expression list, maybe using _ as lambda w/o or with 1 param }  // parse_block()
+		// if not matched, return null
+	}
+
+	pin<Action> parse_lambda_0_params(function<pin<ast::Action>()> single_expression_parser) {
+		// parses and returns as result:
+		//      \single_expr
+		//      single_expr including {blocks}
+		//      ` -> error this lambda cannot have parameters
+	}
+
+	pin<ast::Block> parse_lambda_1_param(function<pin<ast::Action>()> single_expression_parser) {
+		// creates block and parses
+		//      \single_expr_using _
+		//      single_expr_using _
+		//      `name single_expr   (if names count != 1, error)
+		//rhs->names.push_back(make<ast::Var>());
+		//rhs->names.back()->name = match("=") ? expect_id("local") : "_";
+		//rhs->body.push_back(parse_ifs());
+
+	}
+
+	/*
+	pin<ast::MkLambda> parse_lambda_with_params(pin<ast::MkLambda> lambda){
+		while (is_id_head(*cur)) {
+			lambda->names.push_back(make<ast::Var>());
+			lambda->names.back()->name = expect_id("parameter name");
+		}
+		if (match("\\"))
+			lambda->body.push_back(parse_expression());
+		else if (match("{"))
+			parse_lambda_body_as_block(lambda);
+		else
+			error("expected '\\' or '{' after lamda parameters list");
+		return lambda;
+	}
+	pin<ast::MkLambda> make_lambda_with_param(pin<ast::Action> act, string context) {
+		auto as_get = dom::strict_cast<ast::Get>(act);
+		if (!as_get)
+			error("Expected parameter name before ", context);
+		if (as_get->var_module)
+			error("Parameter name before ", context, " should not contain '_'");
+		auto lambda = make_at_location<ast::MkLambda>(*act);
+		lambda->names.push_back(make<ast::Var>());
+		lambda->names.back()->name = as_get->var_name;
+		return lambda;
+	}
+	*/
+
 	pin<Action> parse_elses() {
 		auto r = parse_ifs();
 		while (match(":"))
-			r = fill(make<ast::Else>(), r, parse_ifs());
+			r = fill(
+				make<ast::Else>(),
+				r,
+				parse_lambda_0_params([&] { return parse_ifs(); }));
 		return r;
 	}
 
 	pin<Action> parse_ifs() {
 		auto r = parse_ors();
-		bool is_and = match("&&");
-		if (is_and || match("?")) {
-			auto rhs = make<ast::Block>();
-			rhs->names.push_back(make<ast::Var>());
-			rhs->names.back()->name = match("=") ? expect_id("local") : "_";
-			rhs->body.push_back(parse_ifs());
-			if (is_and)
-				return fill(make<ast::LAnd>(), r, rhs);
-			return fill(make<ast::If>(), r, rhs);
+		if (match("&&"))
+			return fill(
+				make<ast::LAnd>(),
+				r,
+				parse_lambda_1_param([&] { return parse_ifs(); }));
+		if (match("?")) {
+			return fill(
+				make<ast::If>(),
+				r,
+				parse_lambda_1_param([&] { return parse_ifs(); }));
 		}
 		return r;
 	}
@@ -472,7 +535,10 @@ struct Parser {
 	pin<Action> parse_ors() {
 		auto r = parse_comparisons();
 		while (match("||"))
-			r = fill(make<ast::LOr>(), r, parse_comparisons());
+			r = fill(
+				make<ast::LOr>(),
+				r,
+				parse_lambda_0_params([&] { return parse_comparisons(); }));
 		return r;
 	}
 
@@ -551,13 +617,8 @@ struct Parser {
 				break;
 			expect(",");
 		}
-		if (match("{")) {
-			auto lambda = make<ast::MkLambda>();
-			parse_lambda_body_as_block(lambda);
-			call->params.push_back(lambda);
-		} else if (is_id_head(*cur)) {
-			call->params.push_back(parse_lambda_with_params(make<ast::MkLambda>()));
-		}
+		if (auto extra_param = maybe_parse_lambda())
+			call->params.push_back(extra_param);
 		return call;
 	}
 	pin<Action> parse_unar() {
@@ -604,7 +665,14 @@ struct Parser {
 					r = gi;
 				}
 			} else if (match(".")) {
-				if (match("&")) {
+				if (*cur == '`' || *cur == '\\' || *cur == '{') {
+					auto block = parse_lambda_1_param([&] { return parse_unar(); });
+					block->names.front()->initializer = r;
+					auto ret = make<ast::Get>();
+					ret->var = block->names.front();
+					block->body.push_back(ret);
+					r = block;
+				} else if (match("&")) {
 					auto d = make<ast::ImmediateDelegate>();
 					d->base = r;
 					d->name = expect_id("delegate name");
@@ -658,84 +726,45 @@ struct Parser {
 					op->p[0] = r;
 					op->p[1] = parse_expression();
 					return op;
-				});
+					});
+			} else if (match("->")) {
+				auto block = parse_lambda_1_param([&] { return parse_unar(); });
+				block->names.front()->initializer = r;
+				r = block;
 			} else if (match("~")) {
 				if (match("("))
 					r = parse_call(r, make<ast::AsyncCall>());
 				else
 					r = fill(make<ast::CastOp>(), r, parse_unar_head());
-			} else if (match("\\")) {
-				auto lambda = make_lambda_with_param(r, "\\");
-				lambda->body.push_back(parse_expression());
-				r = lambda;
-			} else if (match("{")) {
-				auto lambda = make_lambda_with_param(r, "{");
-				parse_lambda_body_as_block(lambda);
-				r = lambda;
-			} else if (is_id_head(*cur)) {
-				r = parse_lambda_with_params(make_lambda_with_param(r, "parameter name"));
+			} else if (auto lambda_tail = maybe_parse_lambda()) {
+				auto call = make_at_location<ast::Call>(*lambda_tail);
+				call->callee = r;
+				call->params.push_back(lambda_tail);
+				r = call;
 			} else
 				return r;
 		}
 	}
-	void parse_lambda_body_as_block(pin<ast::Block> block) {
+	void parse_block(pin<ast::Block> block) {
 		if (match("="))
 			block->break_name = expect_id("name for breaks");
 		parse_statement_sequence(block->body);
 		expect("}");
 	}
-	pin<ast::MkLambda> parse_lambda_with_params(pin<ast::MkLambda> lambda){
-		while (is_id_head(*cur)) {
-			lambda->names.push_back(make<ast::Var>());
-			lambda->names.back()->name = expect_id("parameter name");
-		}
-		if (match("\\"))
-			lambda->body.push_back(parse_expression());
-		else if (match("{"))
-			parse_lambda_body_as_block(lambda);
-		else
-			error("expected '\\' or '{' after lamda parameters list");
-		return lambda;
-	}
-	pin<ast::MkLambda> make_lambda_with_param(pin<ast::Action> act, string context) {
-		auto as_get = dom::strict_cast<ast::Get>(act);
-		if (!as_get)
-			error("Expected parameter name before ", context);
-		if (as_get->var_module)
-			error("Parameter name before ", context, " should not contain '_'");
-		auto lambda = make_at_location<ast::MkLambda>(*act);
-		lambda->names.push_back(make<ast::Var>());
-		lambda->names.back()->name = as_get->var_name;
-		return lambda;
-	}
+
 	pin<Action> parse_unar_head() {
 		if (match("(")) {
-			pin<Action> start_expr;
-			auto lambda = make<ast::MkLambda>();
-			if (!match(")")) {
-				start_expr = parse_expression();
-				while (!match(")")) {
-					expect(",");
-					lambda->names.push_back(make<ast::Var>());
-					lambda->names.back()->name = expect_id("parameter");
-				}
-			}
-			if (match("{")) {
-				if (start_expr) {
-					if (auto as_ref = dom::strict_cast<ast::Get>(start_expr)) {
-						lambda->names.insert(lambda->names.begin(), make<ast::Var>());
-						lambda->names.front()->name = as_ref->var_name;
-					} else {
-						start_expr->error("lambda definition requires parameter name");
-					}
-				}
-				parse_lambda_body_as_block(lambda);
-				return lambda;
-			} else if (lambda->names.empty() && start_expr){
-				return start_expr;
-			}
-			lambda->error("expected single expression in parentesis or lambda {body}");
+			pin<Action> expr  = parse_expression();
+			expect(")");
+			return expr;
 		}
+		if (*cur == '{') {
+			auto r = make<ast::Block>();
+			parse_block(r);
+			return r;
+		}
+		if (auto r = maybe_parse_lambda())
+			return r;
 		if (match("*"))
 			return fill(make<ast::FreezeOp>(), parse_unar());
 		if (match("@"))
@@ -764,16 +793,6 @@ struct Parser {
 				return mk_const<ast::ConstInt64>(*v);
 			if (auto v = get_if<double>(&*n))
 				return mk_const<ast::ConstDouble>(*v);
-		}
-		if (match("{")) {
-			auto r = make<ast::Block>();
-			parse_lambda_body_as_block(r);
-			return r;
-		}
-		if (match("\\")) {
-			auto lambda = make<ast::MkLambda>();
-			lambda->body.push_back(parse_expression());
-			return lambda;
 		}
 		bool matched_true = match("+");
 		if (matched_true || match("?")) {
