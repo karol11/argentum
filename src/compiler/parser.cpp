@@ -56,6 +56,7 @@ struct Parser {
 	unordered_set<string>& modules_in_dep_path;
 	unordered_map<string, pin<ast::ImmediateDelegate>> delegates;
 	pin<ast::Class> current_class;  // To match type parameters
+	bool underscore_accessed = false;
 
 	Parser(pin<Ast> ast, string module_name, unordered_set<string>& modules_in_dep_path)
 		: dom(ast->dom)
@@ -454,29 +455,59 @@ struct Parser {
 	}
 
 	pin<ast::MkLambda> maybe_parse_lambda() {
-		// if matched `\{ - creates ast::lambda and parses
-		//      \single_expr maybe using _ as lambda w/o params or with 1 param
-		//      `name `name single_expr as lambda with n params
-		//      { expression list, maybe using _ as lambda w/o or with 1 param }  // parse_block()
-		// if not matched, return null
+		if (*cur != '`' && *cur != '\\' && *cur != '{')
+			return nullptr;
+		auto r = make<ast::MkLambda>();
+		if (*cur == '`') {
+			while (match("`")) {
+				r->names.push_back(make<ast::Var>());
+				r->names.back()->name = expect_id("lambda parameter name");
+			}
+			if (match("{"))
+				parse_block(r);
+			else
+				r->body.push_back(parse_expression());
+		} else {
+			bool prev_underscore = underscore_accessed;
+			underscore_accessed = false;
+			if (match("{"))
+				parse_block(r);
+			else {
+				expect("\\");
+				r->body.push_back(parse_expression());
+			}
+			if (underscore_accessed) {
+				r->names.push_back(make<ast::Var>());
+				r->names.back()->name = "_";
+			}
+			underscore_accessed = underscore_accessed || prev_underscore; // we accumulate all underscores upstream
+		}
+		return r;
 	}
 
 	pin<Action> parse_lambda_0_params(function<pin<ast::Action>()> single_expression_parser) {
-		// parses and returns as result:
-		//      \single_expr
-		//      single_expr including {blocks}
-		//      ` -> error this lambda cannot have parameters
+		if (match("`"))
+			error("expected lambda without parameters or an expression");
+		return match("\\")
+			? parse_unar()
+			: single_expression_parser();
 	}
 
 	pin<ast::Block> parse_lambda_1_param(function<pin<ast::Action>()> single_expression_parser) {
-		// creates block and parses
-		//      \single_expr_using _
-		//      single_expr_using _
-		//      `name single_expr   (if names count != 1, error)
-		//rhs->names.push_back(make<ast::Var>());
-		//rhs->names.back()->name = match("=") ? expect_id("local") : "_";
-		//rhs->body.push_back(parse_ifs());
-
+		auto r = make<ast::Block>();
+		r->names.push_back(make<ast::Var>());
+		if (match("`")) {
+			r->names.back()->name = expect_id("lambda parameter");
+			if (match("`"))
+				error("expected single-parameter lambda");
+			r->body.push_back(parse_unar());
+		} else {
+			r->names.back()->name = "_";
+			r->body.push_back(match("\\")
+				? parse_unar()
+				: single_expression_parser());
+		}
+		return r;
 	}
 
 	/*
@@ -818,6 +849,7 @@ struct Parser {
 		if (auto name = match("_")) {
 			auto r = make<ast::Get>();
 			r->var_name = "_";
+			underscore_accessed = true;
 			return r;
 		}
 		if (match_ns("'")) {
