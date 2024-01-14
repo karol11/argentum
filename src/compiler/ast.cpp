@@ -918,7 +918,7 @@ std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t) {
 			else {
 				dst << "[never_called, defined here:";
 				for (auto& c : type.callees)
-					dst << " " << c.pinned();
+					dst << " " << c.fn.pinned();
 				dst << "]";
 			}
 		}

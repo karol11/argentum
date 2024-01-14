@@ -8,14 +8,14 @@
 namespace {
 
 using std::vector;
+using std::function;
+using std::string;
 using ltm::own;
 using ltm::pin;
 using ltm::weak;
 using ltm::cast;
 using dom::strict_cast;
 using ast::Type;
-using std::function;
-using std::string;
 
 auto type_in_progress = own<ast::TpInt64>::make();
 
@@ -24,6 +24,7 @@ struct Typer : ast::ActionMatcher {
 	pin<Type> tp_bool;
 	pin<Type> tp_no_ret;
 	pin<ast::Class> this_class;
+	weak<ast::Var> current_underscore_var;
 
 	Typer(ltm::pin<ast::Ast> ast)
 		: ast(ast)
@@ -54,7 +55,7 @@ struct Typer : ast::ActionMatcher {
 		for (auto& p : node.names) {
 			if (!p->initializer) {
 				auto r = pin<ast::TpColdLambda>::make();
-				r->callees.push_back(weak<ast::MkLambda>(&node));
+				r->callees.push_back({ weak<ast::MkLambda>(&node), current_underscore_var });
 				node.type_ = r;
 				return;
 			}
@@ -71,14 +72,15 @@ struct Typer : ast::ActionMatcher {
 		node.type_ = ast->get_shared(ast->string_cls.pinned());
 	}
 	void on_block(ast::Block& node) override {
-		if (node.body.empty()) {
-			node.type_ = ast->tp_void();
-			return;
-		}
 		for (auto& l : node.names) {
 			if (l->initializer)
 				l->type = find_type(l->initializer)->type();
 		}
+		if (node.body.empty()) {
+			node.type_ = ast->tp_void();
+			return;
+		}
+		// TODO: handle "_" var
 		pin<ast::Action> prev;
 		for (auto& a : node.body) {
 			if (prev && dom::isa<ast::TpNoRet>(*prev->type()))
@@ -111,6 +113,55 @@ struct Typer : ast::ActionMatcher {
 			expect_type(actual_params[i], Type::promote(fn.params[i]), [&] { return ast::format_str("parameter ", i); });
 		node.type_ = Type::promote(fn.params.back());
 	}
+	pin<ast::TpLambda> type_cold_lambda( // returns the `lambda_type` or type inferred from act_params and fn result
+		pin<ast::TpColdLambda> cold,
+		pin<ast::TpLambda> lambda_type, // null if unknown
+		vector<own<Type>>& act_params, // actual param types, if `lambda_type` not null, points to its params, if not, it's a separte vector and type_cold_lambda can mutate it 
+		ast::Action& node,
+		const function<string()>& context)
+	{
+		for (auto& cold_callee : cold->callees) {
+			auto fn = cold_callee.fn.pinned();
+			bool has_underscore_param = fn->names.size() == 1 && fn->names.front()->name == "_";
+			size_t act_params_count = act_params.size() - (lambda_type ? 1 : 0);
+			if (fn->names.size() != act_params_count) {
+				if (has_underscore_param && act_params_count == 0) {
+					fn->names.pop_back();
+					has_underscore_param = false;
+				} else {
+					node.error("Mismatched params count: expected ", fn->names.size(), " provided ", act_params_count, " see function definition:", *fn);
+				}
+			}
+			for (size_t i = 0; i < fn->names.size(); i++)
+				fn->names[i]->type = Type::promote(act_params[i]);
+			auto prev_underscore_param = current_underscore_var;
+			if (has_underscore_param)
+				current_underscore_var = fn->names.front();
+			for (auto& p : fn->body)
+				find_type(p);
+			current_underscore_var = prev_underscore_param;
+			auto& fn_result = find_type(fn->body.back())->type();
+			if (!lambda_type) {
+				act_params.push_back(fn_result);
+				if (dom::strict_cast<ast::TpColdLambda>(fn_result) || dom::strict_cast<ast::TpLambda>(fn_result))
+					fn->error("So far functions cannot return lambdas");
+				lambda_type = ast->tp_lambda(move(act_params));
+				cold->resolved = lambda_type;
+			} else {
+				// TODO: maybe convert fn type to void if needed:
+				// auto result_type = Type::promote(lambda->params.back());
+				// if (dom::isa<ast::TpVoid>(*result_type) && !dom::isa<ast::TpVoid>(*fn->body.back()->type())) {
+				// 	 auto c_void = ast::make_at_location<ast::ConstVoid>(*fn->body.back());
+				//	 c_void->type_ = result_type;
+				//	 fn->body.push_back(c_void);
+				// } else {
+				//	 expect_type(fn->body.back(), result_type, [&] { return ast::format_str("lambda result in ", context()); });
+				// }
+				expect_type(fn->body.back(), Type::promote(lambda_type->params.back()), [&] { return "lambda result"; });
+			}
+		}
+		return lambda_type;
+	}
 	void type_call(ast::Action& node, pin<ast::Action> callee, vector<own<ast::Action>>& actual_params) {
 		pin<Type> callee_type = callee->type();
 		if (auto as_fn = dom::strict_cast<ast::TpFunction>(callee_type)) {
@@ -122,36 +173,13 @@ struct Typer : ast::ActionMatcher {
 			if (!dom::isa<ast::MakeDelegate>(*callee))
 				node.type_ = ast->tp_optional(node.type_);
 		} else if (auto as_cold = dom::strict_cast<ast::TpColdLambda>(callee_type)) {
-			own<ast::TpLambda> lambda_type;
-			for (auto& weak_fn : as_cold->callees) {
-				auto fn = weak_fn.pinned();
-				if (fn->names.size() != actual_params.size())
-					node.error("Mismatched params count: expected ", fn->names.size(), " provided ", actual_params.size(), " see function definition:", *fn);
-				if (!lambda_type) {
-					vector<own<Type>> param_types;
-					auto fn_param = fn->names.begin();
-					for (auto& p : actual_params) {
-						param_types.push_back(p->type());
-						(*fn_param++)->type = param_types.back();
-					}
-					for (auto& p : fn->body)
-						find_type(p);
-					auto& fn_result = find_type(fn->body.back())->type();
-					param_types.push_back(fn_result);
-					if (dom::strict_cast<ast::TpColdLambda>(fn_result) || dom::strict_cast<ast::TpLambda>(fn_result))
-						fn->error("So far functions cannot return lambdas");
-					lambda_type = ast->tp_lambda(move(param_types));
-					as_cold->resolved = lambda_type;
-					callee->type_ = lambda_type;
-				} else {
-					for (size_t i = 0; i < fn->names.size(); i++)
-						fn->names[i]->type = Type::promote(lambda_type->params[i]);
-					for (auto& p : fn->body)
-						find_type(p);
-					expect_type(fn->body.back(), Type::promote(lambda_type->params.back()), [&] { return "lambda result"; });
-				}
-			}
-			node.type_ = Type::promote(lambda_type->params.back());
+			vector<own<Type>> param_types;
+			for (auto& p : actual_params)
+				param_types.push_back(p->type());
+			param_types.push_back(nullptr);  // unknown result
+			auto lambda_type = type_cold_lambda(as_cold, nullptr, move(param_types), node, [] { return ""; });
+			callee->type_ = lambda_type;
+			node.type_ = lambda_type->params.back();
 		} else {
 			node.error(callee_type, " is not callable");
 		}
@@ -395,6 +423,11 @@ struct Typer : ast::ActionMatcher {
 		}
 	}
 	void on_get(ast::Get& node) override {
+		if (!node.var && node.var_name == "_") {
+			if (!current_underscore_var)
+				node.error("No `_` variable in this scope");
+			node.var = current_underscore_var;
+		}
 		if (node.var->is_const) {
 			node.type_ = node.var->type;
 		} else {
@@ -732,26 +765,6 @@ struct Typer : ast::ActionMatcher {
 		return node;
 	}
 
-	void unify(pin<ast::TpColdLambda> cold, pin<ast::TpLambda> lambda, ast::Action& node, const function<string()>& context) {
-		cold->resolved = lambda;
-		for (auto& w_fn : cold->callees) {
-			auto fn = w_fn.pinned();
-			if (fn->names.size() != lambda->params.size() - 1)
-				node.error("Mismatched params count: expected ", fn->names.size(), " provided ", lambda->params.size() - 1, " see function definition:", *fn);
-			for (size_t i = 0; i < fn->names.size(); i++)
-				fn->names[i]->type = Type::promote(lambda->params[i]);
-			for (auto& a : fn->body)
-				find_type(a);
-			auto result_type = Type::promote(lambda->params.back());
-			if (dom::isa<ast::TpVoid>(*result_type) && !dom::isa<ast::TpVoid>(*fn->body.back()->type())) {
-				auto c_void = ast::make_at_location<ast::ConstVoid>(*fn->body.back());
-				c_void->type_ = result_type;
-				fn->body.push_back(c_void);
-			} else {
-				expect_type(fn->body.back(), result_type, [&] { return ast::format_str("lambda result in ", context()); });
-			}
-		}
-	}
 	void expect_type(own<ast::Action>& node, pin<Type> expected_type, const function<string()>& context) {
 		expect_type(node, node->type(), expected_type, context);
 	}
@@ -845,12 +858,12 @@ struct Typer : ast::ActionMatcher {
 				act_as_cold->callees.clear();
 				return;
 			} else if (auto exp_as_lambda = dom::strict_cast<ast::TpLambda>(expected_type)) {
-				unify(act_as_cold, exp_as_lambda, *node, context);
+				type_cold_lambda(act_as_cold, exp_as_lambda, exp_as_lambda->params, *node, context);
 				return;
 			}
 		} else if (auto act_as_lambda = dom::strict_cast<ast::TpLambda>(actual_type)) {
 			if (auto exp_as_cold = dom::strict_cast<ast::TpColdLambda>(expected_type)) {
-				unify(exp_as_cold, act_as_lambda, *node, context);
+				type_cold_lambda(exp_as_cold, act_as_lambda, act_as_lambda->params, *node, context);
 				return;
 			}
 		} else if (auto exp_as_opt = dom::strict_cast<ast::TpOptional>(expected_type)) {

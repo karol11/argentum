@@ -122,7 +122,11 @@ struct TpLambda : TpFunction {
 };
 struct TpColdLambda : Type {  // never called not istantiated lambdas with unknown param/result types
 	own<Type> resolved;  // this can be Lambda or ColdLambda
-	vector<weak<struct MkLambda>> callees;
+	struct callee {
+		weak<struct MkLambda> fn;
+		weak<Var> outer_underscore;
+	};
+	vector<callee> callees;
 	void match(TypeMatcher& matcher) override;
 	DECLARE_DOM_CLASS(TpColdLambda);
 };
