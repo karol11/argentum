@@ -80,7 +80,6 @@ struct Typer : ast::ActionMatcher {
 			node.type_ = ast->tp_void();
 			return;
 		}
-		// TODO: handle "_" var
 		pin<ast::Action> prev;
 		for (auto& a : node.body) {
 			if (prev && dom::isa<ast::TpNoRet>(*prev->type()))
@@ -707,24 +706,31 @@ struct Typer : ast::ActionMatcher {
 		}
 		action->context_error(context, "expected optional, weak or bool type, not ", action->type().pinned());
 	}
-	void on_if(ast::If& node) override {
-		auto cond = handle_condition(node.p[0], [] { return "if operator"; });
-		if (auto as_block = dom::strict_cast<ast::Block>(node.p[1])) {
+	void handle_maybe_block_with_underscore(own<ast::Action>& action, pin<Type> external_type) {
+		auto prev_underscore = current_underscore_var;
+		if (auto as_block = dom::strict_cast<ast::Block>(action)) {
 			if (!as_block->names.empty() && !as_block->names.front()->initializer) {
-				as_block->names.front()->type = ast->get_wrapped(cond);
+				as_block->names.front()->type = external_type;
+				if (as_block->names.front()->name == "_") {
+					if (dom::isa<ast::TpVoid>(*external_type))
+						as_block->names.erase(as_block->names.begin());
+					else
+						current_underscore_var = as_block->names.front();
+				}
 			}
 		}
-		node.type_ = ast->tp_optional(find_type(node.p[1])->type());
-		assert(dom::strict_cast<ast::TpOptional>(node.type_));
+		find_type(action);
+		current_underscore_var = prev_underscore;
+	}
+	void on_if(ast::If& node) override {
+		auto cond = handle_condition(node.p[0], [] { return "if operator condition"; });
+		handle_maybe_block_with_underscore(node.p[1], ast->get_wrapped(cond));
+		node.type_ = ast->tp_optional(node.p[1]->type());
 	}
 	void on_land(ast::LAnd& node) override {
 		auto cond = handle_condition(node.p[0], [] { return "1st operand of `logical and` operator"; });
-		if (auto as_block = dom::strict_cast<ast::Block>(node.p[1])) {
-			if (!as_block->names.empty() && !as_block->names.front()->initializer) {
-				as_block->names.front()->type = ast->get_wrapped(cond);
-			}
-		}
-		node.type_ = find_type(node.p[1])->type();
+		handle_maybe_block_with_underscore(node.p[1], ast->get_wrapped(cond));
+		node.type_ = node.p[1]->type();
 		if (!dom::isa<ast::TpOptional>(*node.type_) && !dom::isa<ast::TpWeak>(*node.type_))
 			node.p[1]->error("expected bool, weak or optional as a 2nd operand of ``logical and` operator");
 	}
