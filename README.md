@@ -39,10 +39,10 @@ using string { Builder }
 using utils{ forRange }
 
 b = Builder;
-forRange(1, 101) i {
-   i % 3 == 0 ? b.putStr("fizz");
-   i % 5 == 0 ? b.putStr("buzz");
-   b.pos == 0 ? b.putInt(i);
+forRange(1, 101) {
+   _ % 3 == 0 ? b.putStr("fizz");
+   _ % 5 == 0 ? b.putStr("buzz");
+   b.pos == 0 ? b.putInt(_);
    log(b.newLine().toStr());
 }
 ```
@@ -62,7 +62,7 @@ class Node {
     hasLoop() bool {
         isActive || (!isVisited && {
             isVisited := isActive := true;
-            r = connections.contain(c \ c.hasLoop());
+            r = connections.contain{ _.hasLoop() };
             isActive := false;
             r
         })
@@ -72,7 +72,7 @@ class Graph {
     nodes = Array(Node);
     fromStr(String in) this {
         byNames = WeakArray.resize('z' + 1);
-        getOrCreateNode = () {
+        getOrCreateNode = \{
             name = in.get();
             byNames[name] || byNames[name] := nodes.append(Node)
         };
@@ -84,7 +84,7 @@ class Graph {
         }
     }    
     hasLoop() bool {
-        nodes.contain(n \ n.hasLoop())
+        nodes.contain{ _.hasLoop() }
     }
 }
 log(Graph.fromStr("a>b b>c c>d e>f b>e e>a c>c").hasLoop()
