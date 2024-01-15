@@ -500,7 +500,7 @@ struct Parser {
 			r->names.back()->name = expect_id("lambda parameter");
 			if (match("`"))
 				error("expected single-parameter lambda");
-			r->body.push_back(parse_unar());
+			r->body.push_back(single_expression_parser());
 		} else {
 			r->names.back()->name = "_";
 			r->body.push_back(match("\\")
