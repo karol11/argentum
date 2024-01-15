@@ -11,10 +11,10 @@ class Group {
     +Array(Actor);
     +Actor{
         paint(dst Window) {
-            each(i \ i.paint(dst))
+            each\ _.paint(dst)
         }
         tick(milliseconds int) bool {
-            plow(i \ i.tick(milliseconds));
+            plow\_.tick(milliseconds);
             size() != 0
         }
     }

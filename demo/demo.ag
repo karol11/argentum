@@ -59,13 +59,13 @@ class Flare {
             x += dx;
             y += dy;
             dy += 1 << 13;
-            scene ?=sc sc.rnd.get(0, 2) == 0 ?
-                sc.append(Sparkles.init(sc, x >> 16, y >> 16, color));
+            scene ? _.rnd.get(0, 2) == 0 ?
+                _.append(Sparkles.init(_, x >> 16, y >> 16, color));
             fade += dFade;
             dFade -= 140;
-            fade == 0 && scene &&=s s.rnd.get(0, generation) == 0 ?
-                distributeInCircle(s.rnd, s.rnd.get(6, 15), 10 << 16) dx dy {
-                    s.append(Flare.initAtFlare(this, dx, dy));
+            fade == 0 && scene && _.rnd.get(0, generation) == 0 ?
+                distributeInCircle(_.rnd, _.rnd.get(6, 15), 10 << 16) `dx `dy {
+                    _.append(Flare.initAtFlare(this, dx, dy));
                 };
             y > -100 << 16 && y <= 600 << 16 && x > 0 && x < 800 << 16 && fade >= 0
         }
@@ -104,7 +104,7 @@ class Flare {
 class Sparkles {
     +Actor {
         paint(dst Window) {
-            scene? distributeInCircle(_.rnd, r, r) x y {
+            scene? distributeInCircle(_.rnd, r, r) `x `y {
                 dst.fillRectXYWH(this.x + x, this.y + y, 1, 1, color);
             }
         }
@@ -131,7 +131,7 @@ fn makeBrightColor(rnd Random) int {
 }
 
 fn distributeInCircle(rnd Random, count int, r int, callback (int, int)) {
-    forRange(0, count) i {
+    forRange(0, count) `i {
         x = rnd.get(-r, r);
         y = rnd.get(-r, r);
         x*x + y*y < r*r ? callback(x, y);

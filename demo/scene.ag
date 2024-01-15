@@ -14,9 +14,9 @@ class Scene {
         loop !(sdl.pollEvent() ? {
             _[0] == sdl_xEventQuit ? sys_setMainObject(?sys_Object);
         });
-        roots.each(i \ i.render());
+        roots.each{ _.render() };
         flip();
-        animators.plow(a \ a.step(1000/60));
+        animators.plow{ _.step(1000/60) };
         sys_postTimer(frameStartMs + 1000/60, this.nextFrame);
     }
     sdl = Sdl;
@@ -227,8 +227,8 @@ class Label{
     }
     setText(text *String) {
         this.text := text;
-        scene ?=s
-        font ?=f
+        scene ?`s
+        font ?`f
            f.renderTo(img, text, size, style, s);
     }
     font = &Font;
@@ -297,12 +297,12 @@ class Frame{
 class Group {
     +Item {
         render() {
-            scene ?=c {
+            scene ?`c {
                 c.x += x;
                 c.y += y;
-                modifiers.each(m \ m.do(c));
-                items.each(i \ i.render());
-                forRange(-modifiers.size(), 0, i \modifiers[1+i]?_.undo(c));
+                modifiers.each\_.do(c);
+                items.each\_.render();
+                forRange(-modifiers.size(), 0) \ modifiers[1 + _] ? _.undo(c);
                 c.x -= x;
                 c.y -= y;    
             }

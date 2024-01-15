@@ -2,13 +2,13 @@ using sys {String, log}
 using utils {forRange}
 using string;
 
-bottles = c n {
+bottles = `c `n {
     c == 0
         ? "{n}o more bottles"
         : "{c} bottle{c != 1 ? "s"}"
 };
 
-forRange(0, 100) count \log("{}\
+forRange(0, 100) `count log("{}\
     { bottles(99-count, "N") } of beer on the wall, { bottles(99-count, "n") } of beer.
     { count == 99
         ? "Go to the store and buy some more"

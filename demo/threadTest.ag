@@ -14,8 +14,8 @@ app.threads.push(20) {
     log("Launch thread {app.threads.size()}{CR}");
     thread = Thread(Object).start(Object);
     thread.root().&myTask(tNum int, then &()){
-        forRange(0, 100) i {
-            log("Thread {tNum} iteration {i}{CR}");
+        forRange(0, 100){
+            log("Thread {tNum} iteration {_}{CR}");
         };
         then~();
     }~(app.activeCount += 1, app.&finishThread(){

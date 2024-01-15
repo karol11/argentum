@@ -2,6 +2,7 @@ using sys { WeakArray, Array, String, log }
 using utils { existsInRange }
 using string;
 using array;
+const CR = utf32_(0x0a);
 
 class Node {
     connections = WeakArray(Node);
@@ -11,7 +12,7 @@ class Node {
     hasLoop() bool {
         isActive || (!isVisited && {
             isVisited := isActive := true;
-            r = connections.contain(n \ n.hasLoop());
+            r = connections.contain `n n.hasLoop();
             isActive := false;
             r
         })
@@ -22,7 +23,7 @@ class Graph {
     nodes = Array(Node);
     fromStr(in String) this {
         byNames = WeakArray(Node).resize('z' + 1);
-        getOrCreateNode = () {
+        getOrCreateNode = \{
             name = in.getCh();
             byNames[name] : {
                 r = nodes.append(Node);
@@ -38,10 +39,10 @@ class Graph {
         }
     }    
     hasLoop() bool {    
-        nodes.contain(n \ n.hasLoop())
+        nodes.contain{ _.hasLoop() }
     }
 }
 
 log(Graph.fromStr(@"a>b b>c c>d e>f b>e e>a c>c").hasLoop()
-    ? "has some loop\n"
-    : "has no loops\n")
+    ? "has some loop{CR}"
+    : "has no loops{CR}")
