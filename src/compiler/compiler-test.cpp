@@ -90,15 +90,15 @@ TEST(Parser, Functions) {
 }
 
 TEST(Parser, LambdaWithParams) {
-    execute("sys_assertIEq(40, a{1+a}(3)*10)");
+    execute("sys_assertIEq(40, `a{1+a}(3)*10)");
 }
 
 TEST(Parser, PassingLambdaToLambda) {
     execute(R"-( sys_assertIEq(99,
-      a b xfn {
-            xfn(t\ a + b + t)
-      } (2, 4) vfn {
-            vfn(3) * vfn(5)
+      `a`b`xfn {
+            xfn{ a + b + _ }
+      } (2, 4) {
+            _(3) * _(5)
       })
     )-");
 }
@@ -112,7 +112,9 @@ TEST(Parser, LocalAssignment) {
 }
 
 TEST(Parser, MakeAndConsumeOptionals) {
-    execute("sys_assertIEq(2, (opt){ opt : 2 } (false ? 44))");
+    execute(R"(
+        sys_assertIEq(2, (\_:2)(false ? 44))
+    )");
 }
 
 TEST(Parser, MaybeChain) {
@@ -981,10 +983,10 @@ TEST(Parser, BreakFromInnerLambda) {
 }
 
 TEST(Parser, BoolLambda) {
-    execute(R"(
+    execute(R"-(
         fn f(l()bool) bool { l() }
-        sys_assert(!f((){false}), "!f()false")
-    )");
+        sys_assert(!f(\false), "!f(\false)")
+    )-");
 }
 
 TEST(Parser, ReturnFromLambdaParam) {
@@ -1032,8 +1034,8 @@ TEST(Parser, Unwind) {
                 })
         }
         x = {
-                forRange(0, 3) i {
-                    i == 1 ? ^x=42
+                forRange(0, 3) {
+                    _ == 1 ? ^x=42
                 };
                 0
             };
