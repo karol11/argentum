@@ -14,28 +14,15 @@ add_definitions(${LLVM_DEFINITIONS})
 llvm_map_components_to_libnames(llvm_libs support core nativecodegen orcjit)
 
 find_package(SDL2 REQUIRED)
-
 find_package(SDL2_image REQUIRED)
-if(NOT DEFINED SDL2_IMAGE_INCLUDE_DIRS)
-    get_target_property(SDL2_IMAGE_INCLUDE_DIRS SDL2_image::SDL2_image INTERFACE_INCLUDE_DIRECTORIES)
-endif()
-if(NOT DEFINED SDL2_IMAGE_LIBRARIES)
-    get_target_property(SDL2_IMAGE_LIBRARIES SDL2_image::SDL2_image IMPORTED_IMPLIB)
-endif()
+find_package(SDL2_ttf REQUIRED)
 
 find_package(CURL REQUIRED PATHS ../curl/lib/cmake/CURL)
 if(NOT DEFINED CURL_INCLUDE_DIR)
     get_target_property(CURL_INCLUDE_DIR CURL::libcurl INTERFACE_INCLUDE_DIRECTORIES)
 endif()
 
-find_package(SDL2_ttf REQUIRED)
-if(NOT DEFINED SDL2_TTF_INCLUDE_DIRS)
-    get_target_property(SDL2_TTF_INCLUDE_DIRS SDL2_ttf::SDL2_ttf INTERFACE_INCLUDE_DIRECTORIES)
-endif()
-if(NOT DEFINED SDL2_TTF_LIBRARIES)
-    get_target_property(SDL2_TTF_LIBRARIES SDL2_ttf::SDL2_ttf IMPORTED_IMPLIB)
-endif()
-include_directories(${CMAKE_CURRENT_LIST_DIR}/src ${SDL2_INCLUDE_DIRS} ${SDL2_IMAGE_INCLUDE_DIRS} ${SDL2_TTF_INCLUDE_DIRS} ${CURL_INCLUDE_DIR})
+include_directories(${CMAKE_CURRENT_LIST_DIR}/src ${CURL_INCLUDE_DIR})
 
 set(ag_rtl_sources
     src/runtime/runtime.h
@@ -111,12 +98,7 @@ add_executable(ag-jit-sdl
     
     src/runtime/sdl-bindings.c
 )
-target_link_libraries(ag-jit-sdl
-    ${SDL2_LIBRARIES}
-    ${SDL2_IMAGE_LIBRARIES}
-    ${SDL2_TTF_LIBRARIES}
-    ${llvm_libs}
-)
+target_link_libraries(ag-jit-sdl PUBLIC SDL2::SDL2 SDL2_image::SDL2_image SDL2_ttf::SDL2_ttf ${llvm_libs})
 
 add_executable(ag-tests
     ${ag_sources}
@@ -140,11 +122,12 @@ target_link_libraries(agc ${llvm_libs})
 
 add_library (ag_runtime STATIC
     ${ag_rtl_sources}
-    
+
     src/runtime/sdl-bindings.c
     src/runtime/curl-bindings.c
 )
 target_compile_definitions(ag_runtime PRIVATE AG_STANDALONE_COMPILER_MODE)
+target_link_libraries(ag_runtime PUBLIC SDL2::SDL2 SDL2_image::SDL2_image SDL2_ttf::SDL2_ttf)
 set_property(TARGET ag_runtime PROPERTY C_STANDARD 11)
 set_property(TARGET ag_runtime PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
