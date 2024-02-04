@@ -941,7 +941,6 @@ struct Parser {
 					p.error("string constant is not terminated");
 				if (!open_escape_str.empty() && p.match_ns(open_escape_str.c_str())) {
 					if (*p.cur == close_escape_char) {
-						p.cur++;
 						current_part->value += open_escape_str;
 					} else {
 						p.match_ws();
