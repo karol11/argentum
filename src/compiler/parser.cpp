@@ -885,8 +885,8 @@ struct Parser {
 			current_part->value += last_suffix;
 			if (!current_part->value.empty() || parts.empty())
 				parts.push_back(current_part);
-			if (parts.size() == 1)
-				return parts[0];
+			if (parts.size() == 1 && dom::isa<ast::ConstString>(*parts[0]))
+				return move(parts[0]);
 			auto inst = make_at_location<ast::MkInstance>(*parts[0]);
 			inst->cls = p.ast->str_builder.pinned();
 			pin<Action> r = inst;
