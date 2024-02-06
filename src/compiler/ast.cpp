@@ -69,6 +69,7 @@ own<TypeWithFills> CopyOp::dom_type_;
 own<TypeWithFills> MkWeakOp::dom_type_;
 own<TypeWithFills> DerefWeakOp::dom_type_;
 
+own<TypeWithFills> TpEnum::dom_type_;
 own<TypeWithFills> TpInt64::dom_type_;
 own<TypeWithFills> TpDouble::dom_type_;
 own<TypeWithFills> TpFunction::dom_type_;
@@ -93,6 +94,8 @@ own<TypeWithFills> AbstractClass::dom_type_;
 own<TypeWithFills> Class::dom_type_;
 own<TypeWithFills> ClassInstance::dom_type_;
 own<TypeWithFills> ClassParam::dom_type_;
+own<TypeWithFills> EnumTag::dom_type_;
+own<TypeWithFills> Enum::dom_type_;
 
 namespace {
 	template<typename CLS>
@@ -240,20 +243,6 @@ void initialize() {
 	make_bin_op<LAnd>("LAnd", op_array_2);
 	make_bin_op<Else>("Else", op_array_2);
 	make_bin_op<LOr>("LOr", op_array_2);
-	TpInt64::dom_type_ = new CppClassType<TpInt64>(cpp_dom, {"m0", "Type", "Int64"});
-	TpDouble::dom_type_ = new CppClassType<TpDouble>(cpp_dom, { "m0", "Type", "Double" });
-	TpFunction::dom_type_ = (new CppClassType<TpFunction>(cpp_dom, { "m0", "Type", "Function" }))
-		->field("params", pin<CField<&TpFunction::params>>::make(own_vector_type));
-	TpLambda::dom_type_ = (new CppClassType<TpLambda>(cpp_dom, { "m0", "Type", "Lambda" }))
-		->field("params", pin<CField<&TpFunction::params>>::make(own_vector_type));
-	TpDelegate::dom_type_ = (new CppClassType<TpDelegate>(cpp_dom, { "m0", "Type", "Delegate" }))
-		->field("params", pin<CField<&TpFunction::params>>::make(own_vector_type));
-	TpColdLambda::dom_type_ = (new CppClassType<TpColdLambda>(cpp_dom, { "m0", "Type", "ColdLambda" }))
-		->field("resolved", pin<CField<&TpColdLambda::resolved>>::make(own_type));
-	TpVoid::dom_type_ = (new CppClassType<TpVoid>(cpp_dom, { "m0", "Type", "Void" }));
-	TpVoid::dom_type_ = (new CppClassType<TpVoid>(cpp_dom, { "m0", "Type", "NoRet" }));
-	TpOptional::dom_type_ = (new CppClassType<TpOptional>(cpp_dom, { "m0", "Type", "Optional" }))
-		->field("wrapped", pin<CField<&TpOptional::wrapped>>::make(own_type));
 	Field::dom_type_ = (new CppClassType<Field>(cpp_dom, { "m0", "Field" }))
 		->field("name", pin<CField<&Field::name>>::make(string_type))
 		->field("type", pin<CField<&Field::initializer>>::make(own_type));
@@ -281,6 +270,11 @@ void initialize() {
 		->field("base", pin<CField<&ClassParam::base>>::make(weak_type));
 	ClassInstance::dom_type_ = (new CppClassType<ClassInstance>(cpp_dom, { "m0", "ClassInstance" }))
 		->field("params", pin<CField<&ClassInstance::params>>::make(weak_vector_type));
+	EnumTag::dom_type_ = (new CppClassType<EnumTag>(cpp_dom, { "m0", "EnumTag" }))
+		->field("name", pin<CField<&ClassParam::name>>::make(string_type));
+	Enum::dom_type_ = (new CppClassType<Enum>(cpp_dom, { "m0", "Enum" }))
+		->field("name", pin<CField<&Enum::name>>::make(string_type))
+		->field("tags", pin<CField<&Enum::tags>>::make(new dom::UnorderedMapType<string, own<dom::DomItem>>(string_type, own_type)));
 	TpOwn::dom_type_ = (new CppClassType<TpOwn>(cpp_dom, { "m0", "Type", "Own" }))
 		->field("target", pin<CField<&TpOwn::target>>::make(weak_type));
 	TpRef::dom_type_ = (new CppClassType<TpRef>(cpp_dom, { "m0", "Type", "Ref" }))
@@ -295,6 +289,22 @@ void initialize() {
 		->field("target", pin<CField<&TpOwn::target>>::make(weak_type));
 	TpConformWeak::dom_type_ = (new CppClassType<TpConformWeak>(cpp_dom, { "m0", "Type", "ConformWeak" }))
 		->field("target", pin<CField<&TpOwn::target>>::make(weak_type));
+	TpInt64::dom_type_ = new CppClassType<TpInt64>(cpp_dom, { "m0", "Type", "Int64" });
+	TpDouble::dom_type_ = new CppClassType<TpDouble>(cpp_dom, { "m0", "Type", "Double" });
+	TpFunction::dom_type_ = (new CppClassType<TpFunction>(cpp_dom, { "m0", "Type", "Function" }))
+		->field("params", pin<CField<&TpFunction::params>>::make(own_vector_type));
+	TpLambda::dom_type_ = (new CppClassType<TpLambda>(cpp_dom, { "m0", "Type", "Lambda" }))
+		->field("params", pin<CField<&TpFunction::params>>::make(own_vector_type));
+	TpDelegate::dom_type_ = (new CppClassType<TpDelegate>(cpp_dom, { "m0", "Type", "Delegate" }))
+		->field("params", pin<CField<&TpFunction::params>>::make(own_vector_type));
+	TpColdLambda::dom_type_ = (new CppClassType<TpColdLambda>(cpp_dom, { "m0", "Type", "ColdLambda" }))
+		->field("resolved", pin<CField<&TpColdLambda::resolved>>::make(own_type));
+	TpVoid::dom_type_ = (new CppClassType<TpVoid>(cpp_dom, { "m0", "Type", "Void" }));
+	TpVoid::dom_type_ = (new CppClassType<TpVoid>(cpp_dom, { "m0", "Type", "NoRet" }));
+	TpOptional::dom_type_ = (new CppClassType<TpOptional>(cpp_dom, { "m0", "Type", "Optional" }))
+		->field("wrapped", pin<CField<&TpOptional::wrapped>>::make(own_type));
+	TpEnum::dom_type_ = (new CppClassType<TpEnum>(cpp_dom, { "m0", "Type", "Enum" }))
+		->field("def", pin<CField<&TpEnum::def>>::make(weak_type));
 }
 
 own<Type>& Type::promote(own<Type>& to_patch) {
@@ -310,6 +320,7 @@ own<Type>& Action::type() {
 }
 
 void Action::match(ActionMatcher& matcher) { matcher.on_unmatched(*this); };
+void ConstEnumTag::match(ActionMatcher& matcher) { matcher.on_const_enum_tag(*this); }
 void ConstInt64::match(ActionMatcher& matcher) { matcher.on_const_i64(*this); }
 void ConstString::match(ActionMatcher& matcher) { matcher.on_const_string(*this); }
 void ConstDouble::match(ActionMatcher& matcher) { matcher.on_const_double(*this); }
@@ -364,6 +375,7 @@ void LOr::match(ActionMatcher& matcher) { matcher.on_lor(*this); }
 void ActionMatcher::on_unmatched(Action& node) {}
 void ActionMatcher::on_un_op(UnaryOp& node) { on_unmatched(node); }
 void ActionMatcher::on_bin_op(BinaryOp& node) { on_unmatched(node); }
+void ActionMatcher::on_const_enum_tag(ConstEnumTag& node) { on_unmatched(node); }
 void ActionMatcher::on_const_i64(ConstInt64& node) { on_unmatched(node); }
 void ActionMatcher::on_const_string(ConstString& node) { on_unmatched(node); }
 void ActionMatcher::on_const_double(ConstDouble& node) { on_unmatched(node); }
@@ -482,6 +494,7 @@ void TpWeak::match(TypeMatcher& matcher) { matcher.on_weak(*this); }
 void TpFrozenWeak::match(TypeMatcher& matcher) { matcher.on_frozen_weak(*this); }
 void TpConformRef::match(TypeMatcher& matcher) { matcher.on_conform_ref(*this); }
 void TpConformWeak::match(TypeMatcher& matcher) { matcher.on_conform_weak(*this); }
+void TpEnum::match(TypeMatcher& matcher) { matcher.on_enum(*this); }
 
 pin<Field> Ast::mk_field (string name, pin<Action> initializer) {
 	auto f = pin<Field>::make();
@@ -768,6 +781,22 @@ pin<Class> Module::peek_class(const string& name) {
 	return it == classes.end() ? nullptr : it->second.pinned();
 }
 
+pin<Enum> Module::get_enum(const string& name, int32_t line, int32_t pos) {
+	if (auto r = peek_enum(name))
+		return r;
+	auto r = pin<Enum>::make();
+	r->name = name;
+	r->module = this;
+	r->line = line;
+	r->pos = pos;
+	enums.insert({ string(name), r });
+	return r;
+}
+pin<Enum> Module::peek_enum(const string& name) {
+	auto it = enums.find(name);
+	return it == enums.end() ? nullptr : it->second.pinned();
+}
+
 pin<AbstractClass> Ast::extract_class(pin<Type> pointer) {
 	if (auto as_own = dom::strict_cast<ast::TpOwn>(pointer))
 		return as_own->target;
@@ -936,6 +965,9 @@ std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t) {
 					dst << "?";
 				dst << type.wrapped.pinned();
 			}
+		}
+		void on_enum(ast::TpEnum& type) override {
+			dst << "." << type.def->module->name << "_" << type.def->name;
 		}
 		void on_own(ast::TpOwn& type) override {
 			dst << "@" << type.target->get_name();

@@ -250,8 +250,8 @@ struct NameResolver : ast::ActionScanner {
 		}
 	}
 
-	template<typename F, typename M, typename C, typename FN>
-	void handle_data_ref(ast::DataRef& node, F on_field, M on_method, C on_class, FN on_function) {
+	template<typename F, typename M, typename C, typename FN, typename EN>
+	void handle_data_ref(ast::DataRef& node, F on_field, M on_method, C on_class, FN on_function, EN on_enum) {
 		if (node.var)
 			return;
 		if (!node.var_module) {
@@ -268,6 +268,10 @@ struct NameResolver : ast::ActionScanner {
 			on_class(c);
 			return;
 		}
+		if (auto c = target_module->peek_enum(node.var_name)) {
+			on_enum(c);
+			return;
+		}
 		if (auto fi = target_module->functions.find(node.var_name); fi != target_module->functions.end()) {
 			on_function(fi->second);
 			return;
@@ -280,16 +284,19 @@ struct NameResolver : ast::ActionScanner {
 			if (auto al = node.module->aliases.find(node.var_name); al != node.module->aliases.end()) {
 				if (auto as_cls = dom::strict_cast<ast::Class>(al->second.pinned()))
 					on_class(as_cls);
+				else if (auto as_enum = dom::strict_cast<ast::Enum>(al->second.pinned()))
+					on_enum(as_cls);
 				else if (auto as_fn = dom::strict_cast<ast::Function>(al->second))
 					on_function(as_fn);
+				else if (auto as_const = dom::strict_cast<ast::Var>(al->second))
+					node.var = as_const;
 				else
-					node.error("internal: alias name is nor class nor function");
+					node.error("internal: alias name is not class, function, enum, or const");
 				return;
 			}
 		}
 		node.error(is_ambigous ? "ambigous name " : "unresolved name ", ast::LongName{ node.var_name, node.var_module });
 	}
-
 	void on_get(ast::Get& node) override {
 		handle_data_ref(node,
 			[&](pin<ast::Field> field) {
@@ -319,6 +326,10 @@ struct NameResolver : ast::ActionScanner {
 				auto fn_ref = ast::make_at_location<ast::MakeFnPtr>(node);
 				fn_ref->fn = fn;
 				*fix_result = fn_ref;
+			},
+			[&](pin<ast::Enum> en) {
+				auto e = ast::make_at_location<ast::ConstEnumTag>(node);
+				e->type_ = en->enum_type;
 			});
 	}
 
@@ -350,6 +361,9 @@ struct NameResolver : ast::ActionScanner {
 			},
 			[&](pin<ast::Function> fn) {
 				node.error("Function is not assignable");
+			},
+			[&](pin<ast::Enum> en) {
+				node.error("Enum type is not assignable");
 			});
 		if (node.var && node.var->is_const)
 			node.error("Constant is not assignable");

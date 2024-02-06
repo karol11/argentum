@@ -951,6 +951,7 @@ struct Generator : ast::ActionScanner {
 			void on_conform_ref(ast::TpConformRef& type) override { result = gen->classes.at(type.target->get_implementation()).di_ptr;; }
 			void on_conform_weak(ast::TpConformWeak& type) override { result = gen->di_weak_ptr; }
 			void on_delegate(ast::TpDelegate& type) override { result = gen->di_delegate; }
+			void on_enum(ast::TpEnum& type) override { result = gen->di_int; }
 			void on_no_ret(ast::TpNoRet& type) override { assert(false); }
 		};
 		DiTypeMatcher matcher(this);
@@ -1761,6 +1762,7 @@ struct Generator : ast::ActionScanner {
 				void on_conform_ref(ast::TpConformRef& type) override { handle_64_bit(type); }
 				void on_conform_weak(ast::TpConformWeak& type) override { handle_64_bit(type); }
 				void on_no_ret(ast::TpNoRet& type) override { assert(false); }
+				void on_enum(ast::TpEnum& type) override { handle_64_bit(type); }
 			};
 			TypeDeserializer td(params, *this, thread, params_size_out);
 			(*pti)->match(td);
@@ -1830,6 +1832,7 @@ struct Generator : ast::ActionScanner {
 					gen.builder->CreateCall(gen.fn_put_thread_param_weak_ptr, { gen.cast_to(value, gen.ptr_type) });
 				}
 				void on_int64(ast::TpInt64& type) override { handle_64_bit(); }
+				void on_enum(ast::TpEnum& type) override { handle_64_bit(); }
 				void on_double(ast::TpDouble& type) override { handle_64_bit(); }
 				void on_function(ast::TpFunction& type) override { handle_64_bit(); }
 				void on_lambda(ast::TpLambda& type) override { assert(false); }
@@ -2122,6 +2125,7 @@ struct Generator : ast::ActionScanner {
 			}
 			Comparer(llvm::Value* lhs, llvm::Value* rhs, Generator& gen) : lhs(lhs), rhs(rhs), gen(gen) {}
 			void on_int64(ast::TpInt64& type) override { compare_scalar(); }
+			void on_enum(ast::TpEnum& type) override { compare_scalar(); }
 			void on_double(ast::TpDouble& type) override { gen.result->data = gen.builder->CreateCmp(llvm::CmpInst::Predicate::FCMP_OEQ, lhs, rhs); }
 			void on_function(ast::TpFunction& type) override { compare_scalar(); }
 			void on_lambda(ast::TpLambda& type) override { compare_pair(); }
@@ -2133,6 +2137,7 @@ struct Generator : ast::ActionScanner {
 					Comparer& c;
 					OptComparer(Comparer& c) : c(c) {}
 					void on_int64(ast::TpInt64& type) override { c.compare_pair(); }
+					void on_enum(ast::TpEnum& type) override { c.compare_scalar(); }
 					void on_double(ast::TpDouble& type) override { c.compare_scalar(); }
 					void on_function(ast::TpFunction& type) override { c.compare_scalar(); }
 					void on_lambda(ast::TpLambda& type) override { c.compare_pair(); }
@@ -2250,6 +2255,9 @@ struct Generator : ast::ActionScanner {
 							{ 0 }),
 						val,
 						{ 1 });
+			}
+			void on_enum(ast::TpEnum& type) override {
+				// val is already bit and type compatible
 			}
 			void on_double(ast::TpDouble& type) override {
 				val = depth > 0

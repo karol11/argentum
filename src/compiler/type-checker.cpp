@@ -10,6 +10,7 @@ namespace {
 using std::vector;
 using std::function;
 using std::string;
+using std::move;
 using ltm::own;
 using ltm::pin;
 using ltm::weak;
@@ -296,7 +297,7 @@ struct Typer : ast::ActionMatcher {
 			void on_frozen_weak(ast::TpFrozenWeak& type) override { error(type); }
 			void on_conform_ref(ast::TpConformRef& type) override { ptr_type(type); }
 			void on_conform_weak(ast::TpConformWeak& type) override { error(type); }
-
+			void on_enum(ast::TpEnum& type) override { result = ast::format_str(type.def->module->name, type.def->name); }
 			void error(ast::Type& type) {
 				node.error("Expected printable type, not ", ltm::pin<ast::Type>(&type));
 			}
@@ -497,6 +498,18 @@ struct Typer : ast::ActionMatcher {
 		return cls;
 	}
 	void on_get_field(ast::GetField& node) override {
+		if (auto as_enum = dom::strict_cast<ast::ConstEnumTag>(node.base)) {
+			if (as_enum->value)
+				node.error("unexpected enum tag name");
+			auto& tags = dom::strict_cast<ast::TpEnum>(as_enum->type_)->def->tags;
+			auto name = ast::format_str(node.field_module->name, "_", node.field_name);
+			auto it = tags.find(name);
+			if (it == tags.end())
+				node.error("Unknown tag ", name, " in enum", dom::strict_cast<ast::TpEnum>(as_enum->type_)->def->name);
+			as_enum->value = it->second;
+			*fix_result = move(node.base);
+			return;
+		}
 		auto base_cls = class_from_action(node.base);
 		if (!node.field) {
 			if (!base_cls->get_implementation()->handle_member(node, ast::LongName{ node.field_name, node.field_module },
@@ -604,6 +617,7 @@ struct Typer : ast::ActionMatcher {
 			void on_frozen_weak(ast::TpFrozenWeak& type) override { r = ast.get_frozen_weak(ast.resolve_params(type.target, ctx)); }
 			void on_conform_ref(ast::TpConformRef& type) override { r = ast.get_conform_ref(ast.resolve_params(type.target, ctx)); }
 			void on_conform_weak(ast::TpConformWeak& type) override { r = ast.get_conform_weak(ast.resolve_params(type.target, ctx)); }
+			void on_enum(ast::TpEnum& type) override { r = &type; }
 		};
 		ParamRemover pr(move(context), ast);
 		type->match(pr);

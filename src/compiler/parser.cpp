@@ -124,8 +124,8 @@ struct Parser {
 			error("module ", id, " is not visible from module ", module->name);
 	}
 
-	pin<ast::AbstractClass> get_class_by_name(const char* message) {
-		auto [c_name, m] = expect_long_name(message, nullptr);
+	pin<ast::AbstractClass> get_class_by_name(ast::LongName name) {
+		auto [c_name, m] = move(name);
 		if (!m) {
 			if (current_class) {
 				for (auto& p : current_class->params) {
@@ -139,11 +139,13 @@ struct Parser {
 			}
 			m = module;
 		}
+		if (auto e = m->peek_enum(c_name))
+			error("conflicted class and enum name, see:", *e);
 		return m->get_class(c_name, line, pos);
 	}
 
-	pin<ast::AbstractClass> parse_class_with_params(const char* message, bool allow_class_param) {
-		auto r = get_class_by_name(message);
+	pin<ast::AbstractClass> parse_class_with_params(ast::LongName name, bool allow_class_param) {
+		auto r = get_class_by_name(move(name));// expect_long_name(message, nullptr));
 		if (dom::isa<ast::ClassParam>(*r) && !allow_class_param)
 			error("Class parameter is not allowed as root name: ", r->get_name());
 		if (!match("("))
@@ -152,7 +154,7 @@ struct Parser {
 			error("Class parameter cannot be parameterized: ", r->get_name());
 		vector<weak<ast::AbstractClass>> params{ r };
 		do
-			params.push_back(parse_class_with_params("class parameter", true));
+			params.push_back(parse_class_with_params(expect_long_name("class parameter", nullptr), true));
 		while (match(","));
 		expect(")");
 		return ast->get_class_instance(move(params));
@@ -194,6 +196,10 @@ struct Parser {
 						module->aliases.insert({ my_id, it->second });
 					else if (auto it = used_module->classes.find(their_id); it != used_module->classes.end())
 						module->aliases.insert({ my_id, it->second });
+					else if (auto it = used_module->enums.find(their_id); it != used_module->enums.end())
+						module->aliases.insert({ my_id, it->second });
+					else if (auto it = used_module->constants.find(their_id); it != used_module->constants.end())
+						module->aliases.insert({ my_id, it->second });
 					else
 						error("unknown name ", their_id, " in module ", using_name);
 				} while (match(","));
@@ -215,10 +221,26 @@ struct Parser {
 				expect(";");
 				continue;
 			}
+			if (match("enum")) {
+				auto [e_name, m] = expect_long_name("Enumeration name", module);
+				if (auto c = m->peek_class(e_name))
+					error("conflicted class and interface name, see:", *c);
+				auto en = m->get_enum(e_name, line, pos);
+				expect("{");
+				while (!match("}")) {
+					auto tg = make<ast::EnumTag>();
+					tg->name = expect_id("Tag name");
+					auto key = ast::format_str(module->name, "_", tg->name);
+					if (auto t = en->tags.find(key); t != en->tags.end())
+						error("duplicating tags, see: ", *t);
+					en->tags.insert({ key, tg });
+				}
+				continue;
+			}
 			bool is_test = match("test");
 			bool is_interface = match("interface");
 			if (is_interface || match("class")) {
-				auto cls = dom::strict_cast<ast::Class>(get_class_by_name("class or interface"));
+				auto cls = dom::strict_cast<ast::Class>(get_class_by_name(expect_long_name("class or interface", nullptr)));
 				if (!cls)
 					error("interrnal error, class params from outer class");
 				current_class = cls;
@@ -240,7 +262,7 @@ struct Parser {
 						else if (match("<"))
 							param->is_in = false;
 						if (*cur != ',' && *cur != ')') {
-							param->base = parse_class_with_params("base class for type parameter", false);
+							param->base = parse_class_with_params(expect_long_name("base class for type parameter", nullptr), false);
 							if (dom::strict_cast<ast::ClassParam>(param->base))
 								error("Parameter base must be a real class, not parameter");
 						} else {
@@ -254,7 +276,7 @@ struct Parser {
 				expect("{");
 				while (!match("}")) {
 					if (match("+")) {
-						auto base_class = parse_class_with_params("base class", false); // disallow class param in root
+						auto base_class = parse_class_with_params(expect_long_name("base class", nullptr), false); // disallow class param in root
 						auto& base_content = cls->overloads[base_class];
 						if (match("{")) {
 							if (is_interface)
@@ -375,11 +397,16 @@ struct Parser {
 			return fn;
 		};
 		auto parse_pointer = [&]() {
-			auto inst = make<ast::MkInstance>();
-			inst->cls = parse_class_with_params(
-				"class or interface name",
-				true);  // allow class param
-			return inst;
+			auto name = expect_long_name("class, interface or enumeration name", nullptr);
+			if (*cur == '(') {
+				auto inst = make<ast::MkInstance>();
+				inst->cls = parse_class_with_params(move(name), true);  // allow class param
+				return dom::cast<ast::Action>(inst);
+			}
+			auto get = make<ast::Get>();
+			get->var_name = name.name;
+			get->var_module = name.module ? name.module : module;
+			return dom::cast<ast::Action>(get);
 		};
 		if (match("&")) {
 			if (match("-")) {
@@ -885,8 +912,8 @@ struct Parser {
 			current_part->value += last_suffix;
 			if (!current_part->value.empty() || parts.empty())
 				parts.push_back(current_part);
-			if (parts.size() == 1 && dom::isa<ast::ConstString>(*parts[0]))
-				return move(parts[0]);
+			if (parts.size() == 1)
+				return parts[0];
 			auto inst = make_at_location<ast::MkInstance>(*parts[0]);
 			inst->cls = p.ast->str_builder.pinned();
 			pin<Action> r = inst;
@@ -936,11 +963,12 @@ struct Parser {
 		}
 
 		bool parse_single_line() {  // returns true if matched quote
-			for (; !p.match_eoln(); p.cur++, p.pos++) {
+			for (; !p.match_eoln(); p.cur++) {
 				if (!*p.cur)
 					p.error("string constant is not terminated");
 				if (!open_escape_str.empty() && p.match_ns(open_escape_str.c_str())) {
 					if (*p.cur == close_escape_char) {
+						p.cur++;
 						current_part->value += open_escape_str;
 					} else {
 						p.match_ws();
@@ -1212,13 +1240,13 @@ struct Parser {
 		std::feclearexcept(FE_ALL_EXCEPT);
 		double d = double(result);
 		if (match_ns(".")) {
-			for (double weight = 0.1; is_num(*cur); weight *= 0.1, cur++, pos++)
-				d += weight * (*cur - '0');
+			for (double weight = 0.1; is_num(*cur); weight *= 0.1)
+				d += weight * (*cur++ - '0');
 		}
 		if (match_ns("E") || match_ns("e")) {
 			int sign = match_ns("-") ? -1 : (match_ns("+"), 1);
 			int exp = 0;
-			for (; *cur >= '0' && *cur < '9'; cur++, pos++)
+			for (; *cur >= '0' && *cur < '9'; cur++)
 				exp = exp * 10 + *cur - '0';
 			d *= pow(10, exp * sign);
 		}

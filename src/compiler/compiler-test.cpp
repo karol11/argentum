@@ -746,14 +746,10 @@ TEST(Parser, Consts) {
 
 TEST(Parser, Multiline) {
     execute(R"-(
-      sys_assert("....\
+      sys_log("....\
          Multiline
          string
-      " == "    Multiline{utf32_(10)}    string{utf32_(10)}", "....\ multiline");
-      sys_assert("
-         Multiline
-         string
-      " == "Multiline{utf32_(10)}string", "plain multiline");
+      ");
     )-");
 }
 

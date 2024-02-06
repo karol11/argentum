@@ -71,10 +71,13 @@ struct Module : dom::DomItem {
 	unordered_map<string, own<Function>> tests;
 	unordered_map<string, own<Class>> classes;
 	unordered_map<string, own<Function>> functions;
+	unordered_map<string, own<Enum>> enums;
 	own<Function> entry_point;
 
 	pin<Class> get_class(const string& name, int32_t line, int32_t pos); // gets or creates class
 	pin<Class> peek_class(const string& name); // gets class or null
+	pin<Enum> get_enum(const string& name, int32_t line, int32_t pos); // gets or creates enum
+	pin<Enum> peek_enum(const string& name); // gets enum or null
 	DECLARE_DOM_CLASS(Module);
 };
 
@@ -148,7 +151,25 @@ struct TpOptional : Type {
 	void match(TypeMatcher& matcher) override;
 	DECLARE_DOM_CLASS(TpOptional);
 };
-
+struct TpEnum : Type {
+	weak<Enum> def;
+	void match(TypeMatcher& matcher) override;
+	DECLARE_DOM_CLASS(TpEnum);
+};
+struct EnumTag : Node {
+	string name;
+	DECLARE_DOM_CLASS(EnumTag);
+};
+struct Enum : Node {
+	string name;
+	own<TpEnum> enum_type;
+	Enum() {
+		enum_type = new TpEnum();
+		enum_type->def = this;
+	}
+	unordered_map<string, own<EnumTag>> tags;
+	DECLARE_DOM_CLASS(Enum);
+};
 // Classes are owned by Module::classes
 // ClassParams - by Class::params
 // ClassInstance - by Ast::class_insts
@@ -187,6 +208,7 @@ struct Field : Node {
 	weak<Class> cls;
 	DECLARE_DOM_CLASS(Field);
 };
+
 struct Class : AbstractClass {
 	string name;
 	bool is_interface = false;
@@ -294,6 +316,7 @@ struct TypeMatcher {
 	virtual void on_frozen_weak(TpFrozenWeak& type) = 0;
 	virtual void on_conform_ref(TpConformRef& type) = 0;
 	virtual void on_conform_weak(TpConformWeak& type) = 0;
+	virtual void on_enum(TpEnum& type) = 0;
 };
 
 struct Action: Node {
@@ -420,6 +443,11 @@ struct ConstInt64: Action {
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(ConstInt64);
 };
+struct ConstEnumTag : Action {
+	weak<EnumTag> value;
+	void match(ActionMatcher& matcher) override;
+	DECLARE_DOM_CLASS(ConstEnumTag);
+};
 
 struct ConstString : Action {
 	string value;
@@ -479,6 +507,7 @@ struct Function : MkLambda {  // Cannot be in the tree of ops. Resides in Ast::f
 	bool is_platform = false;
 	bool is_test = false;
 	bool used = false;  // there is a get(Function), of for mk_delegate(method) used is stored in method->base
+	unordered_map<weak<EnumTag>, own<Block>> enum_dispatch;
 	DECLARE_DOM_CLASS(Function);
 };
 
@@ -715,6 +744,7 @@ struct ActionMatcher {
 	virtual void on_bin_op(BinaryOp& node);
 	virtual void on_un_op(UnaryOp& node);
 
+	virtual void on_const_enum_tag(ConstEnumTag& node);
 	virtual void on_const_i64(ConstInt64& node);
 	virtual void on_const_string(ConstString& node);
 	virtual void on_const_double(ConstDouble& node);
