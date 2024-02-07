@@ -853,7 +853,7 @@ struct Generator : ast::ActionScanner {
 	}
 	void make_retained_or_non_ptr(Val& src, llvm::Value* maybe_own_parent = nullptr) {
 		if (maybe_own_parent && get_if<Val::Retained>(&src.lifetime)) {
-			auto type = src.type;
+			auto& type = src.type;
 			if (auto as_opt = dom::strict_cast<ast::TpOptional>(src.type))
 				type = as_opt->wrapped;
 			if (isa<ast::TpOwn>(*type))
@@ -887,6 +887,7 @@ struct Generator : ast::ActionScanner {
 		return r.data;
 	}
 	void on_const_i64(ast::ConstInt64& node) override { result->data = builder->getInt64(node.value); }
+	void on_const_enum_tag(ast::ConstEnumTag& node) override { result->data = builder->getInt64(node.value->val); }
 	void on_const_double(ast::ConstDouble& node) override { result->data = llvm::ConstantFP::get(double_type, node.value); }
 	void on_const_void(ast::ConstVoid&) override { result->data = llvm::UndefValue::get(void_type); }
 	void on_const_bool(ast::ConstBool& node) override { result->data = builder->getInt1(node.value); }
@@ -2344,6 +2345,7 @@ struct Generator : ast::ActionScanner {
 			void on_conform_ref(ast::TpConformRef& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
 			void on_conform_weak(ast::TpConformWeak& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
 			void on_no_ret(ast::TpNoRet& type) override { assert(false); }
+			void on_enum(ast::TpEnum& type) override { val = llvm::ConstantInt::get(gen->int_type, depth); }
 		};
 		NoneMaker none_maker(this, type->depth);
 		type->wrapped->match(none_maker);
@@ -2407,6 +2409,11 @@ struct Generator : ast::ActionScanner {
 			void on_conform_ref(ast::TpConformRef& type) override { handle_ptr(); }
 			void on_conform_weak(ast::TpConformWeak& type) override { handle_ptr(); }
 			void on_no_ret(ast::TpNoRet& type) override { assert(false); }
+			void on_enum(ast::TpEnum& type) override {
+				val = gen->builder->CreateICmpNE(
+					val,
+					llvm::ConstantInt::get(gen->int_type, depth));
+			}
 		};
 		OptChecker checker(val, this, type->depth);
 		type->wrapped->match(checker);
@@ -2471,6 +2478,7 @@ struct Generator : ast::ActionScanner {
 			void on_conform_ref(ast::TpConformRef& type) override { handle_ptr(type); }
 			void on_conform_weak(ast::TpConformWeak& type) override { handle_ptr(type); }
 			void on_no_ret(ast::TpNoRet& type) override { assert(false); }
+			void on_enum(ast::TpEnum& type) override {} // no-op
 		};
 		ValMaker val_maker(val, this, type->depth);
 		type->wrapped->match(val_maker);
@@ -2758,6 +2766,7 @@ struct Generator : ast::ActionScanner {
 					void on_conform_ref(ast::TpConformRef& type) override { result = gen->tp_int_ptr; }
 					void on_conform_weak(ast::TpConformWeak& type) override { result = gen->tp_int_ptr; }
 					void on_no_ret(ast::TpNoRet& type) override { result = gen->void_type; }
+					void on_enum(ast::TpEnum& type) override { result = gen->int_type; }
 				};
 				OptionalMatcher matcher(gen, type.depth);
 				type.wrapped->match(matcher);
@@ -2771,6 +2780,7 @@ struct Generator : ast::ActionScanner {
 			void on_conform_ref(ast::TpConformRef& type) override { result = gen->ptr_type; }
 			void on_conform_weak(ast::TpConformWeak& type) override { result = gen->ptr_type; }
 			void on_no_ret(ast::TpNoRet& type) override { assert(false); }
+			void on_enum(ast::TpEnum& type) override { result = gen->int_type; }
 		} matcher(this);
 		t.match(matcher);
 		return matcher.result;

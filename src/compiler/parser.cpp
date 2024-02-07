@@ -232,7 +232,8 @@ struct Parser {
 					tg->name = expect_id("Tag name");
 					auto key = ast::format_str(module->name, "_", tg->name);
 					if (auto t = en->tags.find(key); t != en->tags.end())
-						error("duplicating tags, see: ", *t);
+						error("duplicating tags, see: ", t->second);
+					tg->val = en->tags.size() + 256;
 					en->tags.insert({ key, tg });
 				}
 				continue;

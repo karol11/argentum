@@ -22,6 +22,7 @@ namespace ast {
 	struct Action;  // having result, able to build code
 	struct Function;
 	struct Class;
+	struct Enum;
 	struct Ast;
 	struct Module;
 	struct Var;
@@ -158,6 +159,7 @@ struct TpEnum : Type {
 };
 struct EnumTag : Node {
 	string name;
+	int64_t val = 0;
 	DECLARE_DOM_CLASS(EnumTag);
 };
 struct Enum : Node {

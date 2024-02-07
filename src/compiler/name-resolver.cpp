@@ -285,7 +285,7 @@ struct NameResolver : ast::ActionScanner {
 				if (auto as_cls = dom::strict_cast<ast::Class>(al->second.pinned()))
 					on_class(as_cls);
 				else if (auto as_enum = dom::strict_cast<ast::Enum>(al->second.pinned()))
-					on_enum(as_cls);
+					on_enum(as_enum);
 				else if (auto as_fn = dom::strict_cast<ast::Function>(al->second))
 					on_function(as_fn);
 				else if (auto as_const = dom::strict_cast<ast::Var>(al->second))

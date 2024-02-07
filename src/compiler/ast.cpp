@@ -19,6 +19,7 @@ own<TypeWithFills> Var::dom_type_;
 own<TypeWithFills> Module::dom_type_;
 
 own<TypeWithFills> ConstInt64::dom_type_;
+own<TypeWithFills> ConstEnumTag::dom_type_;
 own<TypeWithFills> ConstString::dom_type_;
 own<TypeWithFills> ConstDouble::dom_type_;
 own<TypeWithFills> ConstVoid::dom_type_;
