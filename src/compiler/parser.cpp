@@ -406,7 +406,7 @@ struct Parser {
 			}
 			auto get = make<ast::Get>();
 			get->var_name = name.name;
-			get->var_module = name.module ? name.module : module;
+			get->var_module = name.module;
 			return dom::cast<ast::Action>(get);
 		};
 		if (match("&")) {

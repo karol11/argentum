@@ -260,6 +260,13 @@ struct NameResolver : ast::ActionScanner {
 				return;
 			}
 		}
+		if (this_class && !node.var_module) {
+			for (auto& p : this_class->params)
+				if (p->name == node.var_name) {
+					on_class(p);
+					return;
+				}
+		}
 		bool is_ambigous = false;
 		if (this_class && this_class->handle_member(node, { node.var_name, node.var_module }, move(on_field), move(on_method), [&] { is_ambigous = true; }) && !is_ambigous)
 			return;
@@ -317,7 +324,7 @@ struct NameResolver : ast::ActionScanner {
 				mk_delegate->base= this_ref;
 				*fix_result = mk_delegate;
 			},
-			[&](pin<ast::Class> cls) {
+			[&](pin<ast::AbstractClass> cls) {
 				auto mk_instance = ast::make_at_location<ast::MkInstance>(node);
 				mk_instance->cls = cls;
 				*fix_result = mk_instance;
@@ -356,7 +363,7 @@ struct NameResolver : ast::ActionScanner {
 			[&](pin<ast::Method> method) {
 				node.error("Method is not assignable");
 			},
-			[&](pin<ast::Class> cls) {
+			[&](pin<ast::AbstractClass> cls) {
 				node.error("Class is not assignable");
 			},
 			[&](pin<ast::Function> fn) {
