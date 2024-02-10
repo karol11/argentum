@@ -337,6 +337,7 @@ struct NameResolver : ast::ActionScanner {
 			[&](pin<ast::Enum> en) {
 				auto e = ast::make_at_location<ast::ConstEnumTag>(node);
 				e->type_ = en->enum_type;
+				*fix_result = e;
 			});
 	}
 
@@ -437,6 +438,11 @@ struct NameResolver : ast::ActionScanner {
 	void on_immediate_delegate(ast::ImmediateDelegate& node) override {
 		if (node.base) // can be null if used as type def
 			fix(node.base);
+	}
+	void on_ref(ast::RefOp& node) override {
+		fix(node.p);
+		if (auto p_as_enum = dom::strict_cast<ast::ConstEnumTag>(node.p))  // this happens in type declarations
+			*fix_result = move(p_as_enum);
 	}
 
 	void fix_immediate_delegate(ast::ImmediateDelegate& node, pin<ast::Class> cls) {

@@ -1087,6 +1087,28 @@ TEST(Parser, Unwind) {
         oculus
         browser
     */
+
+}
+
+TEST(Parser, Enums) {
+    execute(R"-(
+      using sys{assertIEq}
+      enum Command {
+          start
+          stop
+          turn
+      }
+      enum Command {
+          left right
+      }
+      fn toggle(v Command) Command {
+         v == Command.left ? ^toggle=Command.right;
+         v == Command.right ? ^toggle=Command.left;
+         v
+      }
+      c = Command.left;
+      sys_assert(c == toggle(Command.right), "left == toggle(right)")
+    )-");
 }
 
 }  // namespace

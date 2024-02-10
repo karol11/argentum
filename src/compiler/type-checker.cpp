@@ -26,6 +26,7 @@ struct Typer : ast::ActionMatcher {
 	pin<Type> tp_no_ret;
 	pin<ast::Class> this_class;
 	weak<ast::Var> current_underscore_var;
+	pin<ast::Module> current_module;
 
 	Typer(ltm::pin<ast::Ast> ast)
 		: ast(ast)
@@ -329,6 +330,8 @@ struct Typer : ast::ActionMatcher {
 		if (!fn->type_ || fn->type_ == type_in_progress) {
 			bool is_method = dom::isa<ast::Method>(*fn) || dom::isa<ast::ImmediateDelegate>(*fn);
 			vector<own<Type>> params;
+			pin<ast::Module> prevm = current_module;
+			current_module = fn->module;
 			for (size_t i = 0; i < fn->names.size(); i++) {
 				auto& p = fn->names[i];
 				if (!p->type)
@@ -340,6 +343,7 @@ struct Typer : ast::ActionMatcher {
 			fn->type_ = is_method
 				? ast->tp_delegate(move(params))
 				: ast->tp_function(move(params));
+			current_module = prevm;
 		}
 		return fn;
 	}
@@ -501,12 +505,21 @@ struct Typer : ast::ActionMatcher {
 		if (auto as_enum = dom::strict_cast<ast::ConstEnumTag>(node.base)) {
 			if (as_enum->value)
 				node.error("unexpected enum tag name");
-			auto& tags = dom::strict_cast<ast::TpEnum>(as_enum->type_)->def->tags;
-			auto name = ast::format_str(node.field_module->name, "_", node.field_name);
-			auto it = tags.find(name);
-			if (it == tags.end())
-				node.error("Unknown tag ", name, " in enum", dom::strict_cast<ast::TpEnum>(as_enum->type_)->def->name);
-			as_enum->value = it->second;
+			auto& enum_def = dom::strict_cast<ast::TpEnum>(as_enum->type_)->def;
+			pin<ast::EnumTag> tag;
+			if (node.field_module) {
+				tag = dom::peek(enum_def->tags, ast::format_str(node.field_module->name, "_", node.field_name));
+				if (!tag)
+					node.error("Unknown tag ", node.module->name, "_", node.field_name, " in enum", dom::strict_cast<ast::TpEnum>(as_enum->type_)->def->name);
+			} else {
+				tag = dom::peek(enum_def->tags, ast::format_str(enum_def->module->name, "_", node.field_name));
+				if (!tag)
+					dom::peek(enum_def->tags, ast::format_str(current_module->name, "_", node.field_name));
+				if (!tag)
+					node.error("Unknown tag ", enum_def->module->name, "_", node.field_name, " or ", 
+						current_module->name, "_", node.field_name, " in enum", dom::strict_cast<ast::TpEnum>(as_enum->type_)->def->name);
+			}
+			as_enum->value = tag;
 			*fix_result = move(node.base);
 			return;
 		}
@@ -922,6 +935,8 @@ struct Typer : ast::ActionMatcher {
 	}
 
 	void process_method(own<ast::Method>& m) {
+		pin<ast::Module> prevm = current_module;
+		current_module = m->module;
 		m->names[0]->type = find_type(m->names[0]->initializer)->type();
 		if (m->mut == ast::Mut::FROZEN) {
 			m->names[0]->type = ast->get_shared(ast->extract_class(m->names[0]->type));
@@ -934,6 +949,7 @@ struct Typer : ast::ActionMatcher {
 			expect_type(m->body.back(), m->type_expression->type(), [] { return "checking method result type against declartion"; });
 		if (m->base)
 			expect_type(m, m->base->type(), [] { return "checking method type against overridden"; });
+		current_module = prevm;
 	}
 
 	void process() {
@@ -946,6 +962,7 @@ struct Typer : ast::ActionMatcher {
 					type_fn(m);
 		}
 		for (auto& m : ast->modules) {
+			current_module = m.second;
 			for (auto& ct : m.second->constants) {
 				auto tp = ct.second->type = find_type(ct.second->initializer)->type();
 				if (auto as_opt = dom::strict_cast<ast::TpOptional>(tp))
@@ -966,6 +983,7 @@ struct Typer : ast::ActionMatcher {
 		for (auto& c : ast->classes_in_order) {
 			this_class = c;
 			for (auto& f : c->fields) {
+				current_module = f->module;
 				find_type(f->initializer);
 				if (dom::isa<ast::TpRef>(*f->initializer->type()) || dom::isa<ast::TpConformRef>(*f->initializer->type())) {
 					f->error("Fields cannot be temp-references. Make it @own, *shared or &weak");
@@ -978,6 +996,7 @@ struct Typer : ast::ActionMatcher {
 					process_method(m);
 		}
 		for (auto& m : ast->modules) {
+			current_module = m.second;
 			for (auto& fn : m.second->functions) {
 				for (auto& a : fn.second->body)
 					find_type(a);
@@ -987,6 +1006,7 @@ struct Typer : ast::ActionMatcher {
 		}
 		expect_type(find_type(ast->starting_module->entry_point), ast->tp_lambda({ ast->tp_void() }), []{ return "main fn return value"; });
 		for (auto& m : ast->modules) {
+			current_module = m.second;
 			for (auto& t : m.second->tests) {
 				type_fn(t.second);
 				if (!t.second->names.empty())
