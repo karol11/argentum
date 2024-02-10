@@ -1228,7 +1228,7 @@ struct Parser {
 			if (digit == 255)
 				break;
 			if (digit >= radix)
-				error("digit with value ", digit, " is not allowed in ", radix, "-base number");
+				error("digit ", *cur, " is not allowed in ", radix, "-base number");
 			uint64_t next = result * radix + digit;
 			if (next / radix != result)
 				error("overflow");
@@ -1236,6 +1236,8 @@ struct Parser {
 		}
 		if (*cur != '.' && *cur != 'e' && *cur != 'E') {
 			match_ws();
+			if (radix == 10 && (result >> 63) != 0)
+				error("oveflow");
 			return result;
 		}
 		std::feclearexcept(FE_ALL_EXCEPT);
