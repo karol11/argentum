@@ -61,7 +61,7 @@ class StrBuilder {
         isNeg ? val *= -1;
         p = pos + 21;
         loop {
-            set8At(p -= 1, val % 10 + '0');
+            set8At(p -= 1, (val % 10)->`i{i<0 ? -i : i} + '0');
             (val /= 10) == 0
         };
         isNeg ? set8At(p -= 1, '-');
