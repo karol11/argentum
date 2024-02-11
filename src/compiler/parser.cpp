@@ -913,8 +913,8 @@ struct Parser {
 			current_part->value += last_suffix;
 			if (!current_part->value.empty() || parts.empty())
 				parts.push_back(current_part);
-			if (parts.size() == 1)
-				return parts[0];
+			if (parts.size() == 1 && dom::isa<ast::ConstString>(*parts[0]))
+				return move(parts[0]);
 			auto inst = make_at_location<ast::MkInstance>(*parts[0]);
 			inst->cls = p.ast->str_builder.pinned();
 			pin<Action> r = inst;
@@ -964,12 +964,11 @@ struct Parser {
 		}
 
 		bool parse_single_line() {  // returns true if matched quote
-			for (; !p.match_eoln(); p.cur++) {
+			for (; !p.match_eoln(); p.cur++, p.pos++) {
 				if (!*p.cur)
 					p.error("string constant is not terminated");
 				if (!open_escape_str.empty() && p.match_ns(open_escape_str.c_str())) {
 					if (*p.cur == close_escape_char) {
-						p.cur++;
 						current_part->value += open_escape_str;
 					} else {
 						p.match_ws();
@@ -1243,13 +1242,13 @@ struct Parser {
 		std::feclearexcept(FE_ALL_EXCEPT);
 		double d = double(result);
 		if (match_ns(".")) {
-			for (double weight = 0.1; is_num(*cur); weight *= 0.1)
-				d += weight * (*cur++ - '0');
+			for (double weight = 0.1; is_num(*cur); weight *= 0.1, cur++, pos++)
+				d += weight * (*cur - '0');
 		}
 		if (match_ns("E") || match_ns("e")) {
 			int sign = match_ns("-") ? -1 : (match_ns("+"), 1);
 			int exp = 0;
-			for (; *cur >= '0' && *cur < '9'; cur++)
+			for (; *cur >= '0' && *cur < '9'; cur++, pos++)
 				exp = exp * 10 + *cur - '0';
 			d *= pow(10, exp * sign);
 		}
