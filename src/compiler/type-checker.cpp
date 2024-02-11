@@ -74,9 +74,13 @@ struct Typer : ast::ActionMatcher {
 		node.type_ = ast->get_shared(ast->string_cls.pinned());
 	}
 	void on_block(ast::Block& node) override {
+		auto prev_underscore_param = current_underscore_var;
 		for (auto& l : node.names) {
 			if (l->initializer)
 				l->type = find_type(l->initializer)->type();
+			if (l->name == "_")
+				current_underscore_var = l;
+
 		}
 		if (node.body.empty()) {
 			node.type_ = ast->tp_void();
@@ -89,6 +93,7 @@ struct Typer : ast::ActionMatcher {
 			find_type(a);
 			prev = a;
 		}
+		current_underscore_var = prev_underscore_param;
 		if (auto ret_as_get = dom::strict_cast<ast::Get>(node.body.back())) {
 			if (std::find(node.names.begin(), node.names.end(), ret_as_get->var) != node.names.end()) {
 				node.type_ = ret_as_get->var->type;

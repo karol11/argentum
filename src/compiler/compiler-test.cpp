@@ -1090,6 +1090,10 @@ TEST(Parser, Unwind) {
 
 }
 
+TEST(Parser, Pipe) {
+    execute("sys_assertIEq(7, 1->{_<0 ?-_:_} * 7)");
+}
+
 TEST(Parser, Enums) {
     execute(R"-(
       using sys{assertIEq}
