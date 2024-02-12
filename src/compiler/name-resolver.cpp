@@ -436,8 +436,10 @@ struct NameResolver : ast::ActionScanner {
 	}
 
 	void on_immediate_delegate(ast::ImmediateDelegate& node) override {
-		if (node.base) // can be null if used as type def
+		if (node.base) // The real immediate delegate will be resolved at the type-checker phase when base is resolved to the real class
 			fix(node.base);
+		else // it's a type definition not a real immediate delegate, its expression is make_instance or consts
+			fix_immediate_delegate(node, nullptr);
 	}
 	void on_ref(ast::RefOp& node) override {
 		fix(node.p);
@@ -451,11 +453,15 @@ struct NameResolver : ast::ActionScanner {
 		vector<variant<pin<ast::Block>, pin<ast::Loop>>> prev_bypassed_by_breaks;
 		unordered_map<string, pin<ast::Block>> prev_blocks;
 		swap(prev_bypassed_by_breaks, bypassed_by_breaks);
+		auto prev_this_var = this_var;
 		this_var = node.names.front();
+		auto prev_this_class = this_class;
 		this_class = cls;
 		fix_fn(&node);
 		locals = move(prev_locals);
 		bypassed_by_breaks = move(prev_bypassed_by_breaks);
+		this_var = prev_this_var;
+		this_class = prev_this_class;
 	}
 };
 
