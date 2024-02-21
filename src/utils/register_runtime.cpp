@@ -45,6 +45,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 	ast.mk_method(mut::ANY, ast.blob, "get64At", FN(ag_m_sys_Blob_get64At), new ast::ConstInt64, { ast.tp_int64() });
 	ast.mk_method(mut::MUTATING, ast.blob, "set64At", FN(ag_m_sys_Blob_set64At), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
 	ast.mk_method(mut::MUTATING, ast.blob, "putChAt", FN(ag_m_sys_Blob_putChAt), new ast::ConstInt64, { ast.tp_int64(), ast.tp_int64() });
+	ast.mk_method(mut::MUTATING, ast.blob, "mkStr", FN(ag_m_sys_Blob_mkStr), new ast::ConstString, { ast.tp_int64(), ast.tp_int64() });
 
 	ast.str_builder = ast.mk_class("StrBuilder");
 	ast.str_builder->overloads[ast.blob];
@@ -122,15 +123,17 @@ void register_runtime_content(struct ast::Ast& ast) {
 		ast.mk_method(mut::ANY, shared_array_cls, "getAt", FN(ag_m_sys_SharedArray_getAt), make_opt_result(make_ptr_result(new ast::FreezeOp, t_cls)), { ast.tp_int64() });
 		ast.mk_method(mut::MUTATING, shared_array_cls, "setAt", FN(ag_m_sys_SharedArray_setAt), new ast::ConstVoid, { ast.tp_int64(), ast.get_shared(t_cls) });
 	}
-	ast.string_cls = ast.mk_class("String", {
-		ast.mk_field("_cursor", new ast::ConstInt64),
-		ast.mk_field("_buffer", new ast::ConstInt64) });
+	ast.string_cls = ast.mk_class("String", {});
 	ast.string_cls->used = true;
-	ast.mk_method(mut::MUTATING, ast.string_cls, "fromBlob", FN(ag_m_sys_String_fromBlob), new ast::ConstBool, { ast.get_conform_ref(ast.blob), ast.tp_int64(), ast.tp_int64() });
-	ast.mk_method(mut::MUTATING, ast.string_cls, "getCh", FN(ag_m_sys_String_getCh), new ast::ConstInt64, {});
-	ast.mk_method(mut::ANY, ast.string_cls, "peekCh", FN(ag_m_sys_String_peekCh), new ast::ConstInt64, {});
 	ast.mk_overload(ast.string_cls, FN(ag_m_sys_String_getHash), obj_get_hash);
 	ast.mk_overload(ast.string_cls, FN(ag_m_sys_String_equals), obj_equals);
+	{
+		auto cursor_cls = ast.mk_class("Cursor", {
+				ast.mk_field("_cursor", new ast::ConstInt64),
+				ast.mk_field("_buffer", new ast::ConstString) });
+		ast.mk_method(mut::MUTATING, cursor_cls, "getCh", FN(ag_m_sys_Cursor_getCh), new ast::ConstInt64, {});
+		ast.mk_method(mut::ANY, cursor_cls, "peekCh", FN(ag_m_sys_Cursor_peekCh), new ast::ConstInt64, {});
+	}
 	{
 		auto map_cls = ast.mk_class("Map", {
 			ast.mk_field("_buckets", new ast::ConstInt64),
@@ -269,9 +272,6 @@ void register_runtime_content(struct ast::Ast& ast) {
 		{ "ag_copy_sys_WeakArray", FN(ag_copy_sys_WeakArray) },
 		{ "ag_dtor_sys_WeakArray", FN(ag_dtor_sys_WeakArray) },
 		{ "ag_visit_sys_WeakArray", FN(ag_visit_sys_WeakArray) },
-		{ "ag_copy_sys_String", FN(ag_copy_sys_String) },
-		{ "ag_dtor_sys_String", FN(ag_dtor_sys_String) },
-		{ "ag_visit_sys_String", FN(ag_visit_sys_String) },
 		{ "ag_copy_sys_Thread", FN(ag_copy_sys_Thread) },
 		{ "ag_dtor_sys_Thread", FN(ag_dtor_sys_Thread) },
 		{ "ag_visit_sys_Thread", FN(ag_visit_sys_Thread) } });

@@ -55,7 +55,6 @@ typedef struct ag_thread_tag ag_thread;
 
 #define AG_VISIT_OWN    0
 #define AG_VISIT_WEAK   1
-#define AG_VISIT_STRING_BUF   2
 
 #define ag_not_null(OBJ) ((OBJ) && (size_t)(OBJ) >= 256)
 
@@ -84,7 +83,7 @@ typedef void** (*ag_dispatcher_t) (uint64_t interface_and_method_ordinal);
 typedef struct {
 	ag_dispatcher_t dispatcher;
 	uintptr_t       ctr_mt;      // number_of_owns_and_refs point here << 4 | AG_CTR_* flags
-	uintptr_t       wb_p;        // pointer_to_weak_block || (pointer_to_parent|AG_F_PARENT)
+	uintptr_t       wb_p;        // pointer_to_weak_block | (pointer_to_parent|AG_F_PARENT)
 } AgObject;
 
 #ifdef AG_STANDALONE_COMPILER_MODE
@@ -101,15 +100,15 @@ typedef struct {
 } AgWeak;
 
 typedef struct {
-	size_t counter_mt; // number_of_strings pointing here << 1 | 1 if mt
-	char   data[1];
-} AgStringBuffer;
+	AgObject head;
+	char     chars[1];    // variable size zero terminated utf8
+} AgString;
 
 typedef struct {
-	AgObject        head;
-	const char*     ptr;    // points to current char
-	AgStringBuffer* buffer; // 0 for literals
-} AgString;
+	AgObject head;
+	const char* pos;
+	AgString*   str; // shared
+} AgCursor;
 
 typedef struct {
 	AgObject              head;
@@ -169,13 +168,11 @@ AgObject* ag_deref_weak      (AgWeak* w);
 //
 // AgString support
 //
-void      ag_copy_sys_String        (AgString* dst, AgString* src);
-void      ag_dtor_sys_String        (AgString* str);
-void      ag_visit_sys_String       (AgString* ptr, void(*visitor)(void*, int, void*), void* ctx);
-int32_t   ag_m_sys_String_getCh     (AgString* s);
-int32_t   ag_m_sys_String_peekCh    (AgString* s);
 int64_t   ag_m_sys_String_getHash   (AgObject* obj);
 bool      ag_m_sys_String_equals    (AgObject* a, AgObject* b);
+
+int32_t   ag_m_sys_Cursor_getCh(AgCursor* s);
+int32_t   ag_m_sys_Cursor_peekCh(AgCursor* s);
 
 static inline int64_t ag_getStringHash(const char* s) {
 	int64_t r = 5381;

@@ -296,6 +296,8 @@ struct Parser {
 						if (match("=")) {
 							if (is_mut != ast::Mut::MUTATING)
 								error("field can't have '-' or '*' markers");
+							if (cls == ast->string_cls)
+								error("string class cannot have extension fields");
 							cls->fields.push_back(make<ast::Field>());
 							cls->fields.back()->name = member_name;
 							cls->fields.back()->cls = cls;
@@ -379,6 +381,8 @@ struct Parser {
 			return mk_const<ast::ConstDouble>(0.0);
 		if (match("bool"))
 			return make<ast::ConstBool>();
+		if (match("str"))
+			return make<ast::ConstString>();
 		if (match("?")) {
 			auto r = make<ast::If>();
 			r->p[0] = make<ast::ConstBool>();

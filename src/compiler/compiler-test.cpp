@@ -43,7 +43,7 @@ void ag_assert_i_eq(int64_t expected, int64_t actual) {
     ASSERT_EQ(expected, actual);
 }
 void ag_assert(bool cond, AgString* message) {
-    ASSERT_TRUE(cond) << ": " << message->ptr;
+    ASSERT_TRUE(cond) << ": " << message->chars;
 }
 
 void execute(const char* source_text, bool dump_all = false) {
@@ -67,6 +67,13 @@ void execute(const char* source_text, bool dump_all = false) {
     foreign_test_function_state = 0;
     generate_and_execute(ast, false, dump_all);
 }
+
+/*TEST(Parser, GenericFn) {
+    execute(R"-(
+      fn(A String) adder(maker ()@A) A {  } 
+      sys_assert(c == toggle(Command.right), "left == toggle(right)")
+    )-");
+}*/
 
 TEST(Parser, Ints) {
     execute("sys_assertIEq(7, (2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1)))");

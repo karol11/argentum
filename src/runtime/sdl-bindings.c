@@ -60,7 +60,7 @@ void ag_fn_sdl_disposeSdl(AgSdl* thiz) {
 }
 
 bool ag_m_sdl_Window_sdl_init(AgSdlWindow* thiz, AgString* title, AgSdlRect* bounds, int64_t flags, int64_t r_flags) {
-    thiz->sdl_wnd = SDL_CreateWindow(title->ptr, (int)bounds->x, (int)bounds->y, (int)bounds->w, (int)bounds->h, (int)flags);
+    thiz->sdl_wnd = SDL_CreateWindow(title->chars, (int)bounds->x, (int)bounds->y, (int)bounds->w, (int)bounds->h, (int)flags);
     thiz->sdl_rend = SDL_CreateRenderer(thiz->sdl_wnd, 0, (int)r_flags);
     return thiz->sdl_wnd && thiz->sdl_rend;
 }
@@ -124,7 +124,7 @@ bool ag_sdl_surface_to_texture(AgSdlTexture* tex, AgSdlWindow* w, SDL_Surface* s
 }
 
 bool ag_m_sdl_Texture_sdl_load(AgSdlTexture* tex, AgSdlWindow* w, AgString* file_name) {
-    return ag_sdl_surface_to_texture(tex, w, IMG_Load(file_name->ptr));
+    return ag_sdl_surface_to_texture(tex, w, IMG_Load(file_name->chars));
 }
 
 void ag_fn_sdl_disposeTexture(AgSdlTexture* tex) {
@@ -147,13 +147,13 @@ void ag_m_sdl_Texture_sdl_setColorMod(AgSdlTexture* tex, int64_t color) {
 }
 
 bool ag_m_sdl_Font_sdl_load(AgSdlFont* thiz, AgString* fontName, int style) {
-    thiz->sdl_font = TTF_OpenFontIndex(fontName->ptr, 16, style);
+    thiz->sdl_font = TTF_OpenFontIndex(fontName->chars, 16, style);
     return thiz->sdl_font != NULL;
 }
 
 void ag_fn_sdl_disposeFont(AgSdlFont* fnt) {
-//    if (fnt->sdl_font)
-//        TTF_CloseFont(fnt->sdl_font);  // It crashes with font NotoSerif-Bold.ttf
+    if (fnt->sdl_font)
+        TTF_CloseFont(fnt->sdl_font);  // It crashes with font NotoSerif-Bold.ttf
 }
 
 AgString* ag_m_sdl_Font_sdl_name(AgSdlFont* thiz) {
@@ -194,7 +194,7 @@ void ag_m_sdl_Font_sdl_renderTo(AgSdlFont* thiz, AgSdlTexture* r, AgString* str,
         wnd,
         TTF_RenderUTF8_Blended(
             thiz->sdl_font,
-            str->ptr,
+            str->chars,
             (SDL_Color) { 255, 255, 255, 255 }));
 }
 
@@ -203,7 +203,7 @@ int64_t ag_m_sdl_Font_sdl_fit(AgSdlFont* thiz, AgString* s, int64_t ptSize, int6
         return 0;
     ag_ttf_set_style(thiz, ptSize, flags);
     int unused, count = 0;
-    TTF_MeasureUTF8(thiz->sdl_font, s->ptr, width, &unused, &count);
+    TTF_MeasureUTF8(thiz->sdl_font, s->chars, width, &unused, &count);
     return count;
 }
 
@@ -213,15 +213,15 @@ int64_t ag_m_sdl_Font_sdl_measure(AgSdlFont* thiz, AgString* str, int64_t ptSize
     ag_ttf_set_style(thiz, ptSize, flags);
     extents->y = -TTF_FontAscent(thiz->sdl_font);
     extents->h = TTF_FontDescent(thiz->sdl_font) - extents->y;
-    const char* s = str->ptr;
+    const char* s = str->chars;
     int first_char = get_utf8(&s);
     int minx, unused_maxx, unused_miny, unused_maxy, unused_adv;
     TTF_GlyphMetrics32(thiz->sdl_font, first_char, &minx, &unused_maxx, &unused_miny, &unused_maxy, &unused_adv);
     extents->x = minx;
     int width = 0, unused_height;
-    TTF_SizeText(thiz->sdl_font, str->ptr, &width, &unused_height);
+    TTF_SizeText(thiz->sdl_font, str->chars, &width, &unused_height);
     extents->w = width;
     int extent = 0, unused_count;
-    TTF_MeasureUTF8(thiz->sdl_font, str->ptr, INT_MAX, &extent, &unused_count);
+    TTF_MeasureUTF8(thiz->sdl_font, str->chars, INT_MAX, &extent, &unused_count);
     return extent;
 }

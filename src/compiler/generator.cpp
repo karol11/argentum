@@ -567,9 +567,7 @@ struct Generator : ast::ActionScanner {
 					0,  // align
 					struct_layout->getElementOffsetInBits(i),
 					llvm::DINode::DIFlags::FlagZero,
-					di_builder->createPointerType(
-						di_builder->createBasicType("asciiz", 8, llvm::dwarf::DW_ATE_UTF),
-						layout.getPointerSizeInBits())));
+					di_builder->createBasicType("asciiz", 8, llvm::dwarf::DW_ATE_UTF)));
 			} else if (c == ast->own_array->base_class) { // container, add no fields
 			} else if (c == ast->own_array || c == ast->weak_array || c == ast->blob) {
 				di_fields.push_back(di_builder->createMemberType(
@@ -894,17 +892,19 @@ struct Generator : ast::ActionScanner {
 	void on_const_string(ast::ConstString& node) override {
 		auto& str = string_literals[node.value];
 		if (!str) {
-			auto& cls = classes.at(ast->string_cls);
 			auto str_name = ast::format_str("ag_str_", &node);
-			module->getOrInsertGlobal(str_name, cls.fields);
+			auto& cls = classes.at(ast->string_cls);
+			llvm::Constant* str_constant = llvm::ConstantDataArray::getString(*context, node.value);
+			auto* str_type = llvm::StructType::get(obj_struct, str_constant->getType());
+			module->getOrInsertGlobal(str_name, str_type);
 			str = module->getGlobalVariable(str_name);
-			vector<llvm::Constant*> fields = {
+			vector<llvm::Constant*> obj_fields = {
 				llvm::ConstantExpr::getBitCast(cls.dispatcher, ptr_type),
 				const_ctr_str_literal, // shared|mt|hash|0
-				llvm::ConstantInt::get(tp_int_ptr, ag_getStringHash(node.value.c_str()) | 1),        // parent/weak/hash field
-				llvm::ConstantExpr::getPointerCast(builder->CreateGlobalStringPtr(node.value), tp_int_ptr),
-				const_0 };  // buffer
-			str->setInitializer(llvm::ConstantStruct::get(cls.fields, fields));
+				llvm::ConstantInt::get(tp_int_ptr, ag_getStringHash(node.value.c_str()) | 1) };    // parent/weak/hash field
+			str->setInitializer(llvm::ConstantStruct::get(str_type, {
+				llvm::ConstantStruct::get(str_type, obj_fields),
+				str_constant}));
 			str->setLinkage(llvm::GlobalValue::InternalLinkage);
 		}
 		result->data = str;
@@ -2866,7 +2866,6 @@ struct Generator : ast::ActionScanner {
 			ast->own_array,
 			ast->weak_array,
 			ast->modules["sys"]->peek_class("SharedArray"),
-			ast->string_cls,
 			ast->modules["sys"]->peek_class("Thread"),
 			ast->modules["sys"]->peek_class("Map"),
 			ast->modules["sys"]->peek_class("SharedMap"),
@@ -2994,6 +2993,8 @@ struct Generator : ast::ActionScanner {
 				field->offset = fields.size();
 				fields.push_back(to_llvm_type(*field->initializer->type()));
 			}
+			if (cls == ast->string_cls)
+				fields.push_back(llvm::Type::getInt8Ty(*context));
 			info.fields->setBody(fields);
 		}
 		make_di_clases();

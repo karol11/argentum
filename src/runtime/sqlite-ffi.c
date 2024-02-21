@@ -18,7 +18,7 @@ AgSqlite* ag_m_sqliteFfi_Sqlite_sqliteFfi_open(
     AgString* file_name,
     int flags)
 {
-    int r = sqlite3_open_v2(file_name->ptr, &con->con, flags, NULL);
+    int r = sqlite3_open_v2(file_name->chars, &con->con, flags, NULL);
     if (r != SQLITE_OK) {
         fprintf(stderr, "sqlite3_open_v2 %s", sqlite3_errstr(r));
         return NULL;
@@ -38,7 +38,7 @@ AgSqliteQuery* ag_m_sqliteFfi_Sqlite_sqliteFfi_internalQuery(
     AgString* sql,
     int flags)
 {
-    if (sqlite3_prepare_v3(con->con, sql->ptr, -1, flags, &q->stmt, NULL) != SQLITE_OK)
+    if (sqlite3_prepare_v3(con->con, sql->chars, -1, flags, &q->stmt, NULL) != SQLITE_OK)
         con->con = NULL;
     ag_retain_pin_nn(&q->header);
     return q;
@@ -73,7 +73,7 @@ void ag_m_sqliteFfi_Row_sqliteFfi_blobAt(AgSqliteQuery* q, int at, AgBlob* resul
 }
 
 AgSqliteQuery* ag_m_sqliteFfi_Query_sqliteFfi_setString(AgSqliteQuery* q, int at, AgString* val) {
-    sqlite3_bind_text(q->stmt, at, val->ptr, strlen(val->ptr), SQLITE_TRANSIENT);  // TODO: optimize after String/Cursor refactoring
+    sqlite3_bind_text(q->stmt, at, val->chars, strlen(val->chars), SQLITE_TRANSIENT);  // TODO: optimize after String/Cursor refactoring
     ag_retain_pin_nn(&q->header);
     return q;
 }

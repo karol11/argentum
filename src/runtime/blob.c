@@ -110,18 +110,10 @@ int64_t ag_m_sys_Blob_putChAt(AgBlob* b, int at, int codepoint) {
 	return cursor - b->bytes;
 }
 
-bool ag_m_sys_String_fromBlob(AgString* s, AgBlob* b, int at, int count) {
-	if (at + count > b->bytes_count) {
-		s->buffer = NULL;
-		s->ptr = "";
-		return false;
-	}
-	s->buffer = (AgStringBuffer*)ag_alloc(sizeof(AgStringBuffer) + count);
-	s->buffer->counter_mt = 2;
-	ag_memcpy(s->buffer->data, b->bytes + at, count);
-	s->buffer->data[count] = 0;
-	s->ptr = s->buffer->data;
-	return true;
+AgString* ag_m_sys_Blob_mkStr(AgBlob* b, int at, int count) {
+	if (count < 0 || at + count > b->bytes_count)
+		count = 0;
+	return ag_make_str(b->bytes + at, count);
 }
 
 void ag_make_blob_fit(AgBlob* b, size_t size) {

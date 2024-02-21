@@ -100,15 +100,15 @@ static void create_task(
 	task->easy = curl_easy_init();
 	task->headers = NULL;
 	AgHttpRequest* req = task->reponse->request;
-	curl_easy_setopt(task->easy, CURLOPT_URL, req->url->ptr);
-	curl_easy_setopt(task->easy, CURLOPT_CUSTOMREQUEST, req->verb->ptr);
+	curl_easy_setopt(task->easy, CURLOPT_URL, req->url->chars);
+	curl_easy_setopt(task->easy, CURLOPT_CUSTOMREQUEST, req->verb->chars);
 	if (req->body->bytes_count) {
 		curl_easy_setopt(task->easy, CURLOPT_POSTFIELDS, req->body->bytes);
 		curl_easy_setopt(task->easy, CURLOPT_POSTFIELDSIZE, req->body->bytes_count);
 	}
 	for (AgString* i = (AgString*)req->headers->items, *e = i + req->headers->items_count; i < e; ++i) {
 		if (i)
-			task->headers = curl_slist_append(task->headers, i->ptr);
+			task->headers = curl_slist_append(task->headers, i->chars);
 	}
 	if (task->headers)
 		curl_easy_setopt(task->easy, CURLOPT_HTTPHEADER, task->headers);

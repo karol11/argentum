@@ -113,29 +113,18 @@ void ag_flush_retain_release() {
 	uintptr_t* i = ag_retain_buffer;
 	uintptr_t* term = ag_retain_pos;
 	for (; i != term; ++i) {
-		if (*i & 1)
-			((AgStringBuffer*)(*i & ~1))->counter_mt += 2;
-		else {
-			AG_TRACE("flush retain item=%p oldCtr=%p", (void*)*i, (void*)((AgObject*)*i)->ctr_mt);
-			((AgObject*)*i)->ctr_mt += AG_CTR_STEP;
-		}
+		AG_TRACE("flush retain item=%p oldCtr=%p", (void*)*i, (void*)((AgObject*)*i)->ctr_mt);
+		((AgObject*)*i)->ctr_mt += AG_CTR_STEP;
 	}
 	i = ag_release_pos;
 	term = ag_retain_buffer + AG_RETAIN_BUFFER_SIZE;
 	AgObject* root = NULL;
 	for (; i != term; ++i) {
-		if (*i & 1) {
-			AgStringBuffer* str = (AgStringBuffer*)(*i & ~1);
-			if ((str->counter_mt -= 2) < 2)
-				ag_free(str);
-
-		} else {
-			AgObject* obj = (AgObject*)*i;
-			AG_TRACE("flush release item=%p oldCtr=%p", obj, (void*)obj->ctr_mt);
-			if ((obj->ctr_mt -= AG_CTR_STEP) < AG_CTR_STEP) {
-				obj->ctr_mt = (obj->ctr_mt & AG_CTR_WEAK) | ((intptr_t)root);
-				root = obj;
-			}
+		AgObject* obj = (AgObject*)*i;
+		AG_TRACE("flush release item=%p oldCtr=%p", obj, (void*)obj->ctr_mt);
+		if ((obj->ctr_mt -= AG_CTR_STEP) < AG_CTR_STEP) {
+			obj->ctr_mt = (obj->ctr_mt & AG_CTR_WEAK) | ((intptr_t)root);
+			root = obj;
 		}
 	}
 	ag_retain_pos = ag_retain_buffer;
@@ -266,7 +255,8 @@ void ag_retain_own(AgObject* obj, AgObject* parent) {
 		ag_retain_own_nn(obj, parent);
 }
 void ag_release_shared_nn(AgObject* obj) {
-	// only shared ptrs can reference string literals and named consts with static lifetimes, so check only for shared
+	// Check for statis lifetime.
+	// Only shared ptrs can reference string literals and named consts with static lifetimes, so check only for shared
 	if ((((AgObject*)obj)->ctr_mt & ~(AG_CTR_STEP - 1)) == 0)
 		return;
 	if (ag_head(obj)->ctr_mt & AG_CTR_MT)
@@ -279,7 +269,8 @@ void ag_release_shared(AgObject* obj) {
 		ag_release_shared_nn(obj);
 }
 void ag_retain_shared_nn(AgObject* obj) {
-	// only shared ptrs can reference string literals and named consts with static lifetimes, so check only for shared
+	// Check for statis lifetime. 
+	// Only shared ptrs can reference string literals and named consts with static lifetimes, so check only for shared
 	if ((((AgObject*)obj)->ctr_mt & ~(AG_CTR_STEP - 1)) == 0)
 		return;
 	if (ag_head(obj)->ctr_mt & AG_CTR_MT)
@@ -494,54 +485,16 @@ void ag_reg_copy_fixer(AgObject* object, void (*fixer)(AgObject*)) {
 	f->data = object;
 }
 
-int32_t ag_m_sys_String_getCh(AgString* s) {
-	return s->ptr && *s->ptr
-		? get_utf8(&s->ptr)
+int32_t ag_m_sys_Cursor_getCh(AgCursor* s) {
+	return s->pos && *s->pos
+		? get_utf8(&s->pos)
 		: 0;
 }
-int32_t ag_m_sys_String_peekCh(AgString* s) {
-	const char* pos = s->ptr;
+int32_t ag_m_sys_Cursor_peekCh(AgCursor* s) {
+	const char* pos = s->pos;
 	return pos && *pos
 		? get_utf8(&pos)
 		: 0;
-}
-
-void ag_copy_sys_String(AgString* d, AgString* s) {
-	d->ptr = s->ptr;
-	d->buffer = s->buffer;
-	if (d->buffer) {
-		if (d->buffer->counter_mt & 1)
-			ag_reg_mt_retain((uintptr_t)d->buffer | 1);
-		else
-			d->buffer->counter_mt += 2;
-	}
-}
-
-void ag_visit_sys_String(
-	AgString* s,
-	void(*visitor)(void*, int, void*),
-	void* ctx)
-{
-	if (ag_not_null(s) && s->buffer)
-		visitor(s->buffer, AG_VISIT_STRING_BUF, ctx);
-}
-
-void ag_dtor_sys_String(AgString* s) {
-	if (s->buffer) {
-		if (s->buffer->counter_mt & 1)
-			ag_reg_mt_release((uintptr_t)s->buffer | 1);
-		else if ((s->buffer->counter_mt -= 2) < 2)
-			ag_free(s->buffer);
-	}
-}
-
-void ag_release_str(AgString* s) {
-	if (!s->buffer)
-		return;
-	if (s->buffer->counter_mt & 1)
-		ag_reg_mt_release((uintptr_t)s);
-	else if ((s->buffer->counter_mt -= 2) < 2)
-		ag_free(s->buffer);
 }
 
 AgObject* ag_fn_sys_getParent(AgObject* obj) {  // obj not null, result is nullable
@@ -563,7 +516,7 @@ void ag_fn_sys_terminate(int result) {
 }
 
 void ag_fn_sys_log(AgString* s) {
-	fputs(s->ptr, stdout);
+	fputs(s->chars, stdout);
 }
 uint64_t ag_fn_sys_nowMs() {
 	struct timespec now;
@@ -577,8 +530,10 @@ int64_t ag_fn_sys_hash(AgObject* obj) {  // Shared
 	int64_t* dst = (obj->wb_p & AG_F_PARENT) != 0
 		? &obj->wb_p
 		: &((AgWeak*)obj->wb_p)->org_pointer_to_parent;
-	if ((obj->ctr_mt & AG_CTR_HASH) == 0)
+	if ((obj->ctr_mt & AG_CTR_HASH) == 0) {
+		obj->ctr_mt |= AG_CTR_HASH;
 		*dst = ((AgVmt*)(ag_head(obj)->dispatcher))[-1].get_hash(obj) | 1;
+	}
 	return *dst >> 1;
 }
 
@@ -614,10 +569,10 @@ bool ag_m_sys_Object_equals(AgObject* a, AgObject* b) {
 }
 
 int64_t ag_m_sys_String_getHash(AgObject* obj) {
-	return ag_getStringHash(((AgString*)obj)->ptr);
+	return ag_getStringHash(((AgString*)obj)->chars);
 }
 bool ag_m_sys_String_equals(AgObject* a, AgObject* b) {
-	return strcmp(((AgString*)a)->ptr, ((AgString*)b)->ptr);
+	return strcmp(((AgString*)a)->chars, ((AgString*)b)->chars);
 }
 
 static void ag_init_thread(ag_thread* th) {
@@ -745,10 +700,6 @@ void ag_bound_field_to_thread(void* field, int type, void* ctx) {
 		ag_make_weak_mt(*(AgWeak**)field);
 	} else if (type == AG_VISIT_OWN){
 		ag_bound_own_to_thread(*(AgObject**)field, (ag_thread*)ctx);
-	} else if (type == AG_VISIT_STRING_BUF) {
-		AgStringBuffer* buf = (AgStringBuffer*)field;
-		if ((buf->counter_mt & 1) == 0)
-			buf->counter_mt |= 1;
 	}
 }
 void ag_post_own_param_from_ag(ag_thread* th, AgObject* param) {
@@ -994,13 +945,12 @@ void ag_detach_weak(AgWeak* w) {
 }
 
 AgString* ag_make_str(const char* start, size_t size) {
-	AgString* s = (AgString*)ag_allocate_obj(sizeof(AgString));
-	s->buffer = (AgStringBuffer*)ag_alloc(sizeof(AgStringBuffer) + size);
-	s->buffer->counter_mt = 1 << 1 | 0;
-	ag_memcpy(s->buffer->data, start, size);
-	s->buffer->data[size] = 0;
-	s->ptr = s->buffer->data;
+	AgString* s = (AgString*)ag_allocate_obj(sizeof(AgString) + size);
+	ag_memcpy(s->chars, start, size);
+	s->chars[size] = 0;
 	s->head.dispatcher = ag_disp_sys_String;
-	s->head.ctr_mt |= AG_CTR_SHARED;
+	s->head.ctr_mt |= AG_CTR_SHARED | AG_CTR_HASH;
+	s->head.wb_p = ag_getStringHash(s->chars) | 1;
+	// TODO: combine hash calc and copy
 	return s;
 }
