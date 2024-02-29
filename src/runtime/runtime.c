@@ -497,6 +497,15 @@ int32_t ag_m_sys_Cursor_peekCh(AgCursor* s) {
 		: 0;
 }
 
+AgCursor* ag_m_sys_Cursor_set(AgCursor* th, AgString* s) {
+	ag_retain_shared_nn(&s->head);
+	ag_release_shared(&th->str->head);
+	th->str = s;
+	th->pos = s->chars;
+	ag_retain_pin_nn(&th->head);
+	return th;
+}
+
 AgObject* ag_fn_sys_getParent(AgObject* obj) {  // obj not null, result is nullable
 	if (obj->ctr_mt & AG_CTR_SHARED)
 		return 0;

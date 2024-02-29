@@ -564,11 +564,11 @@ TEST(Parser, InitializerMethods) {
 TEST(Parser, StringOperations) {
     execute(R"(
         class sys_String{
-            get() int { getCh() }
-            length() int {
+            *length() int {
                 r = 0;
+                cur = sys_Cursor.set(this);
                 loop {
-                    c = getCh();
+                    c = cur.getCh();
                     c != 0 ? r := r + 1;
                     c == 0 ? r
                 }
@@ -584,42 +584,40 @@ TEST(Parser, StringOperations) {
                     insert(size, growStep);
                 pos := putChAt(pos, codePoint)
             }
-            append(s sys_String) this {
+            append(s str) this {
+                cur = sys_Cursor.set(s);
                 loop{
-                    c = s.getCh();
+                    c = cur.getCh();
                     c != 0 ? put(c);
                     c == 0
                 }
             }
-            str() @sys_String {
-                r = sys_String;
-                r.fromBlob(this, 0, pos);
-                pos := 0;
-                r
+            str() str {
+                mkStr(0, pos)
             }
         }
-        a = OString.put('<').append(@"Hello there").put('>').str();
+        a = OString.put('<').append("Hello there").put('>').str();
         sys_assertIEq(13, a.length())
     )");
 }
 
 TEST(Parser, LiteralStrings) {
     execute(R"(
-        a = @"Hi";
+        a = sys_Cursor.set("Hi");
         a.getCh(); // a="i"
         b = @a;
         a.getCh(); // a=""   b"i"
         sys_assert(b.getCh() == 'i', "b.ch()=='i'");
         sys_assert(a.getCh() == 0, "a.ch()==0");
-        c = @$"{}";
-        sys_assert(c.getCh() == '{', $"c.ch()=={");
+        a.set("{}");
+        sys_assert(a.getCh() == '{', $"a.ch()=={");
     )");
 }
 
 TEST(Parser, StringEscapes) {
     execute(R"-(
         using sys { assertIEq }
-        s = @"{utf32_(0x0a, 9, 0x0d, '"', 0x1090e, 0x65)}!";
+        s = sys_Cursor.set("{utf32_(0x0a, 9, 0x0d, '"', 0x1090e, 0x65)}!");
         assertIEq(0x0a, s.getCh());
         assertIEq(9, s.getCh());
         assertIEq(0x0d, s.getCh());
@@ -779,8 +777,8 @@ TEST(Parser, StringInterpolation) {
                     insert(size, growStep);
                 pos := putChAt(pos, codePoint)
             }
-            putStr(x -String) this {
-                s = @x;
+            putStr(x str) this {
+                s = sys_Cursor.set(x);
                 loop !{
                     c = s.getCh();
                     c != 0 ? put(c)
@@ -789,11 +787,8 @@ TEST(Parser, StringInterpolation) {
             putInt(v int) this {
                 put(v % 10 + '0')
             }
-            toStr() @String {
-                r = String;
-                r.fromBlob(this, 0, pos);
-                pos := 0;
-                r
+            toStr() str {
+                mkStr(0, pos)
             }
       }
       sys_log("Hi {2*2}!");
@@ -860,17 +855,16 @@ TEST(Parser, GenericFromGeneric) {
     )-");
 }
 
-
 TEST(Parser, GenericInstAsType) {
     execute(R"-(
-        using sys { Array, String, log }
-        fn myFn(s Array(String)) {
+        using sys { SharedArray, String, log }
+        fn myFn(s SharedArray(String)) {
            s[0] ? log(_)
         }
         myFn({
-           a = Array(String);
+           a = SharedArray(String);
            a.insert(0, 1);
-           a[0] := @"Aloha";
+           a[0] := "Aloha";
            a
         })
     )-");
@@ -878,8 +872,8 @@ TEST(Parser, GenericInstAsType) {
 
 TEST(Parser, Map) {
     execute(R"-(
-      m = sys_Map(sys_String, sys_String);
-      m["One"] := @"Hello";
+      m = sys_Map(sys_String, sys_Cursor);
+      m["One"] := sys_Cursor.set("Hello");
       sys_assertIEq(m["One"]?_.getCh():0, 'H')
     )-");
 }
@@ -972,7 +966,6 @@ TEST(Parser, BreakSkipsCallWithPartialParams) {
 
 TEST(Parser, BreakFromLocalInitializer) {
     execute(R"(
-        using sys{ String }
         {=block
            a = "asdf";
            b = ?"" : ^block;
@@ -984,12 +977,11 @@ TEST(Parser, BreakFromLocalInitializer) {
 
 TEST(Parser, BreakFromInnerLambda) {
     execute(R"(
-        using sys{ String }
-        fn func(l()) *String { l(); "Normal" }
+        fn func(l()) str { l(); "Normal" }
         x = func(\{
               ^x = "From break"
            });
-        sys_assertIEq(x.peekCh(), 'F')
+        sys_assert(x == "From break", "x == frombreak")
     )");
 }
 
@@ -1002,37 +994,36 @@ TEST(Parser, BoolLambda) {
 
 TEST(Parser, ReturnFromLambdaParam) {
     execute(R"(
-        using sys{ Array, String }
-        class Array {
-            append(t()@T) {
+        using sys{ SharedArray, String, Cursor }
+        class SharedArray {
+            append(t()*T) {
                 c = capacity();
                 insert(c, 1);
                 this[c] := t();
             }
         }
-        class String {
-            getOne() ?@String { getCh() != 0 ? @"A" }
-            split() @Array(String) {
-                res = Array(String);
+        class Cursor {
+            getOne() ?str { getCh() != 0 ? "A" }
+            split() @SharedArray(String) {
+                res = SharedArray(String);
                 loop {
-                    res.append(getOne() : ^split=res);
+                    res.append{getOne() : ^split=res};
                 }
             }
         }
-        sys_assertIEq((@"B").split().capacity(), 2) // ["A", null]
+        sys_assertIEq(Cursor.set("B").split().capacity(), 2) // ["A", null]
     )");
 }
 
 TEST(Parser, ReturnFromInnerLambda) {
     execute(R"(
-        using sys{ String }
-        fn pass(l()) String { l(); @"Normal" }
-        fn skip() String {
-            pass(\{
-              ^skip = @"From break"
-            })
+        fn pass(l()) str { l(); "Normal" }
+        fn skip() str {
+            pass{
+              ^skip = "From break"
+            }
         }
-        sys_assertIEq(skip().getCh(), 'F')
+        sys_assert(skip() == "From break", "skip==f")
     )");
 }
 

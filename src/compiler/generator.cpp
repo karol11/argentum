@@ -902,9 +902,11 @@ struct Generator : ast::ActionScanner {
 				llvm::ConstantExpr::getBitCast(cls.dispatcher, ptr_type),
 				const_ctr_str_literal, // shared|mt|hash|0
 				llvm::ConstantInt::get(tp_int_ptr, ag_getStringHash(node.value.c_str()) | 1) };    // parent/weak/hash field
-			str->setInitializer(llvm::ConstantStruct::get(str_type, {
-				llvm::ConstantStruct::get(str_type, obj_fields),
-				str_constant}));
+			str->setInitializer(
+				llvm::ConstantStruct::get(str_type, {
+					llvm::ConstantStruct::get(obj_struct, obj_fields),
+					str_constant
+				}));
 			str->setLinkage(llvm::GlobalValue::InternalLinkage);
 		}
 		result->data = str;

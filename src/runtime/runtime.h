@@ -171,6 +171,7 @@ AgObject* ag_deref_weak      (AgWeak* w);
 int64_t   ag_m_sys_String_getHash   (AgObject* obj);
 bool      ag_m_sys_String_equals    (AgObject* a, AgObject* b);
 
+AgCursor* ag_m_sys_Cursor_set(AgCursor* th, AgString* s);
 int32_t   ag_m_sys_Cursor_getCh(AgCursor* s);
 int32_t   ag_m_sys_Cursor_peekCh(AgCursor* s);
 
