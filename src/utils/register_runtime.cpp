@@ -61,6 +61,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 	weak_to_object->p = inst;
 	auto add_class_param = [&](ltm::pin<ast::Class> cls, const char* name = "T") {
 		auto param = ltm::pin<ast::ClassParam>::make();
+		param->index = cls->params.size();
 		cls->params.push_back(param);
 		param->base = ast.object;
 		param->name = name;
@@ -77,6 +78,12 @@ void register_runtime_content(struct ast::Ast& ast) {
 		opt_ref_to_t->p[0] = new ast::ConstBool;
 		opt_ref_to_t->p[1] = ref;
 		return opt_ref_to_t;
+	};
+	auto make_factory = [&](auto& m) {
+		m->is_factory = true;
+		auto get_this = new ast::Get;
+		m->type_expression = get_this;
+		get_this->var = m->names[0];
 	};
 	ast.own_array = ast.mk_class("Array", {
 		ast.mk_field("_itemsCount", new ast::ConstInt64()),
@@ -133,16 +140,17 @@ void register_runtime_content(struct ast::Ast& ast) {
 				ast.mk_field("_buffer", new ast::ConstString) });
 		ast.mk_method(mut::MUTATING, cursor_cls, "getCh", FN(ag_m_sys_Cursor_getCh), new ast::ConstInt64, {});
 		ast.mk_method(mut::ANY, cursor_cls, "peekCh", FN(ag_m_sys_Cursor_peekCh), new ast::ConstInt64, {});
+		make_factory(ast.mk_method(mut::ANY, cursor_cls, "set", FN(ag_m_sys_Cursor_set), nullptr, { ast.get_shared(ast.string_cls) }));
 	}
 	{
 		auto map_cls = ast.mk_class("Map", {
 			ast.mk_field("_buckets", new ast::ConstInt64),
 			ast.mk_field("_capacity", new ast::ConstInt64),
 			ast.mk_field("_size", new ast::ConstInt64) });
+		auto key_cls = add_class_param(map_cls, "K");
 		auto val_cls = add_class_param(map_cls, "V");
 		auto ref_to_val_res = make_ptr_result(new ast::RefOp, val_cls);
 		auto opt_ref_to_val_res = make_opt_result(ref_to_val_res);
-		auto key_cls = add_class_param(map_cls, "K");
 		auto opt_shared_to_key_res = make_opt_result(
 			make_ptr_result(new ast::FreezeOp, key_cls));
 		ast.mk_method(mut::ANY, map_cls, "size", FN(ag_m_sys_Map_size), new ast::ConstInt64, {});
@@ -159,10 +167,10 @@ void register_runtime_content(struct ast::Ast& ast) {
 			ast.mk_field("_buckets", new ast::ConstInt64),
 			ast.mk_field("_capacity", new ast::ConstInt64),
 			ast.mk_field("_size", new ast::ConstInt64) });
+		auto key_cls = add_class_param(map_cls, "K");
 		auto val_cls = add_class_param(map_cls, "V");
 		auto shared_to_val_res = make_ptr_result(new ast::FreezeOp, val_cls);
 		auto opt_shared_to_val_res = make_opt_result(shared_to_val_res);
-		auto key_cls = add_class_param(map_cls, "K");
 		auto opt_shared_to_key_res = make_opt_result(
 			make_ptr_result(new ast::FreezeOp, key_cls));
 		ast.mk_method(mut::ANY, map_cls, "size", FN(ag_m_sys_SharedMap_size), new ast::ConstInt64, {});
@@ -179,9 +187,9 @@ void register_runtime_content(struct ast::Ast& ast) {
 			ast.mk_field("_buckets", new ast::ConstInt64),
 			ast.mk_field("_capacity", new ast::ConstInt64),
 			ast.mk_field("_size", new ast::ConstInt64) });
+		auto key_cls = add_class_param(map_cls, "K");
 		auto val_cls = add_class_param(map_cls, "V");
 		auto weak_to_val_res = make_ptr_result(new ast::MkWeakOp, val_cls);
-		auto key_cls = add_class_param(map_cls, "K");
 		auto opt_shared_to_key_res = make_opt_result(
 			make_ptr_result(new ast::FreezeOp, key_cls));
 		ast.mk_method(mut::ANY, map_cls, "size", FN(ag_m_sys_WeakMap_size), new ast::ConstInt64, {});
@@ -208,12 +216,8 @@ void register_runtime_content(struct ast::Ast& ast) {
 		auto thread = ast.mk_class("Thread", {
 			ast.mk_field("_internal", new ast::ConstInt64) });
 		auto param = add_class_param(thread, "R");
-
 		auto start = ast.mk_method(mut::MUTATING, thread, "start", FN(ag_m_sys_Thread_start), nullptr, { ast.get_ref(param) });
-		start->is_factory = true;
-		auto get_this = new ast::Get;
-		start->type_expression = get_this;
-		get_this->var = start->names[0];
+		make_factory(start);
 		ast.mk_method(mut::MUTATING, thread, "root", FN(ag_m_sys_Thread_root), make_ptr_result(new ast::MkWeakOp, param), {});
 	}
 
