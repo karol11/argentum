@@ -581,7 +581,7 @@ int64_t ag_m_sys_String_getHash(AgObject* obj) {
 	return ag_getStringHash(((AgString*)obj)->chars);
 }
 bool ag_m_sys_String_equals(AgObject* a, AgObject* b) {
-	return strcmp(((AgString*)a)->chars, ((AgString*)b)->chars);
+	return strcmp(((AgString*)a)->chars, ((AgString*)b)->chars) == 0;
 }
 
 static void ag_init_thread(ag_thread* th) {
