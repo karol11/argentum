@@ -2160,12 +2160,12 @@ struct Generator : ast::ActionScanner {
 				OptComparer opt_comparer{ *this };
 				type.wrapped->match(opt_comparer);
 			}
-			void on_own(ast::TpOwn& type) override { compare_scalar(); }
-			void on_ref(ast::TpRef& type) override { compare_scalar(); }
-			void on_shared(ast::TpShared& type) override { compare_scalar(); }
+			void on_own(ast::TpOwn& type) override { call_comparer(gen.fn_eq_mut); }
+			void on_ref(ast::TpRef& type) override { call_comparer(gen.fn_eq_mut); }
+			void on_shared(ast::TpShared& type) override { call_comparer(gen.fn_eq_shared); }
 			void on_weak(ast::TpWeak& type) override { compare_scalar(); }
 			void on_frozen_weak(ast::TpFrozenWeak& type) override { compare_scalar(); }
-			void on_conform_ref(ast::TpConformRef& type) override { compare_scalar(); }
+			void on_conform_ref(ast::TpConformRef& type) override { call_comparer(gen.fn_eq_shared); }
 			void on_conform_weak(ast::TpConformWeak& type) override { compare_scalar(); }
 			void on_no_ret(ast::TpNoRet& type) override { assert(false); }
 		};
