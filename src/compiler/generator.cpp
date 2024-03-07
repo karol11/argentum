@@ -1517,12 +1517,20 @@ struct Generator : ast::ActionScanner {
 					reg_disposable(p, comp_to_persistent(p)).data,
 					*pt++));
 			}
-			auto receiver = reg_disposable(
-				calle_as_method->base,
-				comp_to_persistent(
+			llvm::Value* receiver;
+			if (method->is_factory) {
+				*result = comp_to_persistent(
 					calle_as_method->base,
-					false)) // perist_mutable_locals
-				.data;
+					false);
+				receiver = result->data;
+			} else {
+				receiver = reg_disposable(
+					calle_as_method->base,
+					comp_to_persistent(
+					calle_as_method->base,
+					false) // perist_mutable_locals
+				).data;
+			}
 			params.front() = cast_to(receiver, ptr_type);
 			if (method->cls->is_interface) {
 				auto entry_point = builder->CreateCall(
@@ -1535,7 +1543,7 @@ struct Generator : ast::ActionScanner {
 					llvm::FunctionCallee(m_info.type, entry_point),
 					move(params));
 			} else {
-				result->data = builder->CreateCall(
+				auto res = builder->CreateCall(
 					llvm::FunctionCallee(
 						m_info.type,
 						builder->CreateLoad(  // load ptr to fn
@@ -1546,6 +1554,8 @@ struct Generator : ast::ActionScanner {
 								-1,
 								m_info.ordinal))),
 					move(params));
+				if (!method->is_factory)
+					result->data = res;
 			}
 		} else if (auto as_delegate_type = dom::strict_cast<ast::TpDelegate>(node.callee->type())) {
 			auto result_type = dom::strict_cast<ast::TpOptional>(node.type());

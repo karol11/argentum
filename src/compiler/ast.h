@@ -525,7 +525,7 @@ struct Method : Function {  // Cannot be in the tree of ops. Resides in Class::n
 	weak<Class> cls;  // class in which this method is declared.
 	weak<Module> base_module; // along with `name` defines the name of the method as it is declared, null if name is short
 	int ordinal = 0; // index int cls->new_methods.
-	bool is_factory = false; // @-method
+	bool is_factory = false; // @-method, its ret val is void
 	Mut mut = Mut::MUTATING;
 	DECLARE_DOM_CLASS(Method);
 };
@@ -534,7 +534,7 @@ struct Call : Action {
 	own<Action> callee;  // returns lambda
 	vector<own<Action>> params;
 	unordered_set<weak<ast::MkLambda>> activates_lambdas;  // null entry means dep. on fn. param
-	bool returns_last_param_if_void = false;
+	bool returns_last_param_if_void = false;  // TODO: remove
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(Call);
 };

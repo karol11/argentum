@@ -81,9 +81,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 	};
 	auto make_factory = [&](auto& m) {
 		m->is_factory = true;
-		auto get_this = new ast::Get;
-		m->type_expression = get_this;
-		get_this->var = m->names[0];
+		m->type_expression = new ast::ConstVoid;
 	};
 	ast.own_array = ast.mk_class("Array", {
 		ast.mk_field("_itemsCount", new ast::ConstInt64()),

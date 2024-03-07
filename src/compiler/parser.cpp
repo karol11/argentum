@@ -83,9 +83,7 @@ struct Parser {
 				as_method->is_factory = true;
 			else
 				error("only methods return this type.");
-			auto get_this = make<ast::Get>();
-			get_this->var = fn->names[0];
-			fn->type_expression = get_this;
+			fn->type_expression = make<ast::ConstVoid>();
 		} else {
 			fn->type_expression = parse_maybe_void_type();
 		}
@@ -95,9 +93,6 @@ struct Parser {
 		}
 		expect("{");
 		parse_statement_sequence(fn->body);
-		if (as_method && as_method->is_factory) {
-			fn->body.push_back(fn->type_expression);  // this
-		}
 		expect("}");
 	}
 	pin<ast::Method> make_method(const ast::LongName& name, pin<ast::Class> cls, bool is_interface) {
