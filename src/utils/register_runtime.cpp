@@ -138,7 +138,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 				ast.mk_field("_buffer", new ast::ConstString) });
 		ast.mk_method(mut::MUTATING, cursor_cls, "getCh", FN(ag_m_sys_Cursor_getCh), new ast::ConstInt64, {});
 		ast.mk_method(mut::ANY, cursor_cls, "peekCh", FN(ag_m_sys_Cursor_peekCh), new ast::ConstInt64, {});
-		make_factory(ast.mk_method(mut::ANY, cursor_cls, "set", FN(ag_m_sys_Cursor_set), nullptr, { ast.get_shared(ast.string_cls) }));
+		make_factory(ast.mk_method(mut::MUTATING, cursor_cls, "set", FN(ag_m_sys_Cursor_set), nullptr, { ast.get_shared(ast.string_cls) }));
 	}
 	{
 		auto map_cls = ast.mk_class("Map", {
