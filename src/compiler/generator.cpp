@@ -1616,7 +1616,7 @@ struct Generator : ast::ActionScanner {
 						: builder->CreateExtractValue(callee.data, { 1 })),
 				move(params));
 		}
-		if (is_ptr(node.type()))
+		if (is_ptr(node.type()) && get_if<Val::Static>(&result->lifetime))
 			result->lifetime = Val::Retained{};
 		for (; !to_dispose.empty(); to_dispose.pop_back()) {
 			if (to_dispose.back().first.data == last_param_to_return) {

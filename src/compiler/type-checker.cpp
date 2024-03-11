@@ -119,6 +119,15 @@ struct Typer : ast::ActionMatcher {
 			expect_type(actual_params[i], Type::promote(fn.params[i]), [&] { return ast::format_str("parameter ", i); });
 		node.type_ = Type::promote(fn.params.back());
 	}
+	void fix_fn_result(pin<ast::MkLambda> fn, pin<ast::Type> expected_result_type) {
+		if (dom::isa<ast::TpVoid>(*expected_result_type) && !dom::isa<ast::TpVoid>(*fn->body.back()->type())) {
+			auto c_void = ast::make_at_location<ast::ConstVoid>(*fn->body.back());
+			c_void->type_ = ast->tp_void();
+			fn->body.push_back(c_void);
+		} else {
+			expect_type(fn->body.back(), expected_result_type, [] { return "checking actual result type against fn declaration"; });
+		}
+	}
 	pin<ast::TpLambda> type_cold_lambda( // returns the `lambda_type` or type inferred from act_params and fn result
 		pin<ast::TpColdLambda> cold,
 		pin<ast::TpLambda> lambda_type, // null if unknown
@@ -152,19 +161,12 @@ struct Typer : ast::ActionMatcher {
 			if (!lambda_type) {
 				act_params->push_back(fn_result);
 				if (dom::strict_cast<ast::TpColdLambda>(fn_result) || dom::strict_cast<ast::TpLambda>(fn_result))
-					fn->error("So far functions cannot return lambdas");
+					fn->error("Functions cannot return lambdas");
 				lambda_type = ast->tp_lambda(move(*act_params));
 				act_params = &lambda_type->params;
 				cold->resolved = lambda_type;
 			} else {
-				auto result_type = Type::promote(lambda_type->params.back());
-				if (dom::isa<ast::TpVoid>(*result_type) && !dom::isa<ast::TpVoid>(*fn->body.back()->type())) {
-					 auto c_void = ast::make_at_location<ast::ConstVoid>(*fn->body.back());
-					 c_void->type_ = result_type;
-					 fn->body.push_back(c_void);
-				} else {
-					 expect_type(fn->body.back(), Type::promote(lambda_type->params.back()), [&] { return "lambda result"; });
-				}
+				fix_fn_result(fn, Type::promote(lambda_type->params.back()));
 			}
 		}
 		return lambda_type;
@@ -951,7 +953,7 @@ struct Typer : ast::ActionMatcher {
 		for (auto& a : m->body)
 			find_type(a);
 		if (!m->body.empty())  // empty == interface method
-			expect_type(m->body.back(), m->type_expression->type(), [] { return "checking method result type against declartion"; });
+			fix_fn_result(m, m->type_expression->type());
 		if (m->base)
 			expect_type(m, m->base->type(), [] { return "checking method type against overridden"; });
 		current_module = prevm;
@@ -1006,7 +1008,7 @@ struct Typer : ast::ActionMatcher {
 				for (auto& a : fn.second->body)
 					find_type(a);
 				if (!fn.second->is_platform)
-					expect_type(fn.second->body.back(), fn.second->type_expression->type(), [] { return "checking actual result type against fn declaration"; });
+					fix_fn_result(fn.second, fn.second->type_expression->type());
 			}
 		}
 		expect_type(find_type(ast->starting_module->entry_point), ast->tp_lambda({ ast->tp_void() }), []{ return "main fn return value"; });

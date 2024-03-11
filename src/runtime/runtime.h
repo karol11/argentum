@@ -171,7 +171,7 @@ AgObject* ag_deref_weak      (AgWeak* w);
 int64_t   ag_m_sys_String_getHash   (AgObject* obj);
 bool      ag_m_sys_String_equals    (AgObject* a, AgObject* b);
 
-AgCursor* ag_m_sys_Cursor_set(AgCursor* th, AgString* s);
+void      ag_m_sys_Cursor_set(AgCursor* th, AgString* s);
 int32_t   ag_m_sys_Cursor_getCh(AgCursor* s);
 int32_t   ag_m_sys_Cursor_peekCh(AgCursor* s);
 
@@ -196,7 +196,7 @@ uint64_t  ag_fn_sys_nowMs         ();
 void      ag_copy_sys_Thread      (AgThread* dst, AgThread* src);
 void      ag_dtor_sys_Thread      (AgThread* ptr);
 void      ag_visit_sys_Thread     (AgThread* ptr, void(*visitor)(void*, int, void*), void* ctx);
-AgThread* ag_m_sys_Thread_start   (AgThread* th, AgObject* root);
+void      ag_m_sys_Thread_start   (AgThread* th, AgObject* root);
 AgWeak*   ag_m_sys_Thread_root    (AgThread* th);
 
 //

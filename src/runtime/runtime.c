@@ -497,13 +497,11 @@ int32_t ag_m_sys_Cursor_peekCh(AgCursor* s) {
 		: 0;
 }
 
-AgCursor* ag_m_sys_Cursor_set(AgCursor* th, AgString* s) {
+void ag_m_sys_Cursor_set(AgCursor* th, AgString* s) {
 	ag_retain_shared_nn(&s->head);
 	ag_release_shared(&th->str->head);
 	th->str = s;
 	th->pos = s->chars;
-	ag_retain_pin_nn(&th->head);
-	return th;
 }
 
 AgObject* ag_fn_sys_getParent(AgObject* obj) {  // obj not null, result is nullable
@@ -832,7 +830,7 @@ int ag_handle_main_thread() {
 	return 0;
 }
 
-AgThread* ag_m_sys_Thread_start(AgThread* th, AgObject* root) {
+void ag_m_sys_Thread_start(AgThread* th, AgObject* root) {
 	AG_TRACE("thread start [root AgThread=%p root=%p", th, root);
 	ag_thread* t = NULL;
 	ag_init_this_thread();
@@ -859,10 +857,8 @@ AgThread* ag_m_sys_Thread_start(AgThread* th, AgObject* root) {
 	AgWeak* w = ag_mk_weak(root);
 	w->wb_ctr_mt = (w->wb_ctr_mt - AG_CTR_STEP) | AG_CTR_MT;
 	w->thread = t;
-	th->head.ctr_mt += AG_CTR_STEP;
 	pthread_create(&t->thread, NULL, (ag_thread_start_t) ag_thread_proc, t);
 	AG_TRACE("thread start ] spawned t=%p", t);
-	return th;
 }
 
 AgWeak* ag_m_sys_Thread_root(AgThread* th) {
