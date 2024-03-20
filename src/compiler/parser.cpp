@@ -704,14 +704,7 @@ struct Parser {
 					block->body.push_back(ret);
 					r = block;
 				} else if (match("&")) {
-					auto d = make<ast::ImmediateDelegate>();
-					d->base = r;
-					d->name = expect_id("delegate name");
-					auto& d_ref = delegates[d->name];
-					if (d_ref)
-						error("duplicated delegate name, ", d->name, " see ", *d_ref);
-					d_ref = d;
-					ast->add_this_param(*d, nullptr);  // this type to be patched at the type resolver pass
+					auto d = make_immediate_delegate(r);
 					parse_fn_def(d);
 					r = d;
 				} else {
@@ -762,6 +755,39 @@ struct Parser {
 				auto block = parse_lambda_1_param([&] { return parse_unar(); });
 				block->names.front()->initializer = r;
 				r = block;
+			} else if (match("~~")) {
+				auto d = make_immediate_delegate(r);
+				auto c = make<ast::AsyncCall>();
+				c->callee = d;
+				d->break_name = d->name;
+				if (match("(")) {
+					while (!match(")")) {
+						bool is_by_weak = match("&");
+						auto param = make<ast::Var>();
+						d->names.push_back(param);
+						param->name = expect_id("parameter name");
+						if (match("=")) {
+							if (is_by_weak)
+								error("& and initializer are incompatible. Use name=&expression instead");
+							c->params.push_back(parse_expression());
+						} else {
+							auto get = make<ast::Get>();
+							get->var_name = param->name;
+							if (is_by_weak)
+								c->params.push_back(fill(make<ast::MkWeakOp>(), get));
+							else
+								c->params.push_back(get);
+						}
+						if (match(")"))
+							break;
+						expect(",");
+					}
+				}
+				d->type_expression = make<ast::ConstVoid>();
+				expect("{");
+				parse_statement_sequence(d->body);
+				expect("}");
+				r = c;
 			} else if (match("~")) {
 				if (match("("))
 					r = parse_call(r, make<ast::AsyncCall>());
@@ -776,6 +802,18 @@ struct Parser {
 				return r;
 		}
 	}
+
+	pin<ast::ImmediateDelegate> make_immediate_delegate(pin<ast::Action> r) {
+		auto d = make<ast::ImmediateDelegate>();
+		d->base = r;
+		d->name = expect_id("delegate name");
+		auto& d_ref = delegates[d->name];
+		if (d_ref)
+			error("duplicated delegate name, ", d->name, " see ", *d_ref);
+		d_ref = d;
+		ast->add_this_param(*d, nullptr);  // this type to be patched at the type resolver pass
+	}
+
 	void parse_block(pin<ast::Block> block) {
 		if (match("="))
 			block->break_name = expect_id("name for breaks");
