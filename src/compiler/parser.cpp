@@ -812,6 +812,7 @@ struct Parser {
 			error("duplicated delegate name, ", d->name, " see ", *d_ref);
 		d_ref = d;
 		ast->add_this_param(*d, nullptr);  // this type to be patched at the type resolver pass
+		return d;
 	}
 
 	void parse_block(pin<ast::Block> block) {

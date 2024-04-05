@@ -923,6 +923,25 @@ TEST(Parser, Multithreading) {
     )-");
 }
 
+TEST(Parser, MultithreadingSugar) {
+    execute(R"-(
+        class App{
+            worker = sys_Thread(sys_Object).start(sys_Object);
+        }
+        app = App;
+        sys_setMainObject(app);
+        sys_log("Started on main thread\n");
+        app.worker.root()~~workerCode(i = 42, &app){
+            sys_log("Hello from the worker thread\n");
+            app~~endEverything(i){
+               sys_log("Shutdown from the main thread\n");
+               sys_setMainObject(?sys_Object);
+               sys_assertIEq(i, 42)
+            }
+        }
+    )-");
+}
+
 TEST(Parser, FnReturn) {
     execute(R"-(
         fn myFunction() int {

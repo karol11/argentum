@@ -234,6 +234,13 @@ struct Typer : ast::ActionMatcher {
 	void on_async_call(ast::AsyncCall& node) override {
 		for (auto& p : node.params)
 			find_type(p);
+		if (auto calle_as_imm = dom::strict_cast<ast::ImmediateDelegate>(node.callee)) {
+			for (size_t i = 1; i < calle_as_imm->names.size(); i++) {
+				auto& act_p = calle_as_imm->names[i];
+				if (!act_p->initializer)
+					act_p->type = node.params[i - 1]->type();
+			}
+		}
 		type_call(node, find_type(node.callee), node.params);
 		if (!dom::isa<ast::TpDelegate>(*node.callee->type()))
 			node.error("only delegates can be called asynchronously");
