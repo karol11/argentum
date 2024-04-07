@@ -1500,10 +1500,10 @@ struct Generator : ast::ActionScanner {
 	void on_call(ast::Call& node) override {
 		vector<llvm::Value*> params;
 		vector<pair<Val, size_t>> to_dispose; // val and active_breaks_mark at the moment val is succeeded
-		llvm::Value* last_param_to_return = nullptr;
+		Val last_param_to_return;
 		auto reg_disposable = [&](pin<ast::Action> src, Val&& val) {
 			if (node.returns_last_param_if_void && src == node.params.back().pinned())
-				last_param_to_return = val.data;
+				last_param_to_return = val;
 			to_dispose.push_back({ move(val), active_breaks.size() });
 			return to_dispose.back().first;
 		};
@@ -1619,8 +1619,8 @@ struct Generator : ast::ActionScanner {
 		if (is_ptr(node.type()) && get_if<Val::Static>(&result->lifetime))
 			result->lifetime = Val::Retained{};
 		for (; !to_dispose.empty(); to_dispose.pop_back()) {
-			if (to_dispose.back().first.data == last_param_to_return) {
-				result->data = last_param_to_return;
+			if (to_dispose.back().first.data == last_param_to_return.data) {
+				*result = move(last_param_to_return);
 			} else {
 				dispose_val(
 					to_dispose.back().first,

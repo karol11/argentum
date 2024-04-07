@@ -534,7 +534,7 @@ struct Call : Action {
 	own<Action> callee;  // returns lambda
 	vector<own<Action>> params;
 	unordered_set<weak<ast::MkLambda>> activates_lambdas;  // null entry means dep. on fn. param
-	bool returns_last_param_if_void = false;  // TODO: remove
+	bool returns_last_param_if_void = false;  // used in arr[i]:=v
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(Call);
 };
