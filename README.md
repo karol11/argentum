@@ -139,9 +139,9 @@ I have a working prototype of the 2nd milestone that includes:
 
 Within the next couple of months I plan to extend the language:
 
-* Standard container library
-* Port to some platforms (Linux, Wasm, Android)
+* Standard container library (done: arrays, maps)
+* Port to some platforms: Linux (done), Wasm, Android
 * Standard UI library
-* Bindings to curl, databases.
+* Bindings to curl (done), databases (done).
 
 I plan to work alone, though I'd appreciate any feedback and bugfixes in the form of pull requests.
