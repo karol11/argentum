@@ -1,27 +1,27 @@
-using sys { Object, Array, String, Thread, log, setMainObject }
+using sys { Object, Array, Thread, log, setMainObject }
 using utils { forRange }
 using array;
 using string;
 const CR = utf32_(10);
 
-class App{
-    threads = Array(Thread(Object));
-    activeCount = 0;
+class App{                              // This is a mutable application state
+    threads = Array(Thread(Object));    // It contains some threads
+    activeCount = 0;                    // and a counter of operations that run on threads.
 }
-app = App;
-setMainObject(app);
-app.threads.push(20) {
+
+app = App;           // Create app instance
+setMainObject(app);  // and register it as such.
+
+app.threads.push(20) {                                       // push 20 threads in app.threads array
     log("Launch thread {app.threads.size()}{CR}");
-    thread = Thread(Object).start(Object);
-    thread.root().&myTask(tNum int, then &()){
-        forRange(0, 100){
-            log("Thread {tNum} iteration {_}{CR}");
-        };
-        then~();
-    }~(app.activeCount += 1, app.&finishThread(){
-        activeCount -= 1;
-        log("{activeCount} threads left{CR}");
-        activeCount == 0 ? setMainObject(?Object);
-    });
-    thread
+    Thread(Object).start(Object).{                           // create thread, launch it, but before putting into threads array...
+        _.root()~~myTask(tNum = app.activeCount += 1, &app){ // post to its root object a myTask...
+            forRange(0, 100) \                               // that prings numbers...
+                log("Thread {tNum} iteration {_}{CR}");
+            app~~finishThread{                               // and then post to main app a finishThread task ...
+                log("{activeCount -= 1} threads left{CR}");  // that counts down and...
+                activeCount == 0 ? setMainObject(?Object);   // maybe terminate application.
+            }
+        }
+    }
 }
