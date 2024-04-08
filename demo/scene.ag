@@ -8,25 +8,25 @@ class Scene {
     initScene(title *String, w int, h int) {
         sdl.init(sdl_xInitEverything, sdl_xImgJpg | sdl_xImgPng );
         init(title, Rect.xywh(sdl_xDefaultPos, sdl_xDefaultPos, w, h), 0, sdl_xRendererAccelerated);
+        clip.xywh(0, 0, w, h);
     }
     nextFrame() {
         frameStartMs = nowMs();
         loop !(sdl.pollEvent() ? {
             _[0] == sdl_xEventQuit ? sys_setMainObject(?sys_Object);
         });
-        roots.each{ _.render() };
+        roots.each\_.render();
         flip();
-        animators.plow{ _.step(1000/60) };
+        animators.plow\_.step(1000/60);
         sys_postTimer(frameStartMs + 1000/60, this.nextFrame);
     }
     sdl = Sdl;
-    defFont = Font;
     x = 0;
     y = 0;
     opacity = 255;
 //    scaleX = 0x1_0000;
 //    scaleY = 0x1_0000;
-//    clip = Rect;
+    clip = Rect;
     roots = Array(Item);
     animators = Array(Animator);
 }
@@ -56,23 +56,23 @@ class XYAnimator {
         step(deltaMs int) bool {
             isInProgress = dur > deltaMs;
             isInProgress ? {
-                setter(
-                    x += (dstX - x) * deltaMs / dur,
-                    y += (dstY - y) * deltaMs / dur);
                 dur -= deltaMs;
+                setter(
+                    dstX - dur * xs >> 32,
+                    dstY - dur * ys >> 32);
             } : setter(dstX, dstY);
             isInProgress
         }
     }
     setter = Object.&dummyXY(x int, y int){};
-    x = 0;
-    y = 0;
+    xs = 0;
+    ys = 0;
     dstX = 0;
     dstY = 0;
     dur = 0;
     init(startX int, startY int, endX int, endY int, durationMs int, setter&(int, int)) this {
-        x := startX;
-        y := startY;
+        xs := (endX - startX) << 32 / durationMs;
+        ys := (endY - startY) << 32 / durationMs;
         dstX := endX;
         dstY := endY;
         dur := durationMs;
@@ -85,35 +85,35 @@ class ArgbAnimator {
         step(deltaMs int) bool {
             isInProgress = dur > deltaMs;
             isInProgress ? {
-                a += (dstA - a) * deltaMs / dur;
-                r += (dstR - r) * deltaMs / dur;
-                g += (dstG - g) * deltaMs / dur;
-                b += (dstB - b) * deltaMs / dur;
-                setter((a << 24) | (r << 16) | (g << 8) | b);
                 dur -= deltaMs;
+                a = dstA - dur * as >> 32;
+                r = dstR - dur * rs >> 32;
+                g = dstG - dur * gs >> 32;
+                b = dstB - dur * bs >> 32;
+                setter((a << 24) | (r << 16) | (g << 8) | b);
             } : setter((dstA << 24) | (dstR << 16) | (dstG << 8) | dstB);
             isInProgress
         }
     }
     setter = Object.&dummyARGB(argb int){};
-    a = 0;
-    r = 0;
-    g = 0;
-    b = 0;
+    as = 0;
+    rs = 0;
+    gs = 0;
+    bs = 0;
     dstA = 0;
     dstR = 0;
     dstG = 0;
     dstB = 0;
     dur = 0;
     init(start int, end int, durationMs int, setter&(int)) this {
-        a := start >> 24 & 0xff;
-        r := start >> 16 & 0xff;
-        g := start >> 8 & 0xff;
-        b := start & 0xff;
         dstA := end >> 24 & 0xff;
         dstR := end >> 16 & 0xff;
         dstG := end >> 8 & 0xff;
         dstB := end & 0xff;
+        as := (dstA - start >> 24 & 0xff) << 32 / durationMs;
+        rs := (dstR - start >> 16 & 0xff) << 32 / durationMs;
+        gs := (dstG - start >> 8 & 0xff) << 32 / durationMs;
+        bs := (dstB - start & 0xff) << 32 / durationMs;
         dur := durationMs;
         this.setter := setter;
     }
@@ -124,20 +124,20 @@ class ValAnimator {
         step(deltaMs int) bool {
             isInProgress = dur > deltaMs;
             isInProgress ? {
-                setter(v += (dstV - v) * deltaMs / dur);
                 dur -= deltaMs;
-            } : setter(dstV);
+                setter(end - dur * scaler >> 32);
+            } : setter(end);
             isInProgress
         }
     }
     setter = Object.&dummyV(v int){};
-    v = 0;
-    dstV = 0;
+    end = 0;
+    scaler = 0;
     dur = 0;
     init(startV int, endV int, durationMs int, setter&(int)) this {
-        v := startV;
-        dstV := endV;
+        end := endV;
         dur := durationMs;
+        scaler = (endV - startV) << 32 / durationMs;
         this.setter := setter;
     }
 }
@@ -165,6 +165,16 @@ class Opacity {
     } 
     val = 255;
     saved = 0;
+}
+
+class Clip {
+    +Modifier{
+        do(s Scene) {}
+        undo(s Scene) {}
+    }
+    r = Rect;
+    set(x int, y int, w int, h int) { r.xywh(x, y, w, h) }
+    // animate(s Scene, )
 }
 
 class Item{
