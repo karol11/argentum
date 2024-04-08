@@ -1,24 +1,23 @@
 using sys {
     String,
+    Cursor,
     Blob,
     StrBuilder,
-    Array
+    SharedArray
 }
 using array;
 
 class String {
-    // Case sensitive comparison
-    -equalsCS(other -String) bool {
-        a = @this;
-        b = @other;
-        loop {
-            aChar = a.getCh();
-            bChar = b.getCh();
-            aChar != bChar ? ^equalsCS=false;
-            aChar != 0 && bChar != 0 ? true
+    *cursor() Cursor { Cursor.set(this) }
+    *split(delimiter int) @SharedArray(String) {
+        text = Cursor.set(this);
+        SharedArray(String).`r{
+            loop !(text.getTill(delimiter) ? r.append(_))
         }
     }
-    getTill(separator int) ?@String {
+}
+class Cursor {
+    getTill(separator int) ?str {
         peekCh() != 0 ? {
             r = StrBuilder;
             loop !{
@@ -27,12 +26,6 @@ class String {
             };
             r.toStr()
         }
-    }
-    -split(delimiter int) @Array(String) {
-        res = Array(String);
-        text = @this;
-        loop !(text.getTill(delimiter) ? res.append(@_));
-        res
     }
 }
 
@@ -47,14 +40,14 @@ class StrBuilder {
         reserve(8);
         pos := putChAt(pos, codePoint)
     }
-    putStr(fs -String) this {
-        s = @fs;
+    putStr(s str) this {
+        in = Cursor.set(s);
         loop !{
-            c = s.getCh();
+            c = in.getCh();
             c != 0 ? putCh(c)
         }
     }
-    putOptStr(s ?-String) this { s ? putStr(_) }
+    putOptStr(s ?str) this { s ? putStr(_) }
     putInt(val int) this {
         reserve(22);
         isNeg = val < 0;
@@ -71,10 +64,9 @@ class StrBuilder {
     newLine() this {
         putCh(0x0a);
     }
-    toStr() @String {
-        r = String;
-        r.fromBlob(this, 0, pos);
-        pos := 0;
-        r
+    toStr() str {
+        mkStr(0, pos).{
+            pos := 0
+        }
     }
 }

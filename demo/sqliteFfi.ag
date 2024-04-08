@@ -2,13 +2,13 @@ using sys { String, Blob }
 
 class Sqlite {
     internal = 0;
-    open(fileName -String, flags int) ?Sqlite;
-    query(sql -String, flags int) Query {
+    open(fileName str, flags int) ?Sqlite;
+    query(sql str, flags int) Query {
         r = Query;
         internalQuery(r, sql, flags);
         r
     }
-    internalQuery(q Query, sql -String, flags int);
+    internalQuery(q Query, sql str, flags int);
 }
 fn afterCopySqlite(c Sqlite) { c.internal := 0; }
 fn disposeSqlite(c Sqlite);
@@ -17,7 +17,7 @@ class Row{
     internal = 0;
     intAt(at int) int;
     doubleAt(at int) double;
-    stringAt(at int) String;
+    stringAt(at int) str;
     blobAt(at int, result Blob);
 }
 fn afterCopyRow(r Row) { r.internal := 0; }
@@ -25,7 +25,7 @@ fn disposeRow(r Row);
 
 class Query {
     +Row;
-    setString(at int, val -String) this;
+    setString(at int, val str) this;
     setInt(at int, val int) this;
     setBlob(at int, val int) this;
     execute(onRow(Row)) {

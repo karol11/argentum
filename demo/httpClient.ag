@@ -4,23 +4,23 @@ const xPost = "POST";
 const xDelete = "DELETE";
 const xPut = "PUT";
 
-fn get(url-String, onEnd&(Response)) {
+fn get(url str, onEnd&(Response)) {
     Request.setUrl(url).execute(onEnd)
 }
   
 class Request {
-    url = *"";
+    url = "";
     verb = xGet;
     body = *Blob;
     headers = SharedArray(String); // Headers go in form "key: val". Array allows dup keys names and preserves order. 
 
-    setUrl(val -String) this { url := *val }
-    setVerb(val -String) this { verb := *val }
+    setUrl(val str) this { url := *val }
+    setVerb(val str) this { verb := *val }
     setBody(val -Blob) this { body := *val }
-    addHeader(val -String) this {
+    addHeader(val str) this {
         at = headers.capacity();
         headers.insert(at, 1);
-        headers[at] := *val
+        headers[at] := val
     }
     -execute(onEnd&(Response)) {
         executeRequestInternal(Response.setRequest(*this), onEnd)
