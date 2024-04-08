@@ -1,4 +1,4 @@
-using sys { Object, Array, WeakArray }
+using sys { Object, Array, WeakArray, SharedArray }
 using utils { existsInRange, forRange }
 
 class Array {
@@ -67,6 +67,32 @@ class WeakArray {
     -contain(predicate (T)bool) bool {
         existsInRange(0, capacity()) {
             this[_] && predicate(_)
+        }
+    }
+}
+
+class SharedArray {
+    -size() int { capacity() }
+    resize(n int) this { insert(0, n) }
+    append(item *T) {
+        n = capacity();
+        insert(n, 1);
+        this[n] := item
+    }
+    -contain(predicate (*T)bool) bool {
+        existsInRange(0, capacity()) {
+            this[_] && predicate(_)
+        }
+    }
+    findFirst(predicate(*T)bool) ?int {
+        forRange(0, size()) `i {
+            this[i] && predicate(_) ? ^findFirst = +i
+        };
+        ?0
+    }
+    each(action(*T)) {
+        forRange(0, size()) {
+            this[_] ? action(_)
         }
     }
 }
