@@ -1,4 +1,4 @@
-using sys { WeakArray, Array, String, log }
+using sys { WeakArray, Array, log }
 using utils { existsInRange }
 using string;
 using array;
@@ -8,41 +8,58 @@ class Node {
     connections = WeakArray(Node);
     isVisited = false;
     isActive = false;
+    name = "";
+    
+    init(char int) this { name := sys_StrBuilder.putCh(char).toStr() }
 
     hasLoop() bool {
-        isActive || (!isVisited && {
-            isVisited := isActive := true;
-            r = connections.contain `n n.hasLoop();
+        log("checking node {name} ");
+        isActive ? ^hasLoop={log("found loop{CR}"); true };
+        isVisited ? ^hasLoop={log("already checked{CR}"); false };
+        isVisited := isActive := true;
+        log("checking {connections.size()} connections{CR}");
+        connections.contain(`n n.hasLoop()).{
             isActive := false;
-            r
-        })
+            log("done with {name} connections{CR}")
+        }
     }
 }
 
 class Graph {
     nodes = Array(Node);
-    fromStr(in String) this {
+    fromStr(s str) this {
+        log("Building grapgh from {s}{CR}");
+        in = s.cursor();
         byNames = WeakArray(Node).resize('z' + 1);
         getOrCreateNode = \{
             name = in.getCh();
-            byNames[name] : {
-                r = nodes.append(Node);
-                byNames[name] := &r;
-                r
-            }
+            {
+                byNames[name] : {
+                    r = nodes.append(Node.init(name));
+                    log("new ");
+                    byNames[name] := &r;
+                    r
+                }
+            }.{ log("node {_.name}")}
         };
         loop {
             from = getOrCreateNode();
             in.getCh();
+            log(" <- ");
             from.connections.append(&getOrCreateNode());
+            log("{CR}");
             in.getCh() == 0
-        }
+        };
+        log("{nodes.size()} nodes{CR}")
     }    
     hasLoop() bool {    
-        nodes.contain{ _.hasLoop() }
+        nodes.contain{
+            log("check starting with node {_.name}{CR}");
+            _.hasLoop()
+        }
     }
 }
 
-log(Graph.fromStr(@"a>b b>c c>d e>f b>e e>a c>c").hasLoop()
+log(Graph.fromStr("a>b b>c c>d e>f b>e e>a c>c").hasLoop()
     ? "has some loop{CR}"
     : "has no loops{CR}")
