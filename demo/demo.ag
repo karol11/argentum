@@ -124,8 +124,8 @@ class Sparkles {
 }
 
 fn makeBrightColor(rnd Random) int {
-    b = rnd.get(2, 0xff);
-    r = rnd.get(2, 0xff);
+    b = rnd.get(0, 0xff);
+    r = rnd.get(0, 0xff);
     g = rnd.get(0xff - (b + r)/2, 0xff);
     b << 16 + g << 8 + r
 }

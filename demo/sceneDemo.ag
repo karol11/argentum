@@ -1,22 +1,69 @@
+using sys { Array }
 using scene { Scene, Group, Image, Label, Opacity, Frame }
 using sdl { Font }
+using string;
+using utils { Random }
 
 class App {
     +Scene;
     start() {
         initScene("Ag", 800, 600);
         defFont.load("NotoSerif-Bold.ttf", 0);
+        roots.append(Image(this).load("back.jpg"));
+        rnd = Random;
+        roots.push(100, Image(this).load("round.png").setColor(0xff << 24 | rnd.get(0, 0xffffff)).{
+            animators.append(Shuttle.init(rnd.get(-8, 8), rnd.get(10, 700), 0, 780, _.&setRX(v int){ x := v }));
+            animators.append(Shuttle.init(rnd.get(-8, 8), rnd.get(10, 500), 0, 600-40, _.&setRY(v int){ y := v }));
+        });
         roots.append(Group(this)
-            .add(Image(this).load("back.jpg"))
-            .add(Group(this).setPos(300, 600).animatePos(300, 0, 1000).addModifier(Opacity.set(0).animate(this, 255, 2000))
-                .add(Image(this).load("star.png").setColor(0xff_ff_00_ff))
-                .add(Label(this).init(&defFont, 24, 3, "Argentum").setPos(0, 10).animatePos(40, 10, 1000)))
-            .add(Label(this).init(&defFont, 48, 0, "Year 2024!").setColor(0x80_ff_00_00).animateColor(0xFF_00_ff_ff, 3000).animatePos(300, 280, 2500))
-            .add(Frame(this).init("frame.png", 3, 3, 3, 3).setPos(400, 300).animatePos(200, 100, 500).setSize(10, 10).animateSize(400, 400, 500).animateColor(0x00_20_20_00,4000))
+            .add(Image(this).load("round.png").{
+                animators.append(Shuttle.init(6, 600, 0, 780, _.&setBX(v int){ x := v }));
+                animators.append(Shuttle.init(6, 500, 0, 600-40, _.&setBY(v int){ y := v }));
+            })
+            .add(Group(this).setPos(300, 200).animatePos(300, 10, 1500).addModifier(Opacity.set(0).animate(this, 255, 3000))
+                .add(Image(this).load("star.png").setColor(0xff_2020ff).animateColor(0xff_ff0020, 4000))
+                .add(Label(this).init(&defFont, 24, 3, "Argentum").setPos(40, 15)))
+            .add(Group(this).setPos(200, 100).`g{
+                g.add(Frame(this).init("frame.png", 3, 3, 3, 3).setColor(0x60ffffff).setSize(400, 10).animateSize(400, 400, 2000));
+                i = 0;
+                addStr = `s `color `start {
+                    g.add(Label(this).init(&defFont, 32, 0, s).setColor(color).animateColor(color ^ 0xffffff, 6000).setPos(start, i+16).animatePos(10, i+16, 1500));
+                    i += 64
+                };
+                addStr("No GC, no pauses", 0xff_ffffff, 800);
+                addStr("No leaks, no overheads",0xff_dddddd, -800);
+                addStr("No races, no crashes", 0xff_bbbbbb, 800);
+                addStr("Fast, small, simple", 0xff_444444, -800);
+            })
+            .add(Label(this).init(&defFont, 48, 0, "Year 2024!").setColor(0x80_ff_00_00).animateColor(0xFF_00_ff_ff, 3000).setPos(0, 380).animatePos(270, 380, 300))
         );
         nextFrame();
     }
     defFont = Font;
+}
+
+class Shuttle {
+    +scene_Animator{
+        step(deltaMs int) bool {
+            v = val += delta;
+            v < from || v > to
+                ? {delta := -delta;}
+                : setter(val := v);
+            true
+        }
+    }
+    init(delta int, initial int, from int, to int, setter&(int)) this {
+        this.setter := setter;
+        val := initial;
+        this.delta := delta;
+        this.from := from;
+        this.to := to;
+    }
+    setter = sys_Object.&dummyXY(y int){};
+    val = 0;
+    delta = 0;
+    from = 0;
+    to = 0;
 }
 
 // test

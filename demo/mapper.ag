@@ -11,7 +11,7 @@ class SharedMap {
 
 a = "alpha bravo charlie delta".split(' ');
 log("hash={a.getHash()} ");
-v = a.findFirst(i\i.equalsCS("delta"));
+v = a.findFirst{_ == "delta"};
 log(v
    ? *"found at {_}"
    : "not found");
