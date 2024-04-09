@@ -79,7 +79,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 		opt_ref_to_t->p[1] = ref;
 		return opt_ref_to_t;
 	};
-	auto make_factory = [&](auto& m) {
+	auto make_factory = [&](auto m) {
 		m->is_factory = true;
 		m->type_expression = new ast::ConstVoid;
 	};
