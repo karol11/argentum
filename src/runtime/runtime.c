@@ -5,7 +5,7 @@
 #include <time.h>  // timespec, timespec_get
 
 #include "ag-threads.h"
-#include "../utils/utf8.h"
+#include "utf8.h"
 #include "runtime.h"
 #include "ag-queue.h"
 

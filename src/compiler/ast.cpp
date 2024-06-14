@@ -3,7 +3,7 @@
 
 #include "utils/register_runtime.h"
 #include "dom/dom-to-string.h"
-#include "compiler/ast.h"
+#include "ast.h"
 
 namespace ast {
 

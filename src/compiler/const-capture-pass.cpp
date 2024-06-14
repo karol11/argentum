@@ -1,4 +1,4 @@
-#include "compiler/const-capture-pass.h"
+#include "const-capture-pass.h"
 
 #include <unordered_map>
 #include <unordered_set>

@@ -1,4 +1,4 @@
-#include "compiler/type-checker.h"
+#include "type-checker.h"
 
 #include <algorithm>
 #include <vector>

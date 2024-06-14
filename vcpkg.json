@@ -1,0 +1,23 @@
+{
+  "name": "argentum",
+  "version": "0.0.20",
+  "dependencies": [
+    "fmt",
+    "sqlite3",
+    "curl",
+    "sdl2",
+    "sdl2-image",
+    "sdl2-ttf",
+    "sdl2-mixer",
+    {
+      "name": "llvm",
+      "default-features":false,
+      "features": ["target-webassembly", "target-x86", "target-aarch64"]
+    },
+    {
+      "name": "skia",
+      "default-features": false,
+      "features":["graphite","freetype", "fontconfig", "harfbuzz", "icu"]
+    }
+  ]
+}

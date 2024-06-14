@@ -1,7 +1,7 @@
 #ifndef _AK_PARSER_H_
 #define _AK_PARSER_H_
 
-#include "compiler/ast.h"
+#include "ast.h"
 
 void parse(
 	ltm::pin<ast::Ast> ast,

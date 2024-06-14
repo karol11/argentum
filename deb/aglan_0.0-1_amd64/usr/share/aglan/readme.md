@@ -2,7 +2,7 @@
 
 ## What is Argentum?
 
-It's a programming language:
+Argentum is a programming language:
 * having no memory leaks
 * not using Garbage Collector
 * fast, small, simple

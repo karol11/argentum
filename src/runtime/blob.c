@@ -1,5 +1,5 @@
 #include "blob.h"
-#include "utils/utf8.h"
+#include "utf8.h"
 
 int64_t ag_m_sys_Blob_capacity(AgBlob* b) {
 	return b->bytes_count;

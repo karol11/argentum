@@ -1,4 +1,4 @@
-#include "compiler/name-resolver.h"
+#include "name-resolver.h"
 
 #include <unordered_map>
 #include <unordered_set>

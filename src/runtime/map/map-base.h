@@ -9,7 +9,7 @@
 // Robinhood hashing
 //
 
-#include "runtime/runtime.h"
+#include "runtime.h"
 
 #ifdef __cplusplus
 extern "C" {

@@ -1,4 +1,4 @@
-#include "compiler/generator.h"
+#include "generator.h"
 
 #include <functional>
 #include <string>
@@ -14,7 +14,7 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 #include "utils/vmt_util.h"
-#include "runtime/runtime.h"
+#include "runtime.h"
 
 #include "llvm/Bitcode/BitcodeWriter.h"
 
@@ -38,11 +38,16 @@ using dom::isa;
 
 const int AG_HEADER_OFFSET = 0; // -1 if dispatcher and counter to be accessed by negative offsets (which speeds up all ffi, but is incompatible with moronic LLVM debug info)
 
-// TODO remove when LLVM get sane: in release builds on Windows LLVM inserts call to these functions but doesn't define them.
+// TODO remove when LLVM gets fixed: in release builds on Windows LLVM inserts call to these functions but doesn't define them.
 extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeWebAssemblyTargetInfo() {}
 extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeWebAssemblyTarget() {}
 extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeWebAssemblyTargetMC() {}
 extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeWebAssemblyAsmPrinter() {}
+
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAArch64TargetInfo() {}
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAArch64Target() {}
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAArch64TargetMC() {}
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAArch64AsmPrinter() {}
 
 #define AK_STR(X) #X
 #define DUMP(X) dump(AK_STR(X), X)
@@ -2066,7 +2071,7 @@ struct Generator : ast::ActionScanner {
 			return;
 		}
 		auto vmt_ptr = builder->CreateLoad(ptr_type, builder->CreateConstGEP2_32(obj_struct, result->data, AG_HEADER_OFFSET, 0));
-		auto vmt_ptr_bb = builder->GetInsertBlock();
+		//auto vmt_ptr_bb = builder->GetInsertBlock();
 		*result = compile_if(
 			*result_type,
 			builder->CreateCmp(llvm::CmpInst::Predicate::ICMP_ULE,
@@ -2827,7 +2832,7 @@ struct Generator : ast::ActionScanner {
 					(~0ull >> (64 - (best.pos + best.width - best.splinter)) << best.splinter)));
 		current_interface_index = builder.CreateLShr(current_interface_index, builder.getInt64(best.pos - best.width + 1));
 		if (best.spread == vmts.size()) {  // exact match
-			vector<llvm::Constant*> i_table(1 << best.width, empty_mtable);
+			vector<llvm::Constant*> i_table(1ull << best.width, empty_mtable);
 			for (auto& ord : vmts)
 				i_table[vmt_util::extract_key_bits(ord.first, best.pos, best.width, best.splinter)] = llvm::ConstantExpr::getBitCast(ord.second, ptr_type);
 
@@ -2840,7 +2845,7 @@ struct Generator : ast::ActionScanner {
 					current_interface_index));
 		}
 		vector<unordered_map<uint64_t, llvm::Constant*>> indirect_table;
-		indirect_table.resize(1 << best.width);
+		indirect_table.resize(1ull << best.width);
 		for (auto& ord : vmts)
 			indirect_table[vmt_util::extract_key_bits(ord.first, best.pos, best.width, best.splinter)].insert({ ord.first, ord.second });
 		vector<llvm::BasicBlock*> dst_table;
@@ -3250,7 +3255,7 @@ struct Generator : ast::ActionScanner {
 			for (auto& m : cls->new_methods) {
 				if (!m->base->used)
 					continue;
-				auto& m_info = methods.at(m);
+				//auto& m_info = methods.at(m);
 				info.vmt_fields.push_back(compile_function(*m,
 					ast::format_str("ag_m_", cls->get_name(), '_', ast::LongName{ m->name, m->base_module }),
 					info.fields->getPointerTo(),

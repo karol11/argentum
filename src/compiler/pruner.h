@@ -1,7 +1,7 @@
 #ifndef _AK_PRUNER_H_
 #define _AK_PRUNER_H_
 
-#include "compiler/ast.h"
+#include "ast.h"
 
 void prune(ltm::pin<ast::Ast> ast);
 

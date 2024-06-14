@@ -1,5 +1,5 @@
 #include <stdint.h>
-#include "runtime/array/array-base.h"
+#include "array/array-base.h"
 
 int64_t AG_NAME(ag_m_sys_, Array_capacity)(AgBaseArray* c) {
 	return c->items_count;

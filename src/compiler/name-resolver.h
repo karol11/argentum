@@ -1,7 +1,7 @@
 #ifndef _AK_NAME_RESOLVER_H_
 #define _AK_NAME_RESOLVER_H_
 
-#include "compiler/ast.h"
+#include "ast.h"
 
 void resolve_names(ltm::pin<ast::Ast> ast);
 

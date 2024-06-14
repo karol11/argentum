@@ -1,4 +1,4 @@
-#include "compiler/parser.h"
+#include "parser.h"
 
 #include <iostream>
 #include <functional>

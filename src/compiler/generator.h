@@ -1,7 +1,7 @@
 #ifndef _AK_GENERATOR_H_
 #define _AK_GENERATOR_H_
 
-#include "compiler/ast.h"
+#include "ast.h"
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
 
 llvm::orc::ThreadSafeModule generate_code(ltm::pin<ast::Ast> ast, bool add_debug_info);

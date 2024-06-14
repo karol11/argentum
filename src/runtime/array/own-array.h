@@ -6,8 +6,8 @@ extern "C" {
 #endif
 
 #include <stdint.h>
-#include "runtime/runtime.h"
-#include "runtime/array/array-base.h"
+#include "runtime.h"
+#include "array/array-base.h"
 
 void	  ag_copy_sys_Array       (AgBaseArray* dst, AgBaseArray* src);
 void      ag_dtor_sys_Array       (AgBaseArray* ptr);

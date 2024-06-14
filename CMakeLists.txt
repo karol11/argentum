@@ -1,141 +1,93 @@
-﻿# Argentum
-cmake_minimum_required (VERSION 3.22)
-set(CMAKE_CXX_STANDARD 17)
-add_definitions(-D_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS)
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:DebugDLL>")
+cmake_minimum_required(VERSION 3.15)
 
-project ("argentum")
-
-find_package(LLVM REQUIRED CONFIG PATHS ../llvm12.0.1r/lib/cmake/llvm NO_DEFAULT_PATH)
-message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
-message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
-include_directories(${LLVM_INCLUDE_DIRS})
-add_definitions(${LLVM_DEFINITIONS})
-llvm_map_components_to_libnames(llvm_libs support core nativecodegen orcjit)
-
-find_package(SDL2 REQUIRED)
-find_package(SDL2_image REQUIRED)
-find_package(SDL2_ttf REQUIRED)
-
-find_package(CURL REQUIRED PATHS ../curl/lib/cmake/CURL)
-if(NOT DEFINED CURL_INCLUDE_DIR)
-    get_target_property(CURL_INCLUDE_DIR CURL::libcurl INTERFACE_INCLUDE_DIRECTORIES)
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+  MESSAGE(FATAL_ERROR "Toolchain file not set, try using: cmake --preset default build")
 endif()
 
-include_directories(${CMAKE_CURRENT_LIST_DIR}/src ${CURL_INCLUDE_DIR})
+project (Argentum)
 
-set(ag_rtl_sources
-    src/runtime/runtime.h
-    src/runtime/runtime.c
-    src/runtime/blob.h
-    src/runtime/blob.c
-    src/runtime/ag-threads.h
-    src/runtime/ag-queue.h
-    src/runtime/ag-queue.c
-    src/runtime/array/array-base-inc.h
-    src/runtime/array/array-base.h
-    src/runtime/array/array-base.c
-    src/runtime/array/own-array.h
-    src/runtime/array/own-array.c
-    src/runtime/array/weak-array.h
-    src/runtime/array/weak-array.c
-    src/runtime/array/shared-array.h
-    src/runtime/array/shared-array.c
-    src/runtime/map/map-base.h
-    src/runtime/map/map-base.c
-    src/runtime/map/own-map.h
-    src/runtime/map/own-map.c
-    src/runtime/map/shared-map.h
-    src/runtime/map/shared-map.c
-    src/runtime/map/weak-map.h
-    src/runtime/map/weak-map.c
-    src/utils/utf8.h
-    src/utils/utf8.c
-)
-set(ag_sources
-    src/utils/utf8.h
-    src/utils/utf8.c
-    src/ltm/ltm.h
-    src/ltm/ltm.cpp
+set(OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/output)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${OUTPUT_DIRECTORY}/$<$<CONFIG:Debug>:/debug>/bin)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${OUTPUT_DIRECTORY}/$<$<CONFIG:Debug>:/debug>/libs)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${OUTPUT_DIRECTORY}/$<$<CONFIG:Debug>:/debug>/workdir)
 
-    src/dom/dom.h
-    src/dom/dom.cpp
+function(ag_copy_prop target dep_target property dst_dir)
+    get_property(val TARGET ${dep_target} PROPERTY ${property})
+    if(val)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${val} ${OUTPUT_DIRECTORY}/${dst_dir}
+        )
+    endif()
+endfunction()
 
-    src/dom/dom-to-string.cpp
-    src/dom/dom-to-string.h
+function(ag_copy_libs target dep_target)
+    ag_copy_prop(${target} ${dep_target} "IMPORTED_IMPLIB_DEBUG" "debug/libs")
+    ag_copy_prop(${target} ${dep_target} "IMPORTED_LOCATION_DEBUG" "debug/workdir")
+    ag_copy_prop(${target} ${dep_target} "IMPORTED_IMPLIB_RELEASE" "libs")
+    ag_copy_prop(${target} ${dep_target} "IMPORTED_LOCATION_RELEASE" "workdir")
+endfunction()
 
-    src/compiler/ast.h
-    src/compiler/ast.cpp
+function(ag_copy_ag target file)
+    add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/${file} ${OUTPUT_DIRECTORY}/ag
+    )
+endfunction()
 
-    src/compiler/parser.h
-    src/compiler/parser.cpp
+function(print_target_properties target_name)
+    message(STATUS "Properties of target: ${target_name}")
+    set(properties
+        NAME
+        ALIASED_TARGET
+        SOURCES
+        INCLUDE_DIRECTORIES
+        COMPILE_OPTIONS
+        COMPILE_DEFINITIONS
+        COMPILE_FEATURES
+        LINK_LIBRARIES
+        LINK_OPTIONS
+        LINK_DIRECTORIES
+        LINK_DEPENDS
+        IMPORTED_IMPLIB_DEBUG
+        IMPORTED_IMPLIB_RELEASE
+        IMPORTED_LOCATION_DEBUG
+        IMPORTED_LOCATION_RELEASE
+        LOCATION
+        ARCHIVE_OUTPUT_DIRECTORY
+        LIBRARY_OUTPUT_DIRECTORY
+        RUNTIME_OUTPUT_DIRECTORY
+        IMPORTED_IMPLIB
+        IMPORTED_LOCATION
+        IMPORTED
+        INTERFACE_INCLUDE_DIRECTORIES
+        INTERFACE_COMPILE_DEFINITIONS
+        INTERFACE_COMPILE_OPTIONS
+        INTERFACE_LINK_LIBRARIES
+        INTERFACE_LINK_OPTIONS
+        INSTALL_RPATH
+        INSTALL_RPATH_USE_LINK_PATH
+        VERSION
+        SOVERSION
+        COMPATIBLE_INTERFACE_STRING
+        COMPATIBLE_INTERFACE_BOOL
+        COMPATIBLE_INTERFACE_NUMBER_MAX
+        COMPATIBLE_INTERFACE_NUMBER_MIN
+        POSITION_INDEPENDENT_CODE
+        CUDA_PTX_COMPILATION
+        CXX_STANDARD
+        CXX_EXTENSIONS
+        CXX_STANDARD_REQUIRED
+    )
+    foreach(property ${properties})
+        get_target_property(value ${target_name} ${property})
+        if(NOT value)
+            set(value "NOT SET")
+        endif()
+        message(STATUS "  ${property} = ${value}")
+    endforeach()
+endfunction()
 
-    src/compiler/name-resolver.h
-    src/compiler/name-resolver.cpp
-
-    src/compiler/type-checker.h
-    src/compiler/type-checker.cpp
-
-    src/compiler/pruner.h
-    src/compiler/pruner.cpp
-
-    src/compiler/const-capture-pass.h
-    src/compiler/const-capture-pass.cpp
-
-    src/compiler/generator.h
-    src/compiler/generator.cpp
-
-    src/utils/register_runtime.h
-    src/utils/register_runtime.cpp
-
-    src/utils/vmt_util.h
-)
-
-add_executable(ag-jit-sdl
-    ${ag_sources}
-    src/driver/jit-sdl.cpp
-    ${ag_rtl_sources}
-    
-    src/runtime/sdl-bindings.c
-)
-target_link_libraries(ag-jit-sdl PUBLIC SDL2::SDL2 SDL2_image::SDL2_image SDL2_ttf::SDL2_ttf ${llvm_libs})
-
-add_executable(ag-tests
-    ${ag_sources}
-    ${ag_rtl_sources}
-    src/utils/fake-gunit.h
-    src/utils/fake-gunit.cpp
-    src/ltm/ltm-test.cpp
-    src/dom/dom-test.cpp
-    src/compiler/compiler-test.cpp
-    src/utils/vmt_util-test.cpp
-    src/runtime/map/own-map-test.cpp
-)
-target_link_libraries(ag-tests ${llvm_libs})
-
-add_executable(agc
-    ${ag_sources}
-    src/driver/compiler.cpp
-)
-target_compile_definitions(agc PRIVATE AG_STANDALONE_COMPILER_MODE)
-target_link_libraries(agc ${llvm_libs})
-
-add_library (ag_runtime STATIC
-    ${ag_rtl_sources}
-
-    src/runtime/sdl-bindings.c
-    src/runtime/curl-bindings.c
-)
-target_compile_definitions(ag_runtime PRIVATE AG_STANDALONE_COMPILER_MODE)
-target_link_libraries(ag_runtime PUBLIC SDL2::SDL2 SDL2_image::SDL2_image SDL2_ttf::SDL2_ttf)
-set_property(TARGET ag_runtime PROPERTY C_STANDARD 11)
-set_property(TARGET ag_runtime PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
-
-add_library (ag_sqlite STATIC
-    third-party/sqlite/sqlite3.h
-    third-party/sqlite/sqlite3.c
-    src/runtime/sqlite-ffi.c
-)
-target_compile_definitions(ag_sqlite PRIVATE AG_STANDALONE_COMPILER_MODE)
-set_property(TARGET ag_sqlite PROPERTY C_STANDARD 11)
-set_property(TARGET ag_sqlite PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+add_subdirectory("src/runtime")
+add_subdirectory("src/compiler")
+add_subdirectory("src/sqlite")
+add_subdirectory("src/http-client")
+add_subdirectory("src/sdl")

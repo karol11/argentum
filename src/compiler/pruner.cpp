@@ -1,4 +1,4 @@
-#include "compiler/pruner.h"
+#include "pruner.h"
 
 #include<functional>
 #include<unordered_map>
