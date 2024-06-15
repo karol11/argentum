@@ -4,93 +4,62 @@ See: [Project site](https://aglang.org)
 
 ## Main language features:
 
-* Simplicity
-* Syntax driven rock-solid safety
-* Fully automated memory management (no memory leaks)
-* High efficiency
-  * No GC (no pauses, no memory and CPU overhead)
-  * AOT Compilation
+* Safety - memory-safety, type-safety, null-safety, const-safety etc. Unlike Rust and Swift Argetnum has no unsafe mode, and doesn't need one
+* Fully automated memory management with no memory leaks. Rust, Swift, arbage-collected languages leak memory. Argentum doesn't
+* High efficiency. Argentum is about as fast as C++ and Rust
+  * Argentum doesn't use GC (no pauses, no memory and CPU overheads)
+  * It compiles to tiny native executables with no extra dependencies.
   * Fast interface method calls
   * Fast dynamic casts
+* Simplicity
+* Multithreading without deadlocks and data races
 * Designed for large apps
   * Modularity
-  * Versioning
-  * Built-in unit tests
+  * Versioning (TBD)
+  * Built-in unit tests (TBD)
 * Strict type system
-* Tiny runtime (it is designed with wasm in mind)
+* Direct interop with C.
 
 ## Links
+
 * Site: [aglang.org](aglang.org)
-* Hackaday: [project page](https://hackaday.io/project/190397-argentum-programming-language)
+* Playground: [runs on my RaspberryPi](http://lat.asuscomm.com:3000/)
 * Presentation slides: [here](https://docs.google.com/presentation/d/1Cqbh30gTnfoFL3xJh3hhW4Hqhdk9tHw4akZExtiSivA/edit?usp=share_link)
 
 ## Examples
 
-This language is safe and managed, like Java.\
-These code examples compile into less than 20K Windows executables.\
+This language is "managed", like Java but safer.\
+These examples compile into less than 20K Windows executables.\
 No virtual machine/framework needed.\
-They can work in a loop forever, no GC pauses, no leaks, no memory corruptions.
+Apps can work forever, no GC pauses, no leaks, no memory corruptions.
 
-#### Fizz-buzz
-
-```Rust
-using sys { String, log }
-using string { Builder }
-using utils{ forRange }
-
-b = Builder;
-forRange(1, 101) {
-   _ % 3 == 0 ? b.putStr("fizz");
-   _ % 5 == 0 ? b.putStr("buzz");
-   b.pos == 0 ? b.putInt(_);
-   log(b.newLine().toStr());
-}
-```
-
-#### Find loop in a graph
+#### Hello world
 
 ```Rust
-using sys { WeakArray, Array, String, log }
-using utils { existsInRange }
-using string;
-using array;
-
-class Node {
-    connections = WeakArray(Node);
-    isVisited = false;
-    isActive = false;
-    hasLoop() bool {
-        isActive || (!isVisited && {
-            isVisited := isActive := true;
-            r = connections.contain{ _.hasLoop() };
-            isActive := false;
-            r
-        })
-    }
-}
-class Graph {
-    nodes = Array(Node);
-    fromStr(String in) this {
-        byNames = WeakArray.resize('z' + 1);
-        getOrCreateNode = \{
-            name = in.get();
-            byNames[name] || byNames[name] := nodes.append(Node)
-        };
-        loop {
-            from = getOrCreateNode();
-            in.get();
-            from.connections.append(getOrCreateNode());
-            in.get() == 0
-        }
-    }    
-    hasLoop() bool {
-        nodes.contain{ _.hasLoop() }
-    }
-}
-log(Graph.fromStr("a>b b>c c>d e>f b>e e>a c>c").hasLoop()
-    ? "has some loop"
-    : "has no loops");
+sys_log("Hello World")
 ```
+
+#### SqLite to HTML
+
+```Rust
+using sys { log }
+using sqliteFfi { Sqlite, xRW }
+using string { htmlEncode }
+
+Sqlite.open("mydb.sqlite", xRW) ?
+    _.query("
+        SELECT "id", "name", "avatar"
+        FROM "table"
+    ", 0)
+    .execute `r log("{}\
+        <li id={r.intAt(0)}>
+          <img src='ava/{r.stringAt(2)}'/>
+          <div>{r.stringAt(1).htmlEncode()}</div>
+        </li> 
+    ")
+```
+
+#More examples are in the [playground](http://lat.asuscomm.com:3000/) and [demo](https://github.com/karol11/argentum/tags).
 
 ## Why not X
 
@@ -117,7 +86,7 @@ There is a third group of languages, that use semi-automatic approach usualy bas
 * Rust
 * C++ (with smart pointers) etc.
 
-Argentum uses neither of these approaches. It distinguishes composition-aggregation-association pointers at syntax level and uses this information:
+Argentum uses *neither of these approaches*. It distinguishes composition-aggregation-association pointers at syntax level and uses this information:
 
 * To automate most routine operations on data structures
 * To check the correctness of operations on data structures at compile time
@@ -136,12 +105,14 @@ I have a working prototype of the 2nd milestone that includes:
 * String interpolation
 * Frozen-mutable object hierrarchies
 * Fast unwind and direct `breaks` from nested levels of lambdas
+* Standard container library
+* Port to Linux x86/64, ARM64
+* Bindings to Curl, SqLite.
 
 Within the next couple of months I plan to extend the language:
 
-* Standard container library (done: arrays, maps)
-* Port to some platforms: Linux (done), Wasm, Android
+* Port to: Wasm, Android
+* Bindings to Skia
 * Standard UI library
-* Bindings to curl (done), databases (done).
 
 I plan to work alone, though I'd appreciate any feedback and bugfixes in the form of pull requests.
