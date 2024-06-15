@@ -1,11 +1,16 @@
 # Argentum Programming Language
 
-See: [Project site](https://aglang.org)
+## Links
+
+* Site: [aglang.org](aglang.org)
+* Playground: [runs on my RaspberryPi](http://lat.asuscomm.com:3000/)
 
 ## Main language features:
 
-* Safety - memory-safety, type-safety, null-safety, const-safety etc. Unlike Rust and Swift Argetnum has no unsafe mode, and doesn't need one
-* Fully automated memory management with no memory leaks. Rust, Swift, arbage-collected languages leak memory. Argentum doesn't
+* Safety - memory-safety, type-safety, null-safety, const-safety etc.\
+  Unlike Rust and Swift Argetnum has no unsafe mode and doesn't need one
+* Fully automated memory management with no memory leaks.\
+  Rust, Swift, garbage-collected languages leak memory; Argentum doesn't
 * High efficiency. Argentum is about as fast as C++ and Rust
   * Argentum doesn't use GC (no pauses, no memory and CPU overheads)
   * It compiles to tiny native executables with no extra dependencies.
@@ -19,12 +24,6 @@ See: [Project site](https://aglang.org)
   * Built-in unit tests (TBD)
 * Strict type system
 * Direct interop with C.
-
-## Links
-
-* Site: [aglang.org](aglang.org)
-* Playground: [runs on my RaspberryPi](http://lat.asuscomm.com:3000/)
-* Presentation slides: [here](https://docs.google.com/presentation/d/1Cqbh30gTnfoFL3xJh3hhW4Hqhdk9tHw4akZExtiSivA/edit?usp=share_link)
 
 ## Examples
 
