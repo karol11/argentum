@@ -37,10 +37,13 @@ typedef struct AgSdlFont {
 
 bool ag_m_sdl_Sdl_sdl_init(AgSdl* thiz, int64_t sdl_flags, int64_t img_flags) {
     ag_make_blob_fit(thiz->event, sizeof(SDL_Event));
-    return
+    bool r = 
         SDL_Init((int)sdl_flags) == 0 &&
         IMG_Init((int)img_flags) == img_flags &&
         TTF_Init() == 0;
+    if(!r)
+        fprintf(stdout, "Error: %s\n", SDL_GetError());
+    return r;
 }
 
 AgBlob* ag_m_sdl_Sdl_sdl_pollEvent(AgSdl* thiz) {

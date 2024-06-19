@@ -1,7 +1,15 @@
 using sdl { Window, Sdl, Texture, Rect }
 using utils { Random, forRange }
 using gui { Actor, Group }
+using string;
 
+class Texture {
+    safeLoad(wnd Window, fileName str) bool {
+        load(wnd, fileName).{
+            !_ ? sys_log("cant load img:{fileName}")
+        }
+    }
+}
 class Scene{
     +Group;
 
@@ -15,16 +23,20 @@ class Scene{
     helloWorld = Texture;
 
     init() ?Scene {
-        sdl.init(sdl_xInitEverything, sdl_xImgJpg | sdl_xImgPng ) &&
+        sdl.init(sdl_xInitEverything, sdl_xImgJpg | sdl_xImgPng ).{
+            sys_log("sdl init {_?"+":"-"}")
+        } &&
         w.init(
             "Hello from Argentum!",
             Rect.xywh(sdl_xDefaultPos, sdl_xDefaultPos, 800, 600),
             0,
-            sdl_xRendererAccelerated)  &&
-        background.load(w, "back.jpg") &&
-        foreground.load(w, "fore.png") &&
-        flare.load(w, "round.png") &&
-        star.load(w, "star.png") ? {
+            sdl_xRendererAccelerated).{
+                sys_log("Window init {_?"+":"-"}")
+            }  &&
+        background.safeLoad(w, "back.jpg") &&
+        foreground.safeLoad(w, "fore.png") &&
+        flare.safeLoad(w, "round.png") &&
+        star.safeLoad(w, "star.png") ? {
             push(10, Flare.initAtBottom(this));
             this
         }

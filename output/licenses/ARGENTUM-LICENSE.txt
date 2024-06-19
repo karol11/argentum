@@ -1,0 +1,22 @@
+                              Dual License
+
+   Every business entity with revenue exceeding 100 Billion US dollars
+   must obtain a commercial license here: admin@aglang.org in order to
+   use this software or documentation, or build solutions based on this
+   software or its documentation.
+
+   Everyone not listed in above clause can enjoy CC BY-SA 4.0 license
+   https://creativecommons.org/licenses/by-sa/4.0
+   Share-alike means, that you are free to reuse this code, remix and
+   distribute it in any shape and form including open source and closed
+   sources. You can build a commercial software with it.
+   The only license limitation that must be preserved is the preservance
+   of the special commercial license for business entities with revenue
+   exceeding 100 Billion US dollars. They must obtain license both at you
+   and at admin@aglang.org.
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
