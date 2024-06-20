@@ -43,56 +43,41 @@ sys_log("Hello World")
 ```Rust
 using sys { log }
 using sqliteFfi { Sqlite, xRW }
-using string { htmlEncode }
+using string { htmlEscape }
 
-Sqlite.open("mydb.sqlite", xRW) ?
-    _.query("
+Sqlite.open("mydb.sqlite", xRW) ? `db
+    db.query("
         SELECT "id", "name", "avatar"
         FROM "table"
     ", 0)
-    .execute `r log("{}\
-        <li id={r.intAt(0)}>
-          <img src='ava/{r.stringAt(2)}'/>
-          <div>{r.stringAt(1).htmlEncode()}</div>
-        </li> 
-    ")
+    .execute `row {
+        log("{}\
+           <li id={row.intAt(0)}>
+              <img src="ava/{row.stringAt(2)}"/>
+              <div>{row.stringAt(1).htmlEscape()}</div>
+           </li> 
+        ")
+    }
 ```
 
-#More examples are in the [playground](http://lat.asuscomm.com:3000/) and [demo](https://github.com/karol11/argentum/tags).
+#More examples: [playground](http://lat.asuscomm.com:3000/), [demo](https://github.com/karol11/argentum/tags).
 
 ## Why not X
 
-There are many programming languages in the wild.
-
-Some of them make programmer to manually allocate and free memory:
-
-* C
-* C++ (if not using smart pointers)
-* ADA
-* Pascal etc.
-
-Other languages automate this process using mark/sweep or copying Garbage Collector. It simplifies language and ease the programmers life but at the cost. GC-driven languages are slower, they consume more memory (sometimes twice) but what's worse, they always pause applications at unpredictable moments for unpredictable periods. These languages are:
-
-* Java
-* Go
-* Kotlin
-* Java Script
-* Dart etc.
-
-There is a third group of languages, that use semi-automatic approach usualy based on ref-counting. Programmer don't have to think too much on memory management, but their main downside is: memory leaks are possible and in fact without strict discipline they are inevidable. These languages are:
-
-* Swift
-* Rust
-* C++ (with smart pointers) etc.
-
-Argentum uses *neither of these approaches*. It distinguishes composition-aggregation-association pointers at syntax level and uses this information:
-
-* To automate most routine operations on data structures
-* To check the correctness of operations on data structures at compile time
-* To automate lifetime management of object lifetimes, that not only protects from memory leaks but allow to manage all system and hardware resources in a straightforward way.
-
-Let's say it this way: instead of allowing programmers to make a mess out of their data structures (and spend computer resources on handling this mess), Argentum keeps up its data structures in perfect condition all the way.
-So far no other programming language can do so.
+* Java, Go, Kotlin, Java Script, Dart, C# etc.
+  * Built on GC
+  * Have unpredictable pauses
+  * Have huge memory and CPU overheads
+  * Create hard to detect memory leaks
+  * Have heavy VMs/Runtimes/Frameworks
+* Rust, Swift etc
+  * Built on ref-counting
+  * Have unsafe mode and force developers use this mode by disallowing the very basic operations
+  * Have hard to detect emory leaks caused by cycles in ownership graphs
+* C, C++ etc.
+  * Manual memory management
+  * Leaks
+  * Permanent Unsafe mode.
 
 ## Development
 
