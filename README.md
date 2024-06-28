@@ -65,15 +65,15 @@ Sqlite.open("mydb.sqlite", xRW) ? `db
 ## Why not X
 
 * Java, Go, Kotlin, Java Script, Dart, C# etc.
-  * Built on GC
+  * using Garbage collector
   * Have unpredictable pauses
   * Have huge memory and CPU overheads
   * Create hard to detect memory leaks
   * Have heavy VMs/Runtimes/Frameworks
 * Rust, Swift etc
   * Built on ref-counting
-  * Have unsafe mode and force developers use this mode by disallowing the very basic operations
-  * Have hard to detect emory leaks caused by cycles in ownership graphs
+  * Have unsafe mode and force developers to use this mode by disallowing the very basic operations
+  * prone to hard to detect memory leaks caused by cycles in ownership graphs
 * C, C++ etc.
   * Manual memory management
   * Leaks
@@ -83,15 +83,14 @@ Sqlite.open("mydb.sqlite", xRW) ? `db
 
 I have a working prototype of the 2nd milestone that includes:
 
-* Stand-alone compiler producing windows execitables
+* Stand-alone compiler producing windows and Linux execitables for X86 and ARM64
 * Multithreading
 * Parameterized classes and interfaces
 * String interpolation
 * Frozen-mutable object hierrarchies
 * Fast unwind and direct `breaks` from nested levels of lambdas
 * Standard container library
-* Port to Linux x86/64, ARM64
-* Bindings to Curl, SqLite.
+* Bindings to Curl, SqLite, SDL.
 
 Within the next couple of months I plan to extend the language:
 
