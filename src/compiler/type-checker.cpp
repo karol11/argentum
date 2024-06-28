@@ -605,7 +605,7 @@ struct Typer : ast::ActionMatcher {
 		auto as_cls = dom::strict_cast<ast::Class>(ctr);
 		if (as_cls->params.size() != as_inst->params.size() - 1)
 			cls->error("Expected ", as_cls->params.size(), " parameters");
-		for (int i = 0; i < as_cls->params.size(); i++) {
+		for (size_t i = 0; i < as_cls->params.size(); i++) {
 			if (!is_compatible(as_inst->params[i + 1], as_cls->params[i]->base))
 				cls->error("Expected ", as_cls->params[i]->base->get_name(), " not ", as_inst->params[i + 1]);
 		}

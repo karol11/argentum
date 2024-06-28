@@ -14,7 +14,7 @@
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
-#include "llvm/Support/Host.h"
+#include "llvm/TargetParser/Host.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "ast.h"

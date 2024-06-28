@@ -109,7 +109,7 @@ public:
 class FieldInfo : public Object {
 	friend class TypeWithFields;
 public:
-	FieldInfo(pin<Name> name, pin<TypeInfo> type) : name(name), type(type) {}
+	FieldInfo(pin<Name> name, pin<TypeInfo> type) : type(type), name(name) {}
 	virtual char* get_data(char* struct_ptr) =0;
 	pin<Name> get_name() { return name; }
 	const own<TypeInfo> type;
@@ -151,7 +151,7 @@ class CField : public CppFieldBase {
 	friend class TypeWithFills;
 public:
 	CField(pin<TypeInfo> type) : CppFieldBase(type) {}
-	virtual char* get_data(char* struct_ptr) { return reinterpret_cast<char*>(&(reinterpret_cast<typename FieldHelper<field>::base *>(struct_ptr)->*field)); }
+	char* get_data(char* struct_ptr) override { return reinterpret_cast<char*>(&(reinterpret_cast<typename FieldHelper<field>::base *>(struct_ptr)->*field)); }
 };
 
 class TypeWithFields : public TypeInfo {
@@ -239,7 +239,7 @@ public:
 		auto& d = *reinterpret_cast<std::unordered_set<T>*>(data);
 		auto it = d.find(*reinterpret_cast<T*>(key));
 		return it != d.end()
-			? (char*) &*it
+			? const_cast<char*>(reinterpret_cast<const char*>(&*it))
 			: nullptr;
 	}
 	void delete_element_by_key(char* key, char* data) override {
@@ -250,7 +250,7 @@ public:
 	}
 	void iterate_elements(char* data, std::function<void(char* key, char* value)> on_item) override {
 		for (auto& i : *reinterpret_cast<std::unordered_set<T>*>(data))
-			on_item(nullptr, (char*) &i);
+			on_item(nullptr,  const_cast<char*>((const char*) &i));
 	}
 protected:
 	own<TypeInfo> element_type;
@@ -284,7 +284,7 @@ public:
 	}
 	void iterate_elements(char* data, std::function<void(char* key, char* value)> on_item) override {
 		for (auto& i : *reinterpret_cast<std::unordered_map<K, V>*>(data))
-			on_item((char*) &i.first, (char*) &i.second);
+			on_item(const_cast<char*>((const char*) &i.first), (char*) &i.second);
 	}
 protected:
 	own<TypeInfo> key_type;

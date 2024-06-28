@@ -22,7 +22,7 @@ class PrimitiveType : public TypeInfo
 public:
 	Kind get_kind() override { return ID; }
 	void init(char* data) override { new(data) T(); }
-	void dispose(char* data) { reinterpret_cast<T*>(data)->T::~T(); }
+	void dispose(char* data) override { reinterpret_cast<T*>(data)->T::~T(); }
 	size_t get_size() override { return sizeof(T); }
 	void move(char* src, char* dst) override { new(dst) T(std::move(*reinterpret_cast<T*>(src))); };
 	void copy(char* src, char* dst) override { new(dst) T(*reinterpret_cast<T*>(src)); };
@@ -501,13 +501,13 @@ void Dom::reg_cpp_type(TypeWithFills* type) {
 class EmptyTypeInfo : public TypeInfo
 {
 public:
-	virtual Kind get_kind() { return Kind::EMPTY; }
-	virtual size_t get_size() { return 0;}
-	virtual void init(char*){}
-	virtual void move(char* src, char* dst) {}
-	virtual void copy(char* src, char* dst) {}
-	virtual pin<TypeInfo> get_element_type(){ return this; }
-	virtual pin<TypeInfo> get_ptr_type(char*){ return this; }
+	Kind get_kind() override { return Kind::EMPTY; }
+	size_t get_size() override { return 0;}
+	void init(char*) override {}
+	void move(char* src, char* dst) override {}
+	void copy(char* src, char* dst) override {}
+	pin<TypeInfo> get_element_type() override { return this; }
+	virtual pin<TypeInfo> get_ptr_type(char*) { return this; }
 	virtual void report_error(string message) {}
 	LTM_COPYABLE(EmptyTypeInfo);
 };

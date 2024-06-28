@@ -885,7 +885,7 @@ struct Parser {
 			return fill(make<ast::ToFloatOp>(), parse_expression_in_parethesis());
 		if (match("loop")) 
 			return fill(make<ast::Loop>(), parse_unar());
-		if (auto name = match("_")) {
+		if (match("_")) {
 			auto r = make<ast::Get>();
 			r->var_name = "_";
 			underscore_accessed = true;

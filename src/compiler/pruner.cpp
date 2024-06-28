@@ -62,7 +62,7 @@ struct Pruner : ast::ActionScanner {
 			}
 		}
 	}
-	void on_make_delegate(ast::MakeDelegate& node) {
+	void on_make_delegate(ast::MakeDelegate& node) override {
 		ast::ActionScanner::on_make_delegate(node);
 		use_method(node.method);
 	}

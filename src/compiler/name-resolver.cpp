@@ -128,7 +128,7 @@ struct NameResolver : ast::ActionScanner {
 									ovr_method->ovr = base_method;
 									ovr_method->mut = base_method->mut;
 									if (ivmt) {
-										assert(ovr_method->ordinal < ivmt->size());
+										assert((size_t) ovr_method->ordinal < ivmt->size());
 										(*ivmt)[ovr_method->ordinal] = ovr_method;
 									}
 									c->this_names[ast::LongName{ ovr_method->name, ovr_method->module }] = ovr_method;

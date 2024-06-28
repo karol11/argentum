@@ -158,14 +158,14 @@ struct ConstCapturePass : ast::ActionScanner {
 		node_lambdas = move(prev_node_lambdas);
 	}
 	void fix_block(ast::Block& b, bool is_fn = false) {
-		bool has_lambda_names = false;
+		// bool has_lambda_names = false;
 		b.lexical_depth = lambda_levels.size() - 1;
 		for (auto& p : b.names) {
 			if (p->initializer)
 				fix(p->initializer);
 			p->lexical_depth = lambda_levels.size() - 1;
 			if (auto it_l = node_lambdas.find(p->initializer); it_l != node_lambdas.end()) {
-				has_lambda_names = true;
+				// has_lambda_names = true;
 				node_lambdas.insert({
 					p,
 					is_fn

@@ -671,8 +671,8 @@ pin<TpOptional> Ast::tp_optional(pin<Type> wrapped) {
 		wrapped = tp_void();
 	}
 	auto& depths = optional_types_[wrapped];
-	assert(depth <= depths.size());
-	if (depth == depths.size()) {
+	assert((size_t) depth <= depths.size());
+	if ((size_t) depth == depths.size()) {
 		depths.push_back(pin<TpOptional>::make());
 		depths.back()->wrapped = wrapped;
 		depths.back()->depth = depth;
@@ -815,7 +815,7 @@ pin<Type> Ast::convert_maybe_optional(pin<Type> src, std::function<pin<Type>(pin
 	if (auto as_opt = dom::strict_cast<ast::TpOptional>(src)) {
 		auto wrapped = converter(as_opt->wrapped);
 		auto& depths = optional_types_[wrapped];
-		while (depths.size() < as_opt->depth + 1) {
+		while (depths.size() < (size_t)as_opt->depth + 1) {
 			depths.push_back(pin<TpOptional>::make());
 			depths.back()->wrapped = wrapped;
 			depths.back()->depth = int(depths.size()) - 1;

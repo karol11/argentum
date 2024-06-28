@@ -38,16 +38,6 @@ using dom::isa;
 
 const int AG_HEADER_OFFSET = 0; // -1 if dispatcher and counter to be accessed by negative offsets (which speeds up all ffi, but is incompatible with moronic LLVM debug info)
 
-// TODO remove when LLVM gets fixed: in release builds on Windows LLVM inserts call to these functions but doesn't define them.
-extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeWebAssemblyTargetInfo() {}
-extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeWebAssemblyTarget() {}
-extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeWebAssemblyTargetMC() {}
-extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeWebAssemblyAsmPrinter() {}
-
-extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAArch64TargetInfo() {}
-extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAArch64Target() {}
-extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAArch64TargetMC() {}
-extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAArch64AsmPrinter() {}
 
 #define AK_STR(X) #X
 #define DUMP(X) dump(AK_STR(X), X)
@@ -766,7 +756,7 @@ struct Generator : ast::ActionScanner {
 	}
 
 	void dispose_val_in_current_bb(Val& val, bool is_local = true) {
-		if (auto as_retained = get_if<Val::Retained>(&val.lifetime)) {
+		if (get_if<Val::Retained>(&val.lifetime)) {
 			build_release(val.data, val.type, is_local);
 		} else if (auto as_rfield = get_if<Val::RField>(&val.lifetime)) {
 			build_release_ptr_not_null(as_rfield->to_release);
@@ -946,7 +936,7 @@ struct Generator : ast::ActionScanner {
 			void on_lambda(ast::TpLambda& type) override { result = gen->di_lambda; }  // todo: ptr to { ptr to capture, raw ptr }
 			void on_cold_lambda(ast::TpColdLambda& type) override { result = gen->di_builder->createBasicType("void", 64, llvm::dwarf::DW_ATE_unsigned); }
 			void on_void(ast::TpVoid&) override { result = gen->di_builder->createBasicType("void", 64, llvm::dwarf::DW_ATE_unsigned); }
-			void on_optional(ast::TpOptional& type) {
+			void on_optional(ast::TpOptional& type) override {
 				if (isa<ast::TpInt64>(*type.wrapped)) result = gen->di_opt_int;
 				else if (isa<ast::TpVoid>(*type.wrapped)) result = gen->di_byte;
 				else type.wrapped->match(*this);
@@ -1239,7 +1229,7 @@ struct Generator : ast::ActionScanner {
 		current_function = prev_fn;
 		current_capture_di_type = prev_capture_di_type;
 		builder = prev_builder;
-		if (!captures.empty() && captures.back().first == node.lexical_depth)
+		if (!captures.empty() && captures.back().first == (int) node.lexical_depth)
 			captures.pop_back();
 		locals = move(outer_locals);
 		capture_offsets = move(outer_capture_offsets);
@@ -1498,7 +1488,7 @@ struct Generator : ast::ActionScanner {
 		result->lifetime = Val::Retained{};
 	}
 
-	void on_make_fn_ptr(ast::MakeFnPtr& node) {
+	void on_make_fn_ptr(ast::MakeFnPtr& node) override {
 		result->data = functions.at(node.fn);
 	}
 
@@ -1643,7 +1633,7 @@ struct Generator : ast::ActionScanner {
 					continue;
 				}
 				for (auto& b : l->x_targets) {
-					if (captures.back().first == b->lexical_depth)
+					if (captures.back().first == (int) b->lexical_depth)
 						x_targets.insert(b);
 				}
 			}
@@ -1818,7 +1808,7 @@ struct Generator : ast::ActionScanner {
 		return tramp.first;
 	}
 
-	void on_async_call(ast::AsyncCall& node) {
+	void on_async_call(ast::AsyncCall& node) override {
 		Val callee = compile(node.callee);
 		make_retained_or_non_ptr(callee);
 		auto calle_type = dom::strict_cast<ast::TpDelegate>(callee.type);
@@ -1902,9 +1892,9 @@ struct Generator : ast::ActionScanner {
 		int d = int(captures.size()) - 1;
 		for (;; d--) {
 			assert(d >= 0);
-			if (captures[d].first == var_depth)
+			if (captures[d].first == (int) var_depth)
 				break;
-			if (++ptr_index >= capture_ptrs.size())
+			if (++ptr_index >= (int) capture_ptrs.size())
 				capture_ptrs.push_back(
 					builder->CreateLoad(ptr_type,
 						builder->CreateStructGEP(captures[d].second, capture_ptrs.back(), { 0 })));
@@ -2760,7 +2750,7 @@ struct Generator : ast::ActionScanner {
 			void on_delegate(ast::TpDelegate& type) override { result = gen->delegate_struct; }
 			void on_cold_lambda(ast::TpColdLambda& type) override { type.resolved->match(*this); }
 			void on_void(ast::TpVoid&) override { result = gen->void_type; }
-			void on_optional(ast::TpOptional& type) {
+			void on_optional(ast::TpOptional& type) override {
 				struct OptionalMatcher :ast::TypeMatcher {
 					Generator* gen;
 					int depth;
@@ -2774,7 +2764,7 @@ struct Generator : ast::ActionScanner {
 					void on_delegate(ast::TpDelegate& type) override { result = gen->tp_opt_delegate; }
 					void on_cold_lambda(ast::TpColdLambda& type) override { result = gen->tp_opt_bool; }
 					void on_void(ast::TpVoid&) override { result = depth == 0 ? gen->tp_bool : gen->tp_opt_bool; }
-					void on_optional(ast::TpOptional& type) { assert(false); };
+					void on_optional(ast::TpOptional& type) override { assert(false); };
 					void on_own(ast::TpOwn& type) override { result = gen->tp_int_ptr; }
 					void on_ref(ast::TpRef& type) override { result = gen->tp_int_ptr; }
 					void on_shared(ast::TpShared& type) override { result = gen->tp_int_ptr; }

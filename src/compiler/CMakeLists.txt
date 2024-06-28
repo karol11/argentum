@@ -9,7 +9,7 @@ include(HandleLLVMOptions)
 add_definitions(${LLVM_DEFINITIONS})
 
 add_definitions(${LLVM_DEFINITIONS})
-llvm_map_components_to_libnames(llvm_libs support core nativecodegen orcjit)
+llvm_map_components_to_libnames(llvm_libs ${LLVM_TARGETS_TO_BUILD})
 
 add_executable(agc
     utils/utf8.h
