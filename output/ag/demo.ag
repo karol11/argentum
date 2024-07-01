@@ -1,12 +1,13 @@
-using sdl { Window, Sdl, Texture, Rect }
+using sdl { Window, Sdl, Texture, Rect, Font }
 using utils { Random, forRange }
 using gui { Actor, Group }
 using string;
 
-class Texture {
-    safeLoad(wnd Window, fileName str) bool {
-        load(wnd, fileName).{
-            !_ ? sys_log("cant load img:{fileName}")
+class Window {
+    safeLoad(fileName str) *Texture {
+        loadTexture(fileName) : {
+            sys_log("cant load img:{fileName}");
+            *Texture
         }
     }
 }
@@ -16,13 +17,12 @@ class Scene{
     sdl = Sdl;
     w = Window;
     rnd = Random;
-    flare = Texture;
-    star = Texture;
-    background = Texture;
-    foreground = Texture;
-    helloWorld = Texture;
+    flare = *Texture;
+    star = *Texture;
+    background = *Texture;
+    foreground = *Texture;
 
-    init() ?Scene {
+    init() this {
         sdl.init(sdl_xInitEverything, sdl_xImgJpg | sdl_xImgPng ).{
             sys_log("sdl init {_?"+":"-"}")
         } &&
@@ -30,25 +30,21 @@ class Scene{
             "Hello from Argentum!",
             Rect.xywh(sdl_xDefaultPos, sdl_xDefaultPos, 800, 600),
             0,
-            sdl_xRendererAccelerated).{
-                sys_log("Window init {_?"+":"-"}")
-            }  &&
-        background.safeLoad(w, "back.jpg") &&
-        foreground.safeLoad(w, "fore.png") &&
-        flare.safeLoad(w, "round.png") &&
-        star.safeLoad(w, "star.png") ? {
-            push(10, Flare.initAtBottom(this));
-            this
-        }
+            sdl_xRendererAccelerated);
+        background := w.safeLoad("back.jpg");
+        foreground := w.safeLoad("fore.png");
+        flare := w.safeLoad("round.png");
+        star := w.safeLoad("star.png");
+        push(10, Flare.initAtBottom(this));
     }
     onFrame() {
         frameStartMs = sys_nowMs();
         loop !(sdl.pollEvent() ? {
             _[0] == sdl_xEventQuit ? sys_setMainObject(?sys_Object);
         });
-        w.bltXYWH(background, 0, 0, 800, 600, 0, 0, 800, 600);
+        w.bltXYWH(background, 0, 0, 800, 600, 0, 0, 800, 600, 0xff_ff_ff_ff);
         paint(w);
-        w.bltXYWH(foreground, 0, 0, 800, 600, 0, 0, 800, 600);
+        w.bltXYWH(foreground, 0, 0, 800, 600, 0, 0, 800, 600, 0xff_ff_ff_ff);
         w.flip();
         rnd.get(0, (size() / 2) + 1) == 0 ?
             append(Flare.initAtBottom(this));
@@ -60,12 +56,11 @@ class Scene{
 class Flare {
     +Actor {
         paint(dst Window) {
-            sprite? {
-                _.setColorMod(color);
-                _.setAlphaMod(fade >> 8);
-                size = fade >> 8 >> 2;
-                dst.bltXYWH(_, 0, 0, 64, 64, x >> 16 - size/2, y >> 16 - size/2, size, size);
-            }
+            size = fade >> 8 >> 2;
+            dst.bltXYWH(sprite,
+                0, 0, 64, 64,
+                x >> 16 - size/2, y >> 16 - size/2, size, size,
+                fade & 0xff00 << 16 | color);
         }
         tick(milliseconds int) bool {
             x += dx;
@@ -84,7 +79,7 @@ class Flare {
     }
     initAtFlare(parent Flare, dx int, dy int) this {
         scene := parent.scene;
-        scene? sprite := &_.star; 
+        scene? sprite := _.star; 
         x := parent.x;
         y := parent.y;
         color := parent.color;
@@ -98,7 +93,7 @@ class Flare {
         x := r.get(200 << 16, (800-200) << 16);
         dx := r.get(-x / 30, (800 << 16 - x) / 30);
         dy := r.get(-18 << 16, -8 << 16);
-        sprite := &scene.flare;
+        sprite := scene.flare;
         color := makeBrightColor(r);
     }
     scene = &Scene;
@@ -110,7 +105,7 @@ class Flare {
     dy = -10 << 16;
     color = 0xff_ff_ff;
     generation = 1;
-    sprite = &Texture;
+    sprite = *Texture;
 }
 
 class Sparkles {
@@ -150,7 +145,7 @@ fn distributeInCircle(rnd Random, count int, r int, callback (int, int)) {
     };
 }
 
-Scene.init() ? {
-    sys_setMainObject(_);
-    _.onFrame()
-};
+f = *Font;
+s = Scene.init();
+sys_setMainObject(s);
+s.onFrame()

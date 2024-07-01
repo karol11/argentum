@@ -237,12 +237,13 @@ void       ag_finalize_post   (ag_thread* th);
 // Foreign function should put (using ag_put_thread_param) the same number of params in the same order
 // as the trampoline function invoked on AG-thread is going to read with ag_get_thread_param.
 
+// Initializes the Ag tls data for non-ag-thread.
 // Should be called before the first ag_detach/ag_post is called.
 // Usually it's called when the first thread is created.
 // Can be safely called multile times.
 void ag_init_this_thread();
 
-// Should be called before thread proc ended.
+// Should be called before non-ag-thread proc ended.
 void ag_flush_retain_release();
 
 // If a foreign function wants to store an object or a weak pointer in its own thread, it should call `ag_detach_*` while on ag thread.

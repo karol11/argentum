@@ -1,11 +1,11 @@
-using sys { Object, Array, nowMs, String }
+using sys { Object, Array, nowMs }
 using sdl { Sdl, Rect, Texture, Window, Font }
 using utils { forRange }
 using array;
 
 class Scene {
     +Window;
-    initScene(title *String, w int, h int) {
+    initScene(title str, w int, h int) {
         sdl.init(sdl_xInitEverything, sdl_xImgJpg | sdl_xImgPng );
         init(title, Rect.xywh(sdl_xDefaultPos, sdl_xDefaultPos, w, h), 0, sdl_xRendererAccelerated);
         clip.xywh(0, 0, w, h);
@@ -198,24 +198,25 @@ class Item{
 class Image{
     +Item{
         render() {
-            scene ? {
-                img.setAlphaMod(color >> 24 * _.opacity >> 8);
-                img.setColorMod(color & 0xff_ff_ff);
-                bltRect(_, 0, 0, img.w, img.h, 0, 0, img.w, img.h);
-            }
+            scene ?
+                bltRect(_,
+                    0, 0, img.w, img.h,
+                    0, 0, img.w, img.h,
+                    color >> 24 * _.opacity >> 8 << 24 | (color & 0xff_ff_ff));
         }
     }
-    bltRect(s Scene, srcX int, srcY int, srcW int, srcH int, dstX int, dstY int, dstW int, dstH int) {
+    bltRect(s Scene, srcX int, srcY int, srcW int, srcH int, dstX int, dstY int, dstW int, dstH int, color int) {
         s.bltXYWH(img,
             srcX, srcY, srcW, srcH,
             x + s.x + dstX,
             y + s.y + dstY,
-            dstW,
-            dstH);
+            dstW, dstH,
+            color);
     }
-    load(name -String) this {
-        scene ? img.load(_, name);
+    load(name str) this {
+        scene?_.loadTexture(name) ? img := _;
     }
+    texture(t *Texture) this { img := t }
     setColor(c int) this { color := c }
     animateColor(dst int, durationMs int) this {
         scene?_.animators.append(ArgbAnimator.init(color, dst, durationMs, this.&colorSetter(v int){
@@ -224,35 +225,32 @@ class Image{
     }
 
     color = 0xff_ff_ff_ff;
-    img = Texture;
+    img = *Texture;
 }
 
 class Label{
     +Image;
-    init(font &Font, size int, style int, text *String) this {
+    init(font *Font, size int, style int, text str) this {
         this.font := font;
         this.size := size;
         this.style := style;
         setText(text);
     }
-    setText(text *String) {
+    setText(text str) {
         this.text := text;
-        scene ?`s
-        font ?`f
-           f.renderTo(img, text, size, style, s);
+        img := font.render(text, size, style);
     }
-    font = &Font;
+    font = *Font;
     size = 14;
     style = 0;
-    text = *"";
+    text = "";
 }
 
 class Frame{
     +Image {
         render() {
             scene ? {
-                img.setAlphaMod(color >> 24 * _.opacity >> 8);
-                img.setColorMod(color & 0xff_ff_ff);
+                c = color >> 24 * _.opacity >> 8 << 24 | (color & 0xff_ff_ff);
                 w = max(width, img.w);
                 h = max(height, img.h);
                 srcLastX = img.w - right;
@@ -264,21 +262,21 @@ class Frame{
                 dstMiddleW = dstLastX - left;
                 dstMiddleH = dstLastY - top;
 
-                bltRect(_, 0,        0, left,       top, 0,        0, left,       top);
-                bltRect(_, left,     0, srcMiddleW, top, left,     0, dstMiddleW, top);
-                bltRect(_, srcLastX, 0, right,      top, dstLastX, 0, right,      top);
+                bltRect(_, 0,        0, left,       top, 0,        0, left,       top, c);
+                bltRect(_, left,     0, srcMiddleW, top, left,     0, dstMiddleW, top, c);
+                bltRect(_, srcLastX, 0, right,      top, dstLastX, 0, right,      top, c);
 
-                bltRect(_, 0,        top, left,       srcMiddleH, 0,        top, left,       dstMiddleH);
-                bltRect(_, left,     top, srcMiddleW, srcMiddleH, left,     top, dstMiddleW, dstMiddleH);
-                bltRect(_, srcLastX, top, right,      srcMiddleH, dstLastX, top, right,      dstMiddleH);
+                bltRect(_, 0,        top, left,       srcMiddleH, 0,        top, left,       dstMiddleH, c);
+                bltRect(_, left,     top, srcMiddleW, srcMiddleH, left,     top, dstMiddleW, dstMiddleH, c);
+                bltRect(_, srcLastX, top, right,      srcMiddleH, dstLastX, top, right,      dstMiddleH, c);
 
-                bltRect(_, 0,        srcLastY, left,       bottom, 0,        dstLastY, left,       bottom);
-                bltRect(_, left,     srcLastY, srcMiddleW, bottom, left,     dstLastY, dstMiddleW, bottom);
-                bltRect(_, srcLastX, srcLastY, right,      bottom, dstLastX, dstLastY, right,      bottom);
+                bltRect(_, 0,        srcLastY, left,       bottom, 0,        dstLastY, left,       bottom, c);
+                bltRect(_, left,     srcLastY, srcMiddleW, bottom, left,     dstLastY, dstMiddleW, bottom, c);
+                bltRect(_, srcLastX, srcLastY, right,      bottom, dstLastX, dstLastY, right,      bottom, c);
             }
         }
     }
-    init(fileName *String, leftWidth int, topWidth int, rightWidth int, bottomWidth int) this {
+    init(fileName str, leftWidth int, topWidth int, rightWidth int, bottomWidth int) this {
         load(fileName);
         left := leftWidth;
         right := rightWidth;

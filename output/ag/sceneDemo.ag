@@ -1,6 +1,6 @@
 using sys { Array }
 using scene { Scene, Group, Image, Label, Opacity, Frame }
-using sdl { Font }
+using sdl { Font, Texture }
 using string;
 using utils { Random }
 
@@ -8,26 +8,27 @@ class App {
     +Scene;
     start() {
         initScene("Ag", 800, 600);
-        defFont.load("NotoSerif-Bold.ttf", 0);
+        defFont = loadFont("NotoSerif-Bold.ttf", 0) : *Font;
         roots.append(Image(this).load("back.jpg"));
         rnd = Random;
-        roots.push(100, Image(this).load("round.png").setColor(0xff << 24 | rnd.get(0, 0xffffff)).{
+        round = loadTexture("round.png") : *Texture;
+        roots.push(100, Image(this).texture(round).setColor(0xff << 24 | rnd.get(0, 0xffffff)).{
             animators.append(Shuttle.init(rnd.get(-8, 8), rnd.get(10, 700), 0, 780, _.&setRX(v int){ x := v }));
             animators.append(Shuttle.init(rnd.get(-8, 8), rnd.get(10, 500), 0, 600-40, _.&setRY(v int){ y := v }));
         });
         roots.append(Group(this)
-            .add(Image(this).load("round.png").{
+            .add(Image(this).texture(round).{
                 animators.append(Shuttle.init(6, 600, 0, 780, _.&setBX(v int){ x := v }));
                 animators.append(Shuttle.init(6, 500, 0, 600-40, _.&setBY(v int){ y := v }));
             })
             .add(Group(this).setPos(300, 200).animatePos(300, 10, 1500).addModifier(Opacity.set(0).animate(this, 255, 3000))
                 .add(Image(this).load("star.png").setColor(0xff_2020ff).animateColor(0xff_ff0020, 4000))
-                .add(Label(this).init(&defFont, 24, 3, "Argentum").setPos(40, 15)))
+                .add(Label(this).init(defFont, 24, 3, "Argentum").setPos(40, 15)))
             .add(Group(this).setPos(200, 100).`g{
                 g.add(Frame(this).init("frame.png", 3, 3, 3, 3).setColor(0x60ffffff).setSize(400, 10).animateSize(400, 400, 2000));
                 i = 0;
                 addStr = `s `color `start {
-                    g.add(Label(this).init(&defFont, 32, 0, s).setColor(color).animateColor(color ^ 0xffffff, 6000).setPos(start, i+16).animatePos(10, i+16, 1500));
+                    g.add(Label(this).init(defFont, 32, 0, s).setColor(color).animateColor(color ^ 0xffffff, 6000).setPos(start, i+16).animatePos(10, i+16, 1500));
                     i += 64
                 };
                 addStr("No GC, no pauses", 0xff_ffffff, 800);
@@ -35,11 +36,10 @@ class App {
                 addStr("No races, no crashes", 0xff_bbbbbb, 800);
                 addStr("Fast, small, simple", 0xff_444444, -800);
             })
-            .add(Label(this).init(&defFont, 48, 0, "Year 2024!").setColor(0x80_ff_00_00).animateColor(0xFF_00_ff_ff, 3000).setPos(0, 380).animatePos(270, 380, 300))
+            .add(Label(this).init(defFont, 48, 0, "Year 2024!").setColor(0x80_ff_00_00).animateColor(0xFF_00_ff_ff, 3000).setPos(0, 380).animatePos(270, 380, 300))
         );
         nextFrame();
     }
-    defFont = Font;
 }
 
 class Shuttle {

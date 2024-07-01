@@ -55,12 +55,14 @@ fn disposeSdl(sdl Sdl);
 class Window {
     internalWndHandle = 0;
     internalRendererHandle = 0;
-    init(title -String, bounds -Rect, wndFlags int, rendFlags int) bool;
+    init(title str, bounds -Rect, wndFlags int, rendFlags int) bool;
     fill(color int);
     fillRectXYWH(x int, y int, w int, h int, color int);
     fillRect(r -Rect, color int);
-    bltXYWH(tex Texture, sx int, sy int, sw int, sh int, dx int, dy int, dw int, dh int);
-    blt(tex Texture, src -Rect, dst -Rect);
+    loadFont(fontName str, style int) ?*Font;
+    loadTexture(fileName str) ?*Texture;
+    bltXYWH(tex -Texture, sx int, sy int, sw int, sh int, dx int, dy int, dw int, dh int, color int);
+    blt(tex -Texture, src -Rect, dst -Rect, color int);
     flip();
 }
 fn destroyWindow(w Window);
@@ -75,48 +77,43 @@ class Texture{
     id = 0;
     w = 0;
     h = 0;
-    load(wnd Window, fileName -String) bool;
-    setAlphaMod(multiplier int);
-    setColorMod(color int);
 }
 fn disposeTexture(t Texture);
 fn afterCopyTexture(t Texture) { t.id := t.w := t.h := 0 }
 
 class Font{
+    wnd = &Window;
     id = 0;
+    internal1 = 0;
+    internal2 = 0;    
 
-    load(fontName -String, style int) bool;
-
-    name() String;
-    style() String;
-    stylesCount() int;
+    *name() String;
+    *style() String;
+    *stylesCount() int;
 
     // Create bitmap image of a string
     // flags - italic, bold, underline
-    renderTo(res Texture, s -String, ptSize int, flags int, w Window);
-    render(s -String, ptSize int, flags int, w Window) @Texture {
-        Texture.{ renderTo(_, s, ptSize, flags, w) }
-    }
+    *render(s str, ptSize int, flags int) *Texture;
 
     // Measure how many characters fits in width.
-    fit(s -String, ptSize int, flags int, width int) int;
+    *fit(s str, ptSize int, flags int, width int) int;
 
     // Get the font metrics of the string.
     // Extents Rect filled with metrics of string portion that fits:
-    // r.x = -startBearingX
+    // r.x = -startBearingX 
     // r.y = -ascent
     // r.w = endBearingX - startBearingX
     // r.h = ascent + descent
     // So to align multiple text on base line Y, they should be rendered at Y + extent.y.
     // Max height of line of different fonts is max(extent.h).
-    // Horisontal step between adjuscent text spans A and B of the same line is result of measure.
+    // Horizontal step between adjuscent text spans A and B of the same line is `measure` return value.
     // Safe left margin to fit all pixels of all lines is min(extent.x) and it's usually negative.
     // Safe right margin of all lines = max(lineLastBasePoint+lastExtent.x+lastExtent.width)
     // Safe top margin of the first line = min(baselinePosY + extent.y)
     // SafeBotton margin = max(baseline + extent.y + extent.h)
     // Line width for alignments (center, right) should be measused as sum(results of measure)
-    // Returns horisontsl step of base point.
-    measure(s -String, ptSize int, flags int, extents Rect) int;
+    // Returns horisontal step of base point.
+    *measure(s str, ptSize int, flags int, extents Rect) int;
 }
 fn disposeFont(f Font);
 fn afterCopyFont(f Font) { f.id := 0 }
