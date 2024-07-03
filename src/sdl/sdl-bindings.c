@@ -172,8 +172,8 @@ void ag_fn_sdl_disposeTexture(AgSdlTexture* tex) {
 }
 
 void ag_fn_sdl_disposeFont(AgSdlFont* fnt) {
-    //if (fnt->sdl_font)
-    //    TTF_CloseFont(fnt->sdl_font);  // It crashes with font NotoSerif-Bold.ttf
+    if (fnt->sdl_font)
+        TTF_CloseFont(fnt->sdl_font);
 }
 
 AgString* ag_m_sdl_Font_sdl_name(AgSdlFont* thiz) {

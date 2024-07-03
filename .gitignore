@@ -2,3 +2,4 @@
 /out*/
 /.vs*/
 *.deb
+!/out*/ag/*.ag
