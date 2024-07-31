@@ -706,6 +706,8 @@ struct Parser {
 				} else if (match("&")) {
 					auto d = make_immediate_delegate(r);
 					parse_fn_def(d);
+					if (d->is_platform)
+						d->error("immediate delegate must contain body");
 					r = d;
 				} else {
 					pin<ast::FieldRef> gf = make<ast::GetField>();
