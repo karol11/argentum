@@ -17,10 +17,6 @@ class App {
             animators.append(Shuttle.init(rnd.get(-8, 8), rnd.get(10, 500), 0, 600-40, _.&setRY(v int){ y := v }));
         });
         roots.append(Group(this)
-            .add(Image(this).texture(round).{
-                animators.append(Shuttle.init(6, 600, 0, 780, _.&setBX(v int){ x := v }));
-                animators.append(Shuttle.init(6, 500, 0, 600-40, _.&setBY(v int){ y := v }));
-            })
             .add(Group(this).setPos(300, 200).animatePos(300, 10, 1500).addModifier(Opacity.set(0).animate(this, 255, 3000))
                 .add(Image(this).load("star.png").setColor(0xff_2020ff).animateColor(0xff_ff0020, 4000))
                 .add(Label(this).init(defFont, 24, 3, "Argentum").setPos(40, 15)))
