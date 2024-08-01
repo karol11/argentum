@@ -257,11 +257,10 @@ struct ConstCapturePass : ast::ActionScanner {
 			lambda_levels[node.var->lexical_depth]->mutables.push_back(node.var);
 		}
 		if (auto var_it = node_lambdas.find(node.var); var_it != node_lambdas.end()) {
-			if (auto val_it = node_lambdas.find(node.val); val_it != node_lambdas.end())
+			if (auto val_it = node_lambdas.find(node.val); val_it != node_lambdas.end()) {
 				get_if<LambdaDep::tp_pull>(&var_it->second->val)->insert(val_it->second);
-			else
-				node.error("internal: inconsistent lambdas at assignment");
-			node_lambdas.insert({ &node, var_it->second });
+				node_lambdas.insert({ &node, var_it->second });
+			}
 		}
 	}
 
