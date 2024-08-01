@@ -233,7 +233,6 @@ struct Generator : ast::ActionScanner {
 	llvm::Function* fn_put_thread_param_own_ptr = nullptr;   // void (?ag_hread*, Obj* val)
 	llvm::Function* fn_put_thread_param_weak_ptr = nullptr;   // void (?ag_hread*, Weak* val)
 	llvm::Function* fn_handle_main_thread = nullptr;   // int (void)
-	llvm::Function* fn_terminate = nullptr;   // void(void)
 	llvm::Function* fn_eq_mut = nullptr;   // bool(Obj*, Obj*)
 	llvm::Function* fn_eq_shared = nullptr;   // bool(Obj*, Obj*)
 	std::default_random_engine random_generator;
@@ -451,11 +450,6 @@ struct Generator : ast::ActionScanner {
 			llvm::FunctionType::get(int_type, {}, false),
 			llvm::Function::ExternalLinkage,
 			"ag_handle_main_thread",
-			*module);
-		fn_terminate = llvm::Function::Create(
-			llvm::FunctionType::get(void_type, {}, false),
-			llvm::Function::ExternalLinkage,
-			"ag_fn_sys_terminate",
 			*module);
 	}
 
@@ -1611,6 +1605,9 @@ struct Generator : ast::ActionScanner {
 						: builder->CreateExtractValue(callee.data, { 1 })),
 				move(params));
 		}
+		if (dom::isa<ast::TpNoRet>(*node.type())) {
+			builder->CreateUnreachable();
+		}
 		if (is_ptr(node.type()) && get_if<Val::Static>(&result->lifetime))
 			result->lifetime = Val::Retained{};
 		for (; !to_dispose.empty(); to_dispose.pop_back()) {
@@ -1679,8 +1676,7 @@ struct Generator : ast::ActionScanner {
 						},
 						current_function });
 				} else {
-					// builder->CreateCall(fn_terminate, {});
-					builder->CreateBr(norm_bb);
+					builder->CreateUnreachable();
 				}
 				builder->SetInsertPoint(norm_bb);
 			}
@@ -2786,7 +2782,7 @@ struct Generator : ast::ActionScanner {
 			void on_frozen_weak(ast::TpFrozenWeak& type) override { result = gen->ptr_type; }
 			void on_conform_ref(ast::TpConformRef& type) override { result = gen->ptr_type; }
 			void on_conform_weak(ast::TpConformWeak& type) override { result = gen->ptr_type; }
-			void on_no_ret(ast::TpNoRet& type) override { assert(false); }
+			void on_no_ret(ast::TpNoRet& type) override { result = gen->void_type; }
 			void on_enum(ast::TpEnum& type) override { result = gen->int_type; }
 		} matcher(this);
 		t.match(matcher);
@@ -3064,12 +3060,16 @@ struct Generator : ast::ActionScanner {
 			for (auto& fn : m.second->functions) {
 				if (!fn.second->used)
 					continue;
-				functions.insert({ fn.second, llvm::Function::Create(
+				auto f = llvm::Function::Create(
 					function_to_llvm_fn(*fn.second, fn.second->type()),
 					fn.second->is_platform
-						? llvm::Function::ExternalLinkage
-						: llvm::Function::InternalLinkage,
-					ast::format_str("ag_fn_", m.first, "_", fn.first), module.get())});
+					? llvm::Function::ExternalLinkage
+					: llvm::Function::InternalLinkage,
+					ast::format_str("ag_fn_", m.first, "_", fn.first), module.get());
+				if (dom::isa<ast::TpNoRet>(*cast<ast::TpLambda>(fn.second->type())->params.back())) {
+					f->addFnAttr(llvm::Attribute::NoReturn);
+				}
+				functions.insert({ fn.second, f });
 			}
 		}
 		// From this point it is possible to build code that access fields and methods.

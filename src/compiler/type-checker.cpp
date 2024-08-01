@@ -110,6 +110,8 @@ struct Typer : ast::ActionMatcher {
 	}
 	void on_break(ast::Break& node) override {
 		node.type_ = ast->tp_no_ret();
+		if (node.block_name.empty())
+			return; // it's a type-only node
 		find_type(node.result);
 	}
 	void check_fn_proto(ast::Action& node, ast::TpFunction& fn, vector<own<ast::Action>>& actual_params, ast::Action& callee) {

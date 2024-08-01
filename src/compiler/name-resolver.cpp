@@ -415,6 +415,8 @@ struct NameResolver : ast::ActionScanner {
 		}
 	}
 	void on_break(ast::Break& node) override {
+		if (node.block_name.empty())
+			return; // it's a type-only node
 		for (auto it = bypassed_by_breaks.rbegin(); it != bypassed_by_breaks.rend(); it++) {
 			if (auto *as_block = std::get_if<pin<ast::Block>>(&*it)) {
 				if ((*as_block)->break_name == node.block_name) {

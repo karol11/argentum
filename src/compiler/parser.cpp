@@ -378,6 +378,8 @@ struct Parser {
 			return make<ast::ConstBool>();
 		if (match("str"))
 			return make<ast::ConstString>();
+		if (match("noreturn"))
+			return make<ast::Break>();
 		if (match("?")) {
 			auto r = make<ast::If>();
 			r->p[0] = make<ast::ConstBool>();

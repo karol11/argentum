@@ -220,6 +220,8 @@ struct ConstCapturePass : ast::ActionScanner {
 	}
 
 	void on_break(ast::Break& node) override {
+		if (node.block_name.empty())
+			return; // it's a type-only node
 		fix(node.result);
 		if (node.block->lexical_depth != lambda_levels.size() - 1) {
 			if (!dom::isa<ast::Block>(*node.block.pinned())) {

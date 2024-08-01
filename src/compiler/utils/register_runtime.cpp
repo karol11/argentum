@@ -203,7 +203,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 	ast.mk_fn("log", FN(ag_fn_sys_log), new ast::ConstVoid, { ast.get_conform_ref(ast.string_cls) });
 	ast.mk_fn("hash", FN(ag_fn_sys_hash), new ast::ConstInt64, { ast.get_shared(ast.object) });
 	ast.mk_fn("nowMs", FN(ag_fn_sys_nowMs), new ast::ConstInt64, {});
-	ast.mk_fn("terminate", FN(ag_fn_sys_terminate), new ast::ConstVoid, { ast.tp_int64() });
+	ast.mk_fn("terminate", FN(ag_fn_sys_terminate), new ast::Break, { ast.tp_int64() });
 	ast.mk_fn("setMainObject", FN(ag_fn_sys_setMainObject), new ast::ConstVoid, { ast.tp_optional(ast.get_ref(ast.object))});
 	ast.mk_fn("weakExists", FN(ag_fn_sys_weakExists), new ast::ConstBool, { ast.get_weak(ast.object) });
 	ast.mk_fn("postTimer", FN(ag_fn_sys_postTimer), new ast::ConstVoid, {
