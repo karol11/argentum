@@ -159,7 +159,7 @@ int main(int argc, char* argv[]) {
                     target_machine->setOptLevel(
                         opt_level == "0" ? llvm::CodeGenOpt::Level::None :
                         opt_level == "1" ? llvm::CodeGenOpt::Level::Less :
-                        opt_level == "4" ? llvm::CodeGenOpt::Level::Aggressive :
+                        opt_level == "3" ? llvm::CodeGenOpt::Level::Aggressive :
                         llvm::CodeGenOpt::Level::Default);
                 module.setDataLayout(target_machine->createDataLayout());
                 llvm::legacy::PassManager pass_manager;
