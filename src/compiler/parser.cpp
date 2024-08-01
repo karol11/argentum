@@ -530,9 +530,13 @@ struct Parser {
 			r->body.push_back(single_expression_parser());
 		} else {
 			r->names.back()->name = "_";
-			r->body.push_back(match("\\")
-				? parse_expression()
-				: single_expression_parser());
+			if (match("{")) {
+				parse_block(r);
+			} else {
+				r->body.push_back(match("\\")
+					? parse_expression()
+					: single_expression_parser());
+			}
 		}
 		return r;
 	}
