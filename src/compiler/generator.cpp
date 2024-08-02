@@ -325,7 +325,7 @@ struct Generator : ast::ActionScanner {
 			"ag_set_parent",
 			*module);
 		fn_splice = llvm::Function::Create(
-			llvm::FunctionType::get(tp_bool, { ptr_type, ptr_type }, false),
+			llvm::FunctionType::get(tp_bool, { ptr_type, ptr_type, ptr_type }, false),
 			llvm::Function::ExternalLinkage,
 			"ag_splice",
 			*module);
@@ -1977,21 +1977,11 @@ struct Generator : ast::ActionScanner {
 		auto base = comp_to_persistent(node.base);
 		size_t breaks_after_base = active_breaks.size();
 		auto val = compile(node.val);
-		auto bb_ok = llvm::BasicBlock::Create(*context, "", current_ll_fn);
-		auto bb_fail = llvm::BasicBlock::Create(*context, "", current_ll_fn);
+		auto addr = builder->CreateStructGEP(class_fields, base.data, node.field->offset);
 		result->data = builder->CreateCall(fn_splice, {
 				cast_to(val.data, ptr_type),
-				base.data });
-		builder->CreateCondBr(result->data, bb_ok, bb_fail);
-		builder->SetInsertPoint(bb_ok);
-		auto addr = builder->CreateStructGEP(class_fields, base.data, node.field->offset);
-		build_release(
-			builder->CreateLoad(ptr_type, addr),
-			node.type(),
-			false);  // not local, clear parent
-		builder->CreateStore(val.data, addr);
-		builder->CreateBr(bb_fail);
-		builder->SetInsertPoint(bb_fail);
+				base.data,
+				cast_to(addr, ptr_type) });
 		dispose_val(val, active_breaks.size());
 		dispose_val(base, breaks_after_base);
 	}

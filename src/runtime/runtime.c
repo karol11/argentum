@@ -149,15 +149,28 @@ static inline void ag_set_parent_nn(AgObject* obj, AgObject* parent) {
 		((AgWeak*)obj->wb_p)->org_pointer_to_parent = (uintptr_t)parent;
 }
 
-bool ag_splice(AgObject* obj, AgObject* parent) {
+AgObject* ag_getParentNoLock(AgObject* obj) {  // obj not null, result is nullable
+	if (obj->ctr_mt & AG_CTR_SHARED)
+		return 0;
+	uintptr_t r = obj->wb_p & AG_F_PARENT
+		? obj->wb_p & ~AG_F_PARENT
+		: ((AgWeak*)obj->wb_p)->org_pointer_to_parent;
+	return (AgObject*)(r);
+}
+
+bool ag_splice(AgObject* obj, AgObject* parent, AgObject** dst) {
 	if (ag_not_null(obj)) {
-		for (AgObject* p = parent; p; p = ag_fn_sys_getParent(p)) {
+		if (ag_getParentNoLock(obj))
+			return false;
+		for (AgObject* p = parent; p; p = ag_getParentNoLock(p)) {
 			if (p == obj)
 				return false;
 		}
 		ag_set_parent_nn(obj, parent);
 		ag_head(obj)->ctr_mt += AG_CTR_STEP;
 	}
+	ag_release_own(*dst);
+	*dst = obj;
 	return true;
 }
 
@@ -505,13 +518,9 @@ void ag_m_sys_Cursor_set(AgCursor* th, AgString* s) {
 }
 
 AgObject* ag_fn_sys_getParent(AgObject* obj) {  // obj not null, result is nullable
-	if (obj->ctr_mt & AG_CTR_SHARED)
-		return 0;
-	uintptr_t r = obj->wb_p & AG_F_PARENT
-		? obj->wb_p & ~AG_F_PARENT
-		: ((AgWeak*)obj->wb_p)->org_pointer_to_parent;
-	ag_retain_pin((AgObject*)(r));
-	return (AgObject*)(r);
+	AgObject* r = ag_getParentNoLock(obj);
+	ag_retain_pin(r);
+	return r;
 }
 
 bool ag_fn_sys_weakExists(AgWeak* w) {
@@ -599,7 +608,7 @@ bool ag_fn_sys_setMainObject(AgObject* s) {
 	if (!th->in.start)
 		ag_init_thread(th);
 	ag_release_own(th->root);
-	if (s && ag_fn_sys_getParent(s)) {
+	if (s && ag_getParentNoLock(s)) {
 		th->root = NULL;
 		return false;
 	}
@@ -940,7 +949,7 @@ void ag_post_weak_param(ag_thread* th, AgWeak* param) {
 	}
 }
 void ag_detach_own(AgObject* obj) {
-	assert(ag_fn_sys_getParent(obj) == NULL);
+	assert(ag_getParentNoLock(obj) == NULL); //TODO: copy?
 	ag_retain_pin(obj);
 	ag_bound_own_to_thread(obj, NULL);
 }

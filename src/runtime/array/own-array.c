@@ -23,12 +23,7 @@ AgObject* ag_m_sys_Array_setOptAt(AgBaseArray* c, uint64_t at, AgObject* val) {
 
 bool ag_m_sys_Array_spliceAt(AgBaseArray* c, uint64_t at, AgObject* val) {
 	if (at < c->items_count) {
-		AgObject** dst = ((AgObject**)c->items) + at;
-		if (ag_splice(val, &c->head)) {
-			ag_release_own(*dst);
-			*dst = val;
-			return true;
-		}
+		return ag_splice(val, &c->head, ((AgObject**)c->items) + at);
 	}
 	return false;
 }
