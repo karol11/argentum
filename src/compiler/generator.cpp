@@ -5,6 +5,7 @@
 #include <random>
 #include <variant>
 #include <list>
+#include <vector>
 #include "llvm/ExecutionEngine/Orc/LLJIT.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
@@ -145,6 +146,8 @@ struct Generator : ast::ActionScanner {
 	std::unique_ptr<llvm::LLVMContext> context;
 	std::unique_ptr<llvm::Module> module;
 	llvm::IntegerType* int_type = nullptr;
+	llvm::IntegerType* int32_type = nullptr;
+	llvm::Type* float_type = nullptr;
 	llvm::Type* double_type = nullptr;
 	llvm::PointerType* ptr_type = nullptr;
 	llvm::Type* void_type = nullptr;
@@ -169,7 +172,9 @@ struct Generator : ast::ActionScanner {
 	llvm::DIScope* current_di_scope = nullptr;
 	llvm::DIType* current_capture_di_type = nullptr;
 	std::unique_ptr<llvm::DIBuilder> di_builder;
+	llvm::DIType* di_float = nullptr;
 	llvm::DIType* di_double = nullptr;
+	llvm::DIType* di_int32 = nullptr;
 	llvm::DIType* di_int = nullptr;
 	llvm::DIType* di_byte = nullptr;
 	llvm::DIType* di_obj_ptr = nullptr;
@@ -189,7 +194,6 @@ struct Generator : ast::ActionScanner {
 	vector<pair<int, llvm::StructType*>> captures;
 	vector<llvm::Value*> capture_ptrs;
 	llvm::Type* tp_opt_int = nullptr;
-	llvm::Type* tp_opt_double = nullptr;
 	llvm::Type* tp_bool = nullptr;
 	llvm::IntegerType* tp_opt_bool = nullptr;
 	llvm::Type* tp_opt_lambda = nullptr;
@@ -265,13 +269,14 @@ struct Generator : ast::ActionScanner {
 		if (debug_info_mode)
 			make_di_basic();
 		int_type = llvm::Type::getInt64Ty(*context);
+		int32_type = llvm::Type::getInt32Ty(*context);
+		float_type = llvm::Type::getFloatTy(*context);
 		double_type = llvm::Type::getDoubleTy(*context);
 		ptr_type = llvm::PointerType::getUnqual(*context);
 		tp_int_ptr = layout.getIntPtrType(ptr_type);
 		void_type = llvm::Type::getVoidTy(*context);
 		tp_opt_bool = llvm::Type::getInt8Ty(*context);
 		tp_opt_int = llvm::StructType::get(*context, { tp_opt_bool, int_type });
-		tp_opt_double = int_type;
 		tp_bool = llvm::Type::getInt1Ty(*context);
 		tp_opt_lambda = llvm::StructType::get(*context, { tp_int_ptr, tp_int_ptr });
 		tp_opt_delegate = tp_opt_lambda;
@@ -460,8 +465,10 @@ struct Generator : ast::ActionScanner {
 			di_builder->createFile("sys", ""),
 			"sys",
 			true, "", 0);
+		di_float = di_builder->createBasicType("float", 32, llvm::dwarf::DW_ATE_float);
 		di_double = di_builder->createBasicType("double", 64, llvm::dwarf::DW_ATE_float);
-		di_int = di_builder->createBasicType("int", 64, llvm::dwarf::DW_ATE_signed);
+		di_int32 = di_builder->createBasicType("int", 32, llvm::dwarf::DW_ATE_signed);
+		di_int = di_builder->createBasicType("int32", 64, llvm::dwarf::DW_ATE_signed);
 		di_byte = di_builder->createBasicType("byte", 8, llvm::dwarf::DW_ATE_signed);
 		di_fn_type = di_builder->createSubroutineType(di_builder->getOrCreateTypeArray({}));
 		di_fn_ptr = di_builder->createPointerType(di_fn_type, 64);
@@ -873,8 +880,10 @@ struct Generator : ast::ActionScanner {
 		assert(get_if<Val::Static>(&r.lifetime));
 		return r.data;
 	}
+	void on_const_i32(ast::ConstInt32& node) override { result->data = builder->getInt32(node.value); }
 	void on_const_i64(ast::ConstInt64& node) override { result->data = builder->getInt64(node.value); }
 	void on_const_enum_tag(ast::ConstEnumTag& node) override { result->data = builder->getInt64(node.value->val); }
+	void on_const_float(ast::ConstFloat& node) override { result->data = llvm::ConstantFP::get(float_type, node.value); }
 	void on_const_double(ast::ConstDouble& node) override { result->data = llvm::ConstantFP::get(double_type, node.value); }
 	void on_const_void(ast::ConstVoid&) override { result->data = llvm::UndefValue::get(void_type); }
 	void on_const_bool(ast::ConstBool& node) override { result->data = builder->getInt1(node.value); }
@@ -924,7 +933,9 @@ struct Generator : ast::ActionScanner {
 			Generator* gen;
 			llvm::DIType* result = nullptr;
 			DiTypeMatcher(Generator* gen) :gen(gen) {}
+			void on_int32(ast::TpInt32& type) override { result = gen->di_int32; }
 			void on_int64(ast::TpInt64& type) override { result = gen->di_int; }
+			void on_float(ast::TpFloat& type) override { result = gen->di_float; }
 			void on_double(ast::TpDouble& type) override { result = gen->di_double; }
 			void on_function(ast::TpFunction& type) override { result = gen->di_fn_ptr; }   // todo: raw ptr
 			void on_lambda(ast::TpLambda& type) override { result = gen->di_lambda; }  // todo: ptr to { ptr to capture, raw ptr }
@@ -1719,6 +1730,14 @@ struct Generator : ast::ActionScanner {
 						gen.builder->CreateCall(gen.fn_get_thread_param, { thread }),
 						gen.to_llvm_type(type)));
 				}
+				void handle_32_bit(ast::Type& type) {
+					params_size_out++;
+					params.push_back(gen.cast_to(
+						gen.builder->CreateTrunc(
+							gen.builder->CreateCall(gen.fn_get_thread_param, { thread }),
+							gen.int_type),
+						gen.to_llvm_type(type)));
+				}
 				void handle_pair(ast::Type& type) {
 					params_size_out += 2;
 					auto result_type = gen.to_llvm_type(type);
@@ -1737,9 +1756,9 @@ struct Generator : ast::ActionScanner {
 							second,
 							{ 1 }));
 				}
-				void on_int64(ast::TpInt64& type) override {
-					params_size_out++;
-					params.push_back(gen.builder->CreateCall(gen.fn_get_thread_param, { thread })); }
+				void on_int64(ast::TpInt64& type) override { handle_64_bit(type); }
+				void on_int32(ast::TpInt32& type) override { handle_32_bit(type); }
+				void on_float(ast::TpFloat& type) override { handle_32_bit(type); }
 				void on_double(ast::TpDouble& type) override { handle_64_bit(type); }
 				void on_function(ast::TpFunction& type) override { handle_64_bit(type); }
 				void on_lambda(ast::TpLambda& type) override { assert(false); }
@@ -1835,8 +1854,20 @@ struct Generator : ast::ActionScanner {
 				void handle_weak() {
 					gen.builder->CreateCall(gen.fn_put_thread_param_weak_ptr, { gen.cast_to(value, gen.ptr_type) });
 				}
+				void on_int32(ast::TpInt32& type) override {
+					gen.builder->CreateCall(gen.fn_put_thread_param, {
+						gen.builder->CreateZExt(value, gen.int_type)
+					});
+				}
 				void on_int64(ast::TpInt64& type) override { handle_64_bit(); }
 				void on_enum(ast::TpEnum& type) override { handle_64_bit(); }
+				void on_float(ast::TpFloat& type) override {
+					gen.builder->CreateCall(gen.fn_put_thread_param, {
+						gen.builder->CreateZExt(
+							gen.cast_to(value, gen.int32_type),
+							gen.int_type)
+					});
+				}
 				void on_double(ast::TpDouble& type) override { handle_64_bit(); }
 				void on_function(ast::TpFunction& type) override { handle_64_bit(); }
 				void on_lambda(ast::TpLambda& type) override { assert(false); }
@@ -1989,11 +2020,49 @@ struct Generator : ast::ActionScanner {
 		result->data = builder->CreateCall(classes.at(node.cls->get_implementation()).constructor, {});
 		result->lifetime = Val::Retained{};
 	}
+	void on_to_int32(ast::ToInt32Op& node) override {
+		auto& t = *node.p->type();
+		auto param = comp_non_ptr(node.p);
+		if (dom::isa<ast::TpInt64>(t)) {
+			result->data = builder->CreateTrunc(param, int32_type);
+		} else if (dom::isa<ast::TpDouble>(t) || dom::isa<ast::TpFloat>(t)) {
+			result->data = builder->CreateFPToSI(param, int32_type);
+		} else { // int32
+			result->data = param;
+		}
+	}
 	void on_to_int(ast::ToIntOp& node) override {
-		result->data = builder->CreateFPToSI(comp_non_ptr(node.p), int_type);
+		auto& t = *node.p->type();
+		auto param = comp_non_ptr(node.p);
+		if (dom::isa<ast::TpInt32>(t)) {
+			result->data = builder->CreateSExt(param, int_type);
+		} else if (dom::isa<ast::TpDouble>(t) || dom::isa<ast::TpFloat>(t)) {
+			result->data = builder->CreateFPToSI(param, int_type);
+		} else { // int64
+			result->data = param;
+		}
 	}
 	void on_to_float(ast::ToFloatOp& node) override {
-		result->data = builder->CreateSIToFP(comp_non_ptr(node.p), double_type);
+		auto& t = *node.p->type();
+		auto param = comp_non_ptr(node.p);
+		if (dom::isa<ast::TpInt32>(t) || dom::isa<ast::TpInt64>(t)) {
+			result->data = builder->CreateSIToFP(param, float_type);
+		} else if (dom::isa<ast::TpDouble>(t)) {
+			result->data = builder->CreateFPTrunc(param, float_type);
+		} else { // float
+			result->data = param;
+		}
+	}
+	void on_to_double(ast::ToDoubleOp& node) override {
+		auto& t = *node.p->type();
+		auto param = comp_non_ptr(node.p);
+		if (dom::isa<ast::TpInt32>(t) || dom::isa<ast::TpInt64>(t)) {
+			result->data = builder->CreateSIToFP(param, double_type);
+		} else if (dom::isa<ast::TpFloat>(t)) {
+			result->data = builder->CreateFPExt(param, double_type);
+		} else { // double
+			result->data = param;
+		}
 	}
 	void on_not(ast::NotOp& node) override {
 		Val param = compile(node.p);
@@ -2005,6 +2074,9 @@ struct Generator : ast::ActionScanner {
 	}
 	void on_neg(ast::NegOp& node) override {
 		result->data = builder->CreateNeg(comp_non_ptr(node.p));
+	}
+	void on_inv(ast::InvOp& node) override {
+		result->data = builder->CreateNot(comp_non_ptr(node.p));
 	}
 	void on_ref(ast::RefOp& node) override {
 		internal_error(node, "ref cannot be compiled");
@@ -2066,17 +2138,20 @@ struct Generator : ast::ActionScanner {
 			},
 			[&] { return Val{ result_type, make_opt_none(result_type), Val::Static{}}; });
 	}
+	bool is_integer(ast::Type& t) {
+		return dom::isa<ast::TpInt32>(t) || dom::isa<ast::TpInt64>(t);
+	}
 	void on_add(ast::AddOp& node) override {
 		auto lhs = comp_non_ptr(node.p[0]);
 		auto rhs = comp_non_ptr(node.p[1]);
-		result->data = node.type_ == ast->tp_int64()
+		result->data = is_integer(*node.type_)
 			? builder->CreateAdd(lhs, rhs)
 			: builder->CreateFAdd(lhs, rhs);
 	}
 	void on_lt(ast::LtOp& node) override {
 		auto lhs = comp_non_ptr(node.p[0]);
 		auto rhs = comp_non_ptr(node.p[1]);
-		result->data = node.p[0]->type() == ast->tp_int64()
+		result->data = is_integer(*node.p[0]->type())
 			? builder->CreateCmp(llvm::CmpInst::Predicate::ICMP_SLT, lhs, rhs)
 			: builder->CreateCmp(llvm::CmpInst::Predicate::FCMP_OLT, lhs, rhs);
 	}
@@ -2118,8 +2193,10 @@ struct Generator : ast::ActionScanner {
 					gen.cast_to(rhs, gen.ptr_type) });
 			}
 			Comparer(llvm::Value* lhs, llvm::Value* rhs, Generator& gen) : lhs(lhs), rhs(rhs), gen(gen) {}
+			void on_int32(ast::TpInt32& type) override { compare_scalar(); }
 			void on_int64(ast::TpInt64& type) override { compare_scalar(); }
 			void on_enum(ast::TpEnum& type) override { compare_scalar(); }
+			void on_float(ast::TpFloat& type) override { gen.result->data = gen.builder->CreateCmp(llvm::CmpInst::Predicate::FCMP_OEQ, lhs, rhs); }
 			void on_double(ast::TpDouble& type) override { gen.result->data = gen.builder->CreateCmp(llvm::CmpInst::Predicate::FCMP_OEQ, lhs, rhs); }
 			void on_function(ast::TpFunction& type) override { compare_scalar(); }
 			void on_lambda(ast::TpLambda& type) override { compare_pair(); }
@@ -2130,8 +2207,10 @@ struct Generator : ast::ActionScanner {
 				struct OptComparer : ast::TypeMatcher {
 					Comparer& c;
 					OptComparer(Comparer& c) : c(c) {}
+					void on_int32(ast::TpInt32& type) override { c.compare_scalar(); }
 					void on_int64(ast::TpInt64& type) override { c.compare_pair(); }
 					void on_enum(ast::TpEnum& type) override { c.compare_scalar(); }
+					void on_float(ast::TpFloat& type) override { c.compare_scalar(); }
 					void on_double(ast::TpDouble& type) override { c.compare_scalar(); }
 					void on_function(ast::TpFunction& type) override { c.compare_scalar(); }
 					void on_lambda(ast::TpLambda& type) override { c.compare_pair(); }
@@ -2171,21 +2250,21 @@ struct Generator : ast::ActionScanner {
 	void on_sub(ast::SubOp& node) override {
 		auto lhs = comp_non_ptr(node.p[0]);
 		auto rhs = comp_non_ptr(node.p[1]);
-		result->data = node.type_ == ast->tp_int64()
+		result->data = is_integer(*node.type_)
 			? builder->CreateSub(lhs, rhs)
 			: builder->CreateFSub(lhs, rhs);
 	}
 	void on_mul(ast::MulOp& node) override {
 		auto lhs = comp_non_ptr(node.p[0]);
 		auto rhs = comp_non_ptr(node.p[1]);
-		result->data = node.type_ == ast->tp_int64()
+		result->data = is_integer(*node.type_)
 			? builder->CreateMul(lhs, rhs)
 			: builder->CreateFMul(lhs, rhs);
 	}
 	void on_div(ast::DivOp& node) override {
 		auto lhs = comp_non_ptr(node.p[0]);
 		auto rhs = comp_non_ptr(node.p[1]);
-		result->data = node.type_ == ast->tp_int64()
+		result->data = is_integer(*node.type_)
 			? builder->CreateSDiv(lhs, rhs)
 			: builder->CreateFDiv(lhs, rhs);
 	}
@@ -2250,13 +2329,23 @@ struct Generator : ast::ActionScanner {
 						val,
 						{ 1 });
 			}
+			void on_int32(ast::TpInt32& type) override {
+				val = depth > 0
+					? val
+					: gen->builder->CreateZExt(val, gen->int_type);
+			}
 			void on_enum(ast::TpEnum& type) override {
 				// val is already bit and type compatible
+			}
+			void on_float(ast::TpFloat& type) override {
+				val = depth > 0
+					? val
+					: gen->builder->CreateBitCast(val, gen->int32_type);
 			}
 			void on_double(ast::TpDouble& type) override {
 				val = depth > 0
 					? val 
-					: gen->builder->CreateBitCast(val, gen->tp_opt_double);
+					: gen->builder->CreateBitCast(val, gen->int_type);
 			}
 			void on_function(ast::TpFunction& type) override {
 				val = depth > 0
@@ -2319,7 +2408,11 @@ struct Generator : ast::ActionScanner {
 					gen->builder->getInt64(0),
 					{ 1 });
 			}
-			void on_double(ast::TpDouble& type) override { val = llvm::ConstantInt::get(gen->tp_opt_double, depth); }
+			void on_int32(ast::TpInt32& type) override {
+				val = llvm::ConstantInt::get(gen->int_type, (depth + 1ull) << 32);
+			}
+			void on_float(ast::TpFloat& type) override { val = gen->builder->getInt64(depth | 0x7fc00000); } //    0_111 1111 1_10(0)...
+			void on_double(ast::TpDouble& type) override { val = gen->builder->getInt64(depth | 0x7ff8000000000000); } // 0_111 1111 1111 _10(0)...
 			void on_function(ast::TpFunction& type) override { val = llvm::ConstantInt::get(gen->tp_int_ptr, depth); }
 			void on_lambda(ast::TpLambda& type) override { make_int_ptr_pair(); }
 			void on_delegate(ast::TpDelegate& type) override { make_int_ptr_pair(); }
@@ -2356,10 +2449,20 @@ struct Generator : ast::ActionScanner {
 					gen->builder->CreateExtractValue(val, { 0 }),
 					gen->builder->getInt8(depth + 1));
 			}
+			void on_int32(ast::TpInt32& type) override {
+				val = gen->builder->CreateICmpNE(
+					val,
+					gen->builder->getInt64((depth + 1ull) << 32));
+			}
+			void on_float(ast::TpFloat& type) override {
+				val = gen->builder->CreateICmpNE(
+					val,
+					gen->builder->getInt32(depth | 0x7fc00000));
+			}
 			void on_double(ast::TpDouble& type) override {
 				val = gen->builder->CreateICmpNE(
 					val,
-					llvm::ConstantInt::get(gen->tp_opt_double, depth));
+					gen->builder->getInt64(depth | 0x7ff8000000000000));
 			}
 			void on_function(ast::TpFunction& type) override {
 				val = gen->builder->CreateICmpNE(
@@ -2430,10 +2533,20 @@ struct Generator : ast::ActionScanner {
 						{ 1 });
 				}
 			}
+			void on_int32(ast::TpInt32& type) override {
+				val = depth > 0
+					? val
+					: gen->builder->CreateTrunc(val, gen->int32_type);
+			}
 			void on_int64(ast::TpInt64& type) override {
 				val = depth > 0
 					? val
 					: gen->builder->CreateExtractValue(val, { 1 });
+			}
+			void on_float(ast::TpFloat& type) override {
+				val = depth > 0
+					? val
+					: gen->builder->CreateBitCast(val, gen->float_type);
 			}
 			void on_double(ast::TpDouble& type) override {
 				val = depth > 0
@@ -2729,7 +2842,9 @@ struct Generator : ast::ActionScanner {
 			llvm::Type* result = nullptr;
 			Matcher(Generator* gen) :gen(gen) {}
 
+			void on_int32(ast::TpInt32& type) override { result = gen->int32_type; }
 			void on_int64(ast::TpInt64& type) override { result = gen->int_type; }
+			void on_float(ast::TpFloat& type) override { result = gen->float_type; }
 			void on_double(ast::TpDouble& type) override { result = gen->double_type; }
 			void on_function(ast::TpFunction& type) override { result = gen->ptr_type; }
 			void on_lambda(ast::TpLambda& type) override { result = gen->lambda_struct; }
@@ -2743,8 +2858,10 @@ struct Generator : ast::ActionScanner {
 					llvm::Type* result = nullptr;
 					OptionalMatcher(Generator* gen, int depth) :gen(gen), depth(depth) {}
 
+					void on_int32(ast::TpInt32& type) override { result = gen->int_type; } // depth+1 << 32 = optional_nones, val & ffffffff = opt value
 					void on_int64(ast::TpInt64& type) override { result = gen->tp_opt_int; }
-					void on_double(ast::TpDouble& type) override { result = gen->tp_opt_double; }
+					void on_float(ast::TpFloat& type) override { result = gen->int32_type; } // bitcasted float where NaNs are nones
+					void on_double(ast::TpDouble& type) override { result = gen->int_type; } // bitcasted double where NaNs are nones
 					void on_function(ast::TpFunction& type) override { result = gen->tp_int_ptr; }
 					void on_lambda(ast::TpLambda& type) override { result = gen->tp_opt_lambda; }
 					void on_delegate(ast::TpDelegate& type) override { result = gen->tp_opt_delegate; }

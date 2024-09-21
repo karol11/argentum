@@ -34,22 +34,31 @@ struct Typer : ast::ActionMatcher {
 		tp_bool = ast->tp_optional(ast->tp_void());
 		tp_no_ret = ast->tp_no_ret();
 	}
-
+	bool is_integer(ast::Type& t) {
+		return dom::isa<ast::TpInt32>(t) || dom::isa<ast::TpInt64>(t);
+	}
+	bool is_fp(ast::Type& t) {
+		return dom::isa<ast::TpFloat>(t) || dom::isa<ast::TpDouble>(t);
+	}
+	bool is_numeric(ast::Type& t) {
+		return is_integer(t) || is_fp(t);
+	}
 	void on_int_op(ast::BinaryOp& node, const function<string()>& context) {
-		node.type_ = ast->tp_int64();
-		expect_type(find_type(node.p[0]), node.type(), context);
+		node.type_ = find_type(node.p[0])->type();
+		if (!is_integer(*node.type_))
+			node.p[0]->error("expected int or short at ", context());
 		expect_type(find_type(node.p[1]), node.type(), context);
 	}
-
 	void on_int_or_double_op(ast::BinaryOp& node, const function<string()>& context) {
-		auto& t0 = find_type(node.p[0])->type();
-		if (!dom::strict_cast<ast::TpInt64>(t0) && !dom::strict_cast<ast::TpDouble>(t0))
-			node.p[0]->error("expected int or double");
-		node.type_ = t0;
-		expect_type(find_type(node.p[1]), t0, context);
+		node.type_ = find_type(node.p[0])->type();
+		if (!is_numeric(*node.type_))
+			node.p[0]->error("expected int or double at ", context());
+		expect_type(find_type(node.p[1]), node.type_, context);
 	}
 
+	void on_const_i32(ast::ConstInt32& node) override { node.type_ = ast->tp_int32(); }
 	void on_const_i64(ast::ConstInt64& node) override { node.type_ = ast->tp_int64(); }
+	void on_const_float(ast::ConstFloat& node) override { node.type_ = ast->tp_float(); }
 	void on_const_double(ast::ConstDouble& node) override { node.type_ = ast->tp_double(); }
 	void on_const_void(ast::ConstVoid& node) override { node.type_ = ast->tp_void(); }
 	void on_const_bool (ast::ConstBool& node) override { node.type_ = tp_bool; }
@@ -295,7 +304,9 @@ struct Typer : ast::ActionMatcher {
 			ast::Node& node;
 			ast::Ast& ast;
 			TypeNameGenerator(ast::Node& node, ast::Ast& ast) :node(node), ast(ast) {}
+			void on_int32(ast::TpInt32& type) override { result = "Int32"; }
 			void on_int64(ast::TpInt64& type) override { result = "Int"; }
+			void on_float(ast::TpFloat& type) override { result = "Float"; }
 			void on_double(ast::TpDouble& type) override { result = "Double"; }
 			void on_function(ast::TpFunction& type) override { error(type); }
 			void on_lambda(ast::TpLambda& type) override { error(type); }
@@ -391,9 +402,25 @@ struct Typer : ast::ActionMatcher {
 				node.error("cannot call a *method on a non-shared object");
 		}
 	}
+	void expect_numeric(ast::Type& t, ast::Node& node, const char* context) {
+		 if(!is_numeric(t))
+			node.error(context, " needs int or floating type");
+	}
+	void on_to_int32(ast::ToInt32Op& node) override {
+		node.type_ = ast->tp_int32();
+		expect_numeric(*find_type(node.p)->type(), *node.p, "convertion to int32");
+	}
 	void on_to_int(ast::ToIntOp& node) override {
 		node.type_ = ast->tp_int64();
-		expect_type(find_type(node.p), ast->tp_double(), [] { return "double to int conversion"; });
+		expect_numeric(*find_type(node.p)->type(), *node.p, "convertion to int");
+	}
+	void on_to_double(ast::ToDoubleOp& node) override {
+		node.type_ = ast->tp_double();
+		expect_numeric(*find_type(node.p)->type(), *node.p, "convertion to double");
+	}
+	void on_to_float(ast::ToFloatOp& node) override {
+		node.type_ = ast->tp_float();
+		expect_numeric(*find_type(node.p)->type(), *node.p, "convertion to float");
 	}
 	void on_copy(ast::CopyOp& node) override {
 		auto param_type = find_type(node.p)->type();
@@ -402,19 +429,19 @@ struct Typer : ast::ActionMatcher {
 		else
 			node.error("copy operand should be a reference, not ", param_type.pinned());
 	}
-	void on_to_float(ast::ToFloatOp& node) override {
-		node.type_ = ast->tp_double();
-		expect_type(find_type(node.p), ast->tp_int64(), [] { return "int to double conversion"; });
-	}
 	void on_not(ast::NotOp& node) override {
 		node.type_ = tp_bool;
 		handle_condition(node.p, [] { return "not operator"; });
 	}
 	void on_neg(ast::NegOp& node) override {
-		auto& t = find_type(node.p)->type();
-		if (!dom::strict_cast<ast::TpInt64>(t) && !dom::strict_cast<ast::TpDouble>(t))
+		node.type_ = find_type(node.p)->type();
+		if (!is_numeric(*node.type_))
 			node.p->error("expected int or double");
-		node.type_ = t;
+	}
+	void on_inv(ast::InvOp& node) override {
+		node.type_ = find_type(node.p)->type();
+		if (!is_integer(*node.type_))
+			node.p->error("expected int or int32");
 	}
 	void on_ref(ast::RefOp& node) override {
 		auto as_own = dom::strict_cast<ast::TpOwn>(find_type(node.p)->type());
@@ -625,7 +652,9 @@ struct Typer : ast::ActionMatcher {
 					r.push_back(remove_params(p, ast, ctx));
 				return r;
 			}
+			void on_int32(ast::TpInt32& type) override { r = &type; }
 			void on_int64(ast::TpInt64& type) override { r = &type; }
+			void on_float(ast::TpFloat& type) override { r = &type; }
 			void on_double(ast::TpDouble& type) override { r = &type; }
 			void on_function(ast::TpFunction& type) override { r = ast.tp_function(convert_params(type.params)); }
 			void on_lambda(ast::TpLambda& type) override { r = ast.tp_lambda(convert_params(type.params)); }

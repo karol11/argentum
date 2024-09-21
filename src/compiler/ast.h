@@ -106,9 +106,17 @@ struct Type : dom::DomItem {
 	static own<Type>& promote(own<Type>& to_patch);  // replaces cold lambda with a resolved lambda type
 	virtual void match(TypeMatcher& matcher) = 0;
 };
+struct TpInt32 : Type {
+	void match(TypeMatcher& matcher) override;
+	DECLARE_DOM_CLASS(TpInt32);
+};
 struct TpInt64 : Type {
 	void match(TypeMatcher& matcher) override;
 	DECLARE_DOM_CLASS(TpInt64);
+};
+struct TpFloat : Type {
+	void match(TypeMatcher& matcher) override;
+	DECLARE_DOM_CLASS(TpFloat);
 };
 struct TpDouble : Type {
 	void match(TypeMatcher& matcher) override;
@@ -302,7 +310,9 @@ struct TpConformWeak : TpOwn {
 
 struct TypeMatcher {
 	virtual ~TypeMatcher() = default;
+	virtual void on_int32(TpInt32& type) = 0;
 	virtual void on_int64(TpInt64& type) = 0;
+	virtual void on_float(TpFloat& type) = 0;
 	virtual void on_double(TpDouble& type) = 0;
 	virtual void on_function(TpFunction& type) = 0;
 	virtual void on_lambda(TpLambda& type) = 0;
@@ -415,7 +425,9 @@ struct Ast: dom::DomItem {
 	void add_this_param(ast::Function& fn, pin<ast::Class> cls);
 
 	pin<TpInt64> tp_int64();
+	pin<TpInt32> tp_int32();
 	pin<TpDouble> tp_double();
+	pin<TpFloat> tp_float();
 	pin<TpVoid> tp_void();
 	pin<TpNoRet> tp_no_ret();
 	pin<TpFunction> tp_function(vector<own<Type>>&& params);
@@ -440,6 +452,11 @@ struct Ast: dom::DomItem {
 	DECLARE_DOM_CLASS(Ast);
 };
 
+struct ConstInt32: Action {
+	int32_t value = 0;
+	void match(ActionMatcher& matcher) override;
+	DECLARE_DOM_CLASS(ConstInt32);
+};
 struct ConstInt64: Action {
 	int64_t value = 0;
 	void match(ActionMatcher& matcher) override;
@@ -457,6 +474,11 @@ struct ConstString : Action {
 	DECLARE_DOM_CLASS(ConstString);
 };
 
+struct ConstFloat : Action {
+	float value = 0;
+	void match(ActionMatcher& matcher) override;
+	DECLARE_DOM_CLASS(ConstFloat);
+};
 struct ConstDouble : Action {
 	double value = 0;
 	void match(ActionMatcher& matcher) override;
@@ -708,6 +730,10 @@ struct Loop : UnaryOp {
 	DECLARE_DOM_CLASS(Loop);
 };
 
+struct ToInt32Op : UnaryOp {
+	void match(ActionMatcher& matcher) override;
+	DECLARE_DOM_CLASS(ToInt32Op);
+};
 struct ToIntOp : UnaryOp {
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(ToIntOp);
@@ -716,6 +742,10 @@ struct ToFloatOp : UnaryOp {
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(ToFloatOp);
 };
+struct ToDoubleOp : UnaryOp {
+	void match(ActionMatcher& matcher) override;
+	DECLARE_DOM_CLASS(ToDoubleOp);
+};
 struct ToStrOp : BinaryOp {
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(ToStrOp);
@@ -723,6 +753,10 @@ struct ToStrOp : BinaryOp {
 struct NotOp : UnaryOp {
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(NotOp);
+};
+struct InvOp : UnaryOp {
+	void match(ActionMatcher& matcher) override;
+	DECLARE_DOM_CLASS(InvOp);
 };
 struct NegOp : UnaryOp {
 	void match(ActionMatcher& matcher) override;
@@ -747,8 +781,10 @@ struct ActionMatcher {
 	virtual void on_un_op(UnaryOp& node);
 
 	virtual void on_const_enum_tag(ConstEnumTag& node);
+	virtual void on_const_i32(ConstInt32& node);
 	virtual void on_const_i64(ConstInt64& node);
 	virtual void on_const_string(ConstString& node);
+	virtual void on_const_float(ConstFloat& node);
 	virtual void on_const_double(ConstDouble& node);
 	virtual void on_const_void(ConstVoid& node);
 	virtual void on_const_bool(ConstBool& node);
@@ -791,10 +827,13 @@ struct ActionMatcher {
 	virtual void on_mk_weak(MkWeakOp& node);
 	virtual void on_deref_weak(DerefWeakOp& node);
 
+	virtual void on_to_int32(ToInt32Op& node);
 	virtual void on_to_int(ToIntOp& node);
 	virtual void on_to_float(ToFloatOp& node);
+	virtual void on_to_double(ToDoubleOp& node);
 	virtual void on_not(NotOp& node);
 	virtual void on_neg(NegOp& node);
+	virtual void on_inv(InvOp& node);
 	virtual void on_ref(RefOp& node);
 	virtual void on_conform(ConformOp& node);
 	virtual void on_freeze(FreezeOp& node);

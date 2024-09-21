@@ -78,7 +78,7 @@ int main(int argc, char* argv[]) {
                     "                or x86_64-w64-microsoft-windows\n"
                     "  -g         : generate debug info\n"
                     "  -emit-llvm : output bitcode\n"
-                    "  -ON        : optimize 0-none, 1-less, 2-default, 4-aggressive\n"
+                    "  -ON        : optimize 0-none, 1-less, 2-default, 3-aggressive\n"
                     "  -S         : output asm file\n";
                 return 0;
             } else if (strcmp(*arg, "-S") == 0) {

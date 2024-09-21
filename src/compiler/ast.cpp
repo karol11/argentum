@@ -18,9 +18,11 @@ own<TypeWithFills> Ast::dom_type_;
 own<TypeWithFills> Var::dom_type_;
 own<TypeWithFills> Module::dom_type_;
 
+own<TypeWithFills> ConstInt32::dom_type_;
 own<TypeWithFills> ConstInt64::dom_type_;
 own<TypeWithFills> ConstEnumTag::dom_type_;
 own<TypeWithFills> ConstString::dom_type_;
+own<TypeWithFills> ConstFloat::dom_type_;
 own<TypeWithFills> ConstDouble::dom_type_;
 own<TypeWithFills> ConstVoid::dom_type_;
 own<TypeWithFills> ConstBool::dom_type_;
@@ -39,10 +41,13 @@ own<TypeWithFills> SpliceField::dom_type_;
 own<TypeWithFills> MkInstance::dom_type_;
 
 own<TypeWithFills> ToStrOp::dom_type_;
+own<TypeWithFills> ToInt32Op::dom_type_;
 own<TypeWithFills> ToIntOp::dom_type_;
 own<TypeWithFills> ToFloatOp::dom_type_;
+own<TypeWithFills> ToDoubleOp::dom_type_;
 own<TypeWithFills> NotOp::dom_type_;
 own<TypeWithFills> NegOp::dom_type_;
+own<TypeWithFills> InvOp::dom_type_;
 own<TypeWithFills> RefOp::dom_type_;
 own<TypeWithFills> ConformOp::dom_type_;
 own<TypeWithFills> FreezeOp::dom_type_;
@@ -71,7 +76,9 @@ own<TypeWithFills> MkWeakOp::dom_type_;
 own<TypeWithFills> DerefWeakOp::dom_type_;
 
 own<TypeWithFills> TpEnum::dom_type_;
+own<TypeWithFills> TpInt32::dom_type_;
 own<TypeWithFills> TpInt64::dom_type_;
+own<TypeWithFills> TpFloat::dom_type_;
 own<TypeWithFills> TpDouble::dom_type_;
 own<TypeWithFills> TpFunction::dom_type_;
 own<TypeWithFills> TpLambda::dom_type_;
@@ -136,12 +143,18 @@ void initialize() {
 	Var::dom_type_ = (new CppClassType<Var>(cpp_dom, { "m0", "Var" }))
 		->field("name", pin<CField<&Var::name>>::make(string_type))
 		->field("initializer", pin<CField<&Var::initializer>>::make(own_type));
+	ConstInt32::dom_type_ = (new CppClassType<ConstInt32>(cpp_dom, {"m0", "Int32"}))
+		->field("value", pin<CField<&ConstInt32::value>>::make(
+			cpp_dom->mk_type(Kind::INT, sizeof(int32_t))));
 	ConstInt64::dom_type_ = (new CppClassType<ConstInt64>(cpp_dom, {"m0", "Int"}))
 		->field("value", pin<CField<&ConstInt64::value>>::make(
 			cpp_dom->mk_type(Kind::INT, sizeof(int64_t))));
 	ConstString::dom_type_ = (new CppClassType<ConstString>(cpp_dom, { "m0", "Str" }))
 		->field("value", pin<CField<&ConstString::value>>::make(
 			string_type));
+	ConstFloat::dom_type_ = (new CppClassType<ConstFloat>(cpp_dom, { "m0", "Float" }))
+		->field("value", pin<CField<&ConstFloat::value>>::make(
+			cpp_dom->mk_type(Kind::FLOAT, sizeof(float))));
 	ConstDouble::dom_type_ = (new CppClassType<ConstDouble>(cpp_dom, { "m0", "Double" }))
 		->field("value", pin<CField<&ConstDouble::value>>::make(
 			cpp_dom->mk_type(Kind::FLOAT, sizeof(double))));
@@ -166,13 +179,19 @@ void initialize() {
 		->field("field", pin<CField<&FieldRef::field>>::make(weak_type))
 		->field("base", pin<CField<&FieldRef::base>>::make(own_type))
 		->field("val", pin<CField<&SetField::val>>::make(own_type));
+	ToInt32Op::dom_type_ = (new CppClassType<ToIntOp>(cpp_dom, { "m0", "ToInt32" }))
+		->field("p", pin<CField<&UnaryOp::p>>::make(own_type));
 	ToIntOp::dom_type_ = (new CppClassType<ToIntOp>(cpp_dom, { "m0", "ToInt" }))
 		->field("p", pin<CField<&UnaryOp::p>>::make(own_type));
 	ToFloatOp::dom_type_ = (new CppClassType<ToFloatOp>(cpp_dom, { "m0", "ToFloat" }))
 		->field("p", pin<CField<&UnaryOp::p>>::make(own_type));
+	ToDoubleOp::dom_type_ = (new CppClassType<ToDoubleOp>(cpp_dom, { "m0", "ToDouble" }))
+		->field("p", pin<CField<&UnaryOp::p>>::make(own_type));
 	NotOp::dom_type_ = (new CppClassType<NotOp>(cpp_dom, { "m0", "Not" }))
 		->field("p", pin<CField<&UnaryOp::p>>::make(own_type));
 	NegOp::dom_type_ = (new CppClassType<NegOp>(cpp_dom, { "m0", "Neg" }))
+		->field("p", pin<CField<&UnaryOp::p>>::make(own_type));
+	InvOp::dom_type_ = (new CppClassType<InvOp>(cpp_dom, { "m0", "Inv" }))
 		->field("p", pin<CField<&UnaryOp::p>>::make(own_type));
 	RefOp::dom_type_ = (new CppClassType<RefOp>(cpp_dom, { "m0", "Ref" }))
 		->field("p", pin<CField<&UnaryOp::p>>::make(own_type));
@@ -290,7 +309,9 @@ void initialize() {
 		->field("target", pin<CField<&TpOwn::target>>::make(weak_type));
 	TpConformWeak::dom_type_ = (new CppClassType<TpConformWeak>(cpp_dom, { "m0", "Type", "ConformWeak" }))
 		->field("target", pin<CField<&TpOwn::target>>::make(weak_type));
+	TpInt32::dom_type_ = new CppClassType<TpInt32>(cpp_dom, { "m0", "Type", "Int32" });
 	TpInt64::dom_type_ = new CppClassType<TpInt64>(cpp_dom, { "m0", "Type", "Int64" });
+	TpFloat::dom_type_ = new CppClassType<TpDouble>(cpp_dom, { "m0", "Type", "Float" });
 	TpDouble::dom_type_ = new CppClassType<TpDouble>(cpp_dom, { "m0", "Type", "Double" });
 	TpFunction::dom_type_ = (new CppClassType<TpFunction>(cpp_dom, { "m0", "Type", "Function" }))
 		->field("params", pin<CField<&TpFunction::params>>::make(own_vector_type));
@@ -322,8 +343,10 @@ own<Type>& Action::type() {
 
 void Action::match(ActionMatcher& matcher) { matcher.on_unmatched(*this); };
 void ConstEnumTag::match(ActionMatcher& matcher) { matcher.on_const_enum_tag(*this); }
+void ConstInt32::match(ActionMatcher& matcher) { matcher.on_const_i32(*this); }
 void ConstInt64::match(ActionMatcher& matcher) { matcher.on_const_i64(*this); }
 void ConstString::match(ActionMatcher& matcher) { matcher.on_const_string(*this); }
+void ConstFloat::match(ActionMatcher& matcher) { matcher.on_const_float(*this); }
 void ConstDouble::match(ActionMatcher& matcher) { matcher.on_const_double(*this); }
 void ConstVoid::match(ActionMatcher& matcher) { matcher.on_const_void(*this); }
 void ConstBool::match(ActionMatcher& matcher) { matcher.on_const_bool(*this); }
@@ -341,10 +364,13 @@ void SetAtIndex::match(ActionMatcher& matcher) { matcher.on_set_at_index(*this);
 void MakeDelegate::match(ActionMatcher& matcher) { matcher.on_make_delegate(*this); }
 void ImmediateDelegate::match(ActionMatcher& matcher) { matcher.on_immediate_delegate(*this); }
 void MakeFnPtr::match(ActionMatcher& matcher) { matcher.on_make_fn_ptr(*this); }
+void ToInt32Op::match(ActionMatcher& matcher) { matcher.on_to_int32(*this); }
 void ToIntOp::match(ActionMatcher& matcher) { matcher.on_to_int(*this); }
 void ToFloatOp::match(ActionMatcher& matcher) { matcher.on_to_float(*this); }
+void ToDoubleOp::match(ActionMatcher& matcher) { matcher.on_to_double(*this); }
 void NotOp::match(ActionMatcher& matcher) { matcher.on_not(*this); }
 void NegOp::match(ActionMatcher& matcher) { matcher.on_neg(*this); }
+void InvOp::match(ActionMatcher& matcher) { matcher.on_inv(*this); }
 void RefOp::match(ActionMatcher& matcher) { matcher.on_ref(*this); }
 void ConformOp::match(ActionMatcher& matcher) { matcher.on_conform(*this); }
 void FreezeOp::match(ActionMatcher& matcher) { matcher.on_freeze(*this); }
@@ -377,8 +403,10 @@ void ActionMatcher::on_unmatched(Action& node) {}
 void ActionMatcher::on_un_op(UnaryOp& node) { on_unmatched(node); }
 void ActionMatcher::on_bin_op(BinaryOp& node) { on_unmatched(node); }
 void ActionMatcher::on_const_enum_tag(ConstEnumTag& node) { on_unmatched(node); }
+void ActionMatcher::on_const_i32(ConstInt32& node) { on_unmatched(node); }
 void ActionMatcher::on_const_i64(ConstInt64& node) { on_unmatched(node); }
 void ActionMatcher::on_const_string(ConstString& node) { on_unmatched(node); }
+void ActionMatcher::on_const_float(ConstFloat& node) { on_unmatched(node); }
 void ActionMatcher::on_const_double(ConstDouble& node) { on_unmatched(node); }
 void ActionMatcher::on_const_void(ConstVoid& node) { on_unmatched(node); }
 void ActionMatcher::on_const_bool(ConstBool& node) { on_unmatched(node); }
@@ -396,10 +424,13 @@ void ActionMatcher::on_set_at_index(SetAtIndex& node) { on_unmatched(node); }
 void ActionMatcher::on_make_delegate(MakeDelegate& node) { on_unmatched(node); }
 void ActionMatcher::on_immediate_delegate(ImmediateDelegate& node) { on_unmatched(node); }
 void ActionMatcher::on_make_fn_ptr(MakeFnPtr& node) { on_unmatched(node); }
+void ActionMatcher::on_to_int32(ToInt32Op& node) { on_un_op(node); }
 void ActionMatcher::on_to_int(ToIntOp& node) { on_un_op(node); }
 void ActionMatcher::on_to_float(ToFloatOp& node) { on_un_op(node); }
+void ActionMatcher::on_to_double(ToDoubleOp& node) { on_un_op(node); }
 void ActionMatcher::on_not(NotOp& node) { on_un_op(node); }
 void ActionMatcher::on_neg(NegOp& node) { on_un_op(node); }
+void ActionMatcher::on_inv(InvOp& node) { on_un_op(node); }
 void ActionMatcher::on_ref(RefOp& node) { on_un_op(node); }
 void ActionMatcher::on_conform(ConformOp& node) { on_un_op(node); }
 void ActionMatcher::on_freeze(FreezeOp& node) { on_un_op(node); }
@@ -479,7 +510,9 @@ void ActionScanner::on_set_field(SetField& node) {
 }
 void ActionScanner::on_splice_field(SpliceField& node) { on_set_field(node); }
 
+void TpInt32::match(TypeMatcher& matcher) { matcher.on_int32(*this); }
 void TpInt64::match(TypeMatcher& matcher) { matcher.on_int64(*this); }
+void TpFloat::match(TypeMatcher& matcher) { matcher.on_float(*this); }
 void TpDouble::match(TypeMatcher& matcher) { matcher.on_double(*this); }
 void TpFunction::match(TypeMatcher& matcher) { matcher.on_function(*this); }
 void TpLambda::match(TypeMatcher& matcher) { matcher.on_lambda(*this); }
@@ -596,8 +629,16 @@ Ast::Ast()
 	register_runtime_content(*this);
 }
 
+pin<TpInt32> Ast::tp_int32() {
+	static auto r = own<TpInt32>::make();
+	return r;
+}
 pin<TpInt64> Ast::tp_int64() {
 	static auto r = own<TpInt64>::make();
+	return r;
+}
+pin<TpFloat> Ast::tp_float() {
+	static auto r = own<TpFloat>::make();
 	return r;
 }
 pin<TpDouble> Ast::tp_double() {
@@ -917,7 +958,9 @@ std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t) {
 	struct TypePrinter : ast::TypeMatcher {
 		std::ostream& dst;
 		TypePrinter(std::ostream& dst) : dst(dst) {}
+		void on_int32(ast::TpInt32& type) override { dst << "short"; }
 		void on_int64(ast::TpInt64& type) override { dst << "int"; }
+		void on_float(ast::TpFloat& type) override { dst << "float"; }
 		void on_double(ast::TpDouble& type) override { dst << "double"; }
 		void on_void(ast::TpVoid& type) override { dst << "void"; }
 		void on_no_ret(ast::TpNoRet& type) override { dst << "no_ret"; }

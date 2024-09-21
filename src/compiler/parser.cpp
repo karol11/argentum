@@ -370,8 +370,12 @@ struct Parser {
 	pin<Action> parse_maybe_void_type() {
 		if (match("~"))
 			return parse_expression();
+		if (match("short"))
+			return mk_const<ast::ConstInt32>(0);
 		if (match("int"))
 			return mk_const<ast::ConstInt64>(0);
+		if (match("float"))
+			return mk_const<ast::ConstFloat>(0.0);
 		if (match("double"))
 			return mk_const<ast::ConstDouble>(0.0);
 		if (match("bool"))
@@ -854,9 +858,7 @@ struct Parser {
 		if (match("-"))
 			return fill(make<ast::NegOp>(), parse_unar());
 		if (match("~"))
-			return fill(make<ast::XorOp>(),
-				parse_unar(),
-				mk_const<ast::ConstInt64>(-1));
+			return fill(make<ast::InvOp>(), parse_unar());
 		if (match("^")) {
 			auto r = make<ast::Break>();
 			r->block_name = expect_id("block to break");
@@ -867,8 +869,12 @@ struct Parser {
 			return r;
 		}
 		if (auto n = match_num()) {
+			if (auto v = get_if<uint32_t>(&*n))
+				return mk_const<ast::ConstInt32>(*v);
 			if (auto v = get_if<uint64_t>(&*n))
 				return mk_const<ast::ConstInt64>(*v);
+			if (auto v = get_if<float>(&*n))
+				return mk_const<ast::ConstFloat>(*v);
 			if (auto v = get_if<double>(&*n))
 				return mk_const<ast::ConstDouble>(*v);
 		}
@@ -887,10 +893,14 @@ struct Parser {
 			r->value = matched_true;
 			return r;
 		}
+		if (match("short"))
+			return fill(make<ast::ToInt32Op>(), parse_expression_in_parethesis());
+		if (match("float"))
+			return fill(make<ast::ToFloatOp>(), parse_expression_in_parethesis());
 		if (match("int"))
 			return fill(make<ast::ToIntOp>(), parse_expression_in_parethesis());
 		if (match("double"))
-			return fill(make<ast::ToFloatOp>(), parse_expression_in_parethesis());
+			return fill(make<ast::ToDoubleOp>(), parse_expression_in_parethesis());
 		if (match("loop")) 
 			return fill(make<ast::Loop>(), parse_unar());
 		if (match("_")) {
@@ -1132,12 +1142,6 @@ struct Parser {
 		error("expected ", message);
 	}
 
-	variant<uint64_t, double> expect_number() {
-		if (auto n = match_num())
-			return *n;
-		error("expected number");
-	}
-
 	int match_length(const char* str) { // returns 0 if not matched, length to skip if matched
 		int i = 0;
 		for (; str[i]; i++) {
@@ -1243,7 +1247,7 @@ struct Parser {
 		return 255;
 	}
 
-	optional<variant<uint64_t, double>> match_num() {
+	optional<variant<uint64_t, uint32_t, double, float>> match_num() {
 		if (!is_num(*cur))
 			return nullopt;
 		int radix = 10;
@@ -1279,7 +1283,13 @@ struct Parser {
 				error("overflow");
 			result = next;
 		}
-		if (*cur != '.' && *cur != 'e' && *cur != 'E') {
+		if (match_ns("s")) {
+			match_ws();
+			if ((result >> (radix == 10 ? 31 : 32)) != 0)
+				error("32-bit overflow");
+			return (uint32_t)result;
+		}
+		if (*cur != '.' && *cur != 'e' && *cur != 'f') {
 			match_ws();
 			if (radix == 10 && (result >> 63) != 0)
 				error("oveflow");
@@ -1291,15 +1301,21 @@ struct Parser {
 			for (double weight = 0.1; is_num(*cur); weight *= 0.1, cur++, pos++)
 				d += weight * (*cur - '0');
 		}
-		if (match_ns("E") || match_ns("e")) {
+		if (match_ns("e")) {
 			int sign = match_ns("-") ? -1 : (match_ns("+"), 1);
 			int exp = 0;
 			for (; *cur >= '0' && *cur < '9'; cur++, pos++)
 				exp = exp * 10 + *cur - '0';
 			d *= pow(10, exp * sign);
 		}
+		if (match_ns("f")) {
+			float f = (float) d;
+			if (std::fetestexcept(FE_OVERFLOW | FE_UNDERFLOW))
+				error("float overflow");
+			return f;
+		}
 		if (std::fetestexcept(FE_OVERFLOW | FE_UNDERFLOW))
-			error("numeric overflow");
+			error("double overflow");
 		match_ws();
 		return d;
 	}
