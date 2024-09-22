@@ -5,24 +5,24 @@ using array;
 
 class Scene {
     +Window;
-    initScene(title str, w int, h int) {
+    initScene(title str, w short, h short) {
         sdl.init(sdl_xInitEverything, sdl_xImgJpg | sdl_xImgPng );
-        init(title, Rect.xywh(sdl_xDefaultPos, sdl_xDefaultPos, w, h), 0, sdl_xRendererAccelerated);
-        clip.xywh(0, 0, w, h);
+        init(title, Rect.xywh(sdl_xDefaultPos, sdl_xDefaultPos, w, h), 0s, sdl_xRendererAccelerated);
+        clip.xywh(0s, 0s, w, h);
     }
     nextFrame() {
         frameStartMs = nowMs();
-        loop !(sdl.pollEvent() ? {
-            _[0] == sdl_xEventQuit ? sys_setMainObject(?sys_Object);
+        loop !(sdl.pollEvent() ? `event {
+            event[0] == sdl_xEventQuit ? sys_setMainObject(?sys_Object);
         });
         roots.each\_.render();
         flip();
         animators.plow\_.step(1000/60);
         sys_postTimer(frameStartMs + 1000/60, this.nextFrame);
     }
-    x = 0;
-    y = 0;
-    opacity = 255;
+    x = 0s;
+    y = 0s;
+    opacity = 255s;
 //    scaleX = 0x1_0000;
 //    scaleY = 0x1_0000;
     clip = Rect;
@@ -58,21 +58,21 @@ class XYAnimator {
             isInProgress ? {
                 dur -= deltaMs;
                 setter(
-                    dstX - dur * xs >> 32,
-                    dstY - dur * ys >> 32);
+                    dstX - short(dur * xs >> 32),
+                    dstY - short(dur * ys >> 32));
             } : setter(dstX, dstY);
             isInProgress
         }
     }
-    setter = Object.&dummyXY(x int, y int){};
+    setter = Object.&dummyXY(x short, y short){};
     xs = 0;
     ys = 0;
-    dstX = 0;
-    dstY = 0;
+    dstX = 0s;
+    dstY = 0s;
     dur = 0;
-    init(startX int, startY int, endX int, endY int, durationMs int, setter&(int, int)) this {
-        xs := (endX - startX) << 32 / durationMs;
-        ys := (endY - startY) << 32 / durationMs;
+    init(startX short, startY short, endX short, endY short, durationMs int, setter&(short, short)) this {
+        xs := int(endX - startX) << 32 / durationMs;
+        ys := int(endY - startY) << 32 / durationMs;
         dstX := endX;
         dstY := endY;
         dur := durationMs;
@@ -86,34 +86,34 @@ class ArgbAnimator {
             isInProgress = dur > deltaMs;
             isInProgress ? {
                 dur -= deltaMs;
-                a = dstA - dur * as >> 32;
-                r = dstR - dur * rs >> 32;
-                g = dstG - dur * gs >> 32;
-                b = dstB - dur * bs >> 32;
-                setter((a << 24) | (r << 16) | (g << 8) | b);
-            } : setter((dstA << 24) | (dstR << 16) | (dstG << 8) | dstB);
+                a = dstA - short(dur * as >> 32);
+                r = dstR - short(dur * rs >> 32);
+                g = dstG - short(dur * gs >> 32);
+                b = dstB - short(dur * bs >> 32);
+                setter((a << 24s) | (r << 16s) | (g << 8s) | b);
+            } : setter((dstA << 24s) | (dstR << 16s) | (dstG << 8s) | dstB);
             isInProgress
         }
     }
-    setter = Object.&dummyARGB(argb int){};
+    setter = Object.&dummyARGB(argb short){};
     as = 0;
     rs = 0;
     gs = 0;
     bs = 0;
-    dstA = 0;
-    dstR = 0;
-    dstG = 0;
-    dstB = 0;
+    dstA = 0s;
+    dstR = 0s;
+    dstG = 0s;
+    dstB = 0s;
     dur = 0;
-    init(start int, end int, durationMs int, setter&(int)) this {
-        dstA := end >> 24 & 0xff;
-        dstR := end >> 16 & 0xff;
-        dstG := end >> 8 & 0xff;
-        dstB := end & 0xff;
-        as := (dstA - start >> 24 & 0xff) << 32 / durationMs;
-        rs := (dstR - start >> 16 & 0xff) << 32 / durationMs;
-        gs := (dstG - start >> 8 & 0xff) << 32 / durationMs;
-        bs := (dstB - start & 0xff) << 32 / durationMs;
+    init(start short, end short, durationMs int, setter&(short)) this {
+        dstA := end >> 24s & 0xffs;
+        dstR := end >> 16s & 0xffs;
+        dstG := end >> 8s & 0xffs;
+        dstB := end & 0xffs;
+        as := int(dstA - start >> 24s & 0xffs) << 32 / durationMs;
+        rs := int(dstR - start >> 16s & 0xffs) << 32 / durationMs;
+        gs := int(dstG - start >> 8s & 0xffs) << 32 / durationMs;
+        bs := int(dstB - start & 0xffs) << 32 / durationMs;
         dur := durationMs;
         this.setter := setter;
     }
@@ -125,19 +125,19 @@ class ValAnimator {
             isInProgress = dur > deltaMs;
             isInProgress ? {
                 dur -= deltaMs;
-                setter(end - dur * scaler >> 32);
+                setter(end - short(dur * scaler >> 32));
             } : setter(end);
             isInProgress
         }
     }
-    setter = Object.&dummyV(v int){};
-    end = 0;
+    setter = Object.&dummyV(v short){};
+    end = 0s;
     scaler = 0;
     dur = 0;
-    init(startV int, endV int, durationMs int, setter&(int)) this {
+    init(startV short, endV short, durationMs int, setter&(short)) this {
         end := endV;
         dur := durationMs;
-        scaler = (endV - startV) << 32 / durationMs;
+        scaler = int(endV - startV) << 32 / durationMs;
         this.setter := setter;
     }
 }
@@ -151,20 +151,20 @@ class Opacity {
     +Modifier {
         do(c Scene) {
             saved := c.opacity;
-            c.opacity := c.opacity * val >> 8;
+            c.opacity := c.opacity * val >> 8s;
         }
         undo(c Scene) {
             c.opacity := saved;
         }
     }
-    set(v int) this { val := v }
-    animate(s Scene, dst int, durationMs int) this {
-        s.animators.append(ValAnimator.init(val, dst, durationMs, this.&opacitySetter(v int){
+    set(v short) this { val := v }
+    animate(s Scene, dst short, durationMs int) this {
+        s.animators.append(ValAnimator.init(val, dst, durationMs, this.&opacitySetter(v short){
             val := v;
         }))
     } 
-    val = 255;
-    saved = 0;
+    val = 255s;
+    saved = 0s;
 }
 
 class Clip {
@@ -173,22 +173,22 @@ class Clip {
         undo(s Scene) {}
     }
     r = Rect;
-    set(x int, y int, w int, h int) { r.xywh(x, y, w, h) }
+    set(x short, y short, w short, h short) { r.xywh(x, y, w, h) }
     // animate(s Scene, )
 }
 
 class Item{
     render() {}
-    x = 0;
-    y = 0;
+    x = 0s;
+    y = 0s;
     scene = &Scene;
     call(s Scene) this { scene := &s }
-    setPos(x int, y int) this {
+    setPos(x short, y short) this {
         this.x := x;
         this.y := y;
     }
-    animatePos(dx int, dy int, durMs int) this {
-        scene?_.animators.append(XYAnimator.init(x, y, dx, dy, durMs, this.&posSetter(vx int, vy int){
+    animatePos(dx short, dy short, durMs int) this {
+        scene?_.animators.append(XYAnimator.init(x, y, dx, dy, durMs, this.&posSetter(vx short, vy short){
             x := vx;
             y := vy;    
         }))
@@ -200,12 +200,12 @@ class Image{
         render() {
             scene ?
                 bltRect(_,
-                    0, 0, img.w, img.h,
-                    0, 0, img.w, img.h,
-                    color >> 24 * _.opacity >> 8 << 24 | (color & 0xff_ff_ff));
+                    0s, 0s, img.w, img.h,
+                    0s, 0s, img.w, img.h,
+                    color >> 24s * _.opacity >> 8s << 24s | (color & 0xff_ff_ffs));
         }
     }
-    bltRect(s Scene, srcX int, srcY int, srcW int, srcH int, dstX int, dstY int, dstW int, dstH int, color int) {
+    bltRect(s Scene, srcX short, srcY short, srcW short, srcH short, dstX short, dstY short, dstW short, dstH short, color short) {
         s.bltXYWH(img,
             srcX, srcY, srcW, srcH,
             x + s.x + dstX,
@@ -217,20 +217,20 @@ class Image{
         scene?_.loadTexture(name) ? img := _;
     }
     texture(t *Texture) this { img := t }
-    setColor(c int) this { color := c }
-    animateColor(dst int, durationMs int) this {
-        scene?_.animators.append(ArgbAnimator.init(color, dst, durationMs, this.&colorSetter(v int){
+    setColor(c short) this { color := c }
+    animateColor(dst short, durationMs int) this {
+        scene?_.animators.append(ArgbAnimator.init(color, dst, durationMs, this.&colorSetter(v short){
             color := v;
         }))
     }
 
-    color = 0xff_ff_ff_ff;
+    color = 0xff_ff_ff_ffs;
     img = *Texture;
 }
 
 class Label{
     +Image;
-    init(font *Font, size int, style int, text str) this {
+    init(font *Font, size short, style short, text str) this {
         this.font := font;
         this.size := size;
         this.style := style;
@@ -241,8 +241,8 @@ class Label{
         img := font.render(text, size, style);
     }
     font = *Font;
-    size = 14;
-    style = 0;
+    size = 14s;
+    style = 0s;
     text = "";
 }
 
@@ -250,9 +250,9 @@ class Frame{
     +Image {
         render() {
             scene ? {
-                c = color >> 24 * _.opacity >> 8 << 24 | (color & 0xff_ff_ff);
-                w = max(width, img.w);
-                h = max(height, img.h);
+                c = color >> 24s * _.opacity >> 8s << 24s | (color & 0xff_ff_ffs);
+                w = maxI32(width, img.w);
+                h = maxI32(height, img.h);
                 srcLastX = img.w - right;
                 dstLastX = w - right;
                 srcLastY = img.h - bottom;
@@ -262,44 +262,44 @@ class Frame{
                 dstMiddleW = dstLastX - left;
                 dstMiddleH = dstLastY - top;
 
-                bltRect(_, 0,        0, left,       top, 0,        0, left,       top, c);
-                bltRect(_, left,     0, srcMiddleW, top, left,     0, dstMiddleW, top, c);
-                bltRect(_, srcLastX, 0, right,      top, dstLastX, 0, right,      top, c);
+                bltRect(_, 0s,       0s, left,       top, 0s,       0s, left,       top, c);
+                bltRect(_, left,     0s, srcMiddleW, top, left,     0s, dstMiddleW, top, c);
+                bltRect(_, srcLastX, 0s, right,      top, dstLastX, 0s, right,      top, c);
 
-                bltRect(_, 0,        top, left,       srcMiddleH, 0,        top, left,       dstMiddleH, c);
+                bltRect(_, 0s,       top, left,       srcMiddleH, 0s,       top, left,       dstMiddleH, c);
                 bltRect(_, left,     top, srcMiddleW, srcMiddleH, left,     top, dstMiddleW, dstMiddleH, c);
                 bltRect(_, srcLastX, top, right,      srcMiddleH, dstLastX, top, right,      dstMiddleH, c);
 
-                bltRect(_, 0,        srcLastY, left,       bottom, 0,        dstLastY, left,       bottom, c);
+                bltRect(_, 0s,       srcLastY, left,       bottom, 0s,       dstLastY, left,       bottom, c);
                 bltRect(_, left,     srcLastY, srcMiddleW, bottom, left,     dstLastY, dstMiddleW, bottom, c);
                 bltRect(_, srcLastX, srcLastY, right,      bottom, dstLastX, dstLastY, right,      bottom, c);
             }
         }
     }
-    init(fileName str, leftWidth int, topWidth int, rightWidth int, bottomWidth int) this {
+    init(fileName str, leftWidth short, topWidth short, rightWidth short, bottomWidth short) this {
         load(fileName);
         left := leftWidth;
         right := rightWidth;
         top := topWidth;
         bottom := bottomWidth;
     }
-    setSize(w int, h int) this {
+    setSize(w short, h short) this {
         width := w;
         height := h;
     }
-    animateSize(dstW int, dstH int, durationMs int) this {
-        scene?_.animators.append(XYAnimator.init(width, height, dstW, dstH, durationMs, this.&setFrameSize(w int, h int){
+    animateSize(dstW short, dstH short, durationMs int) this {
+        scene?_.animators.append(XYAnimator.init(width, height, dstW, dstH, durationMs, this.&setFrameSize(w short, h short){
             width := w;
             height := h;
         }));
     }
-    width = 0;
-    height = 0;
+    width = 0s;
+    height = 0s;
 
-    left = 0;
-    top = 0;
-    right = 0;
-    bottom = 0;
+    left = 0s;
+    top = 0s;
+    right = 0s;
+    bottom = 0s;
 }
 
 class Group {
@@ -326,4 +326,4 @@ class Group {
     modifiers = Array(Modifier);
 }
 
-fn max(a int, b int) int { a > b ? a : b }
+fn maxI32(a short, b short) short { a > b ? a : b }

@@ -7,32 +7,32 @@ using utils { Random }
 class App {
     +Scene;
     start() {
-        initScene("Ag", 800, 600);
-        defFont = loadFont("NotoSerif-Bold.ttf", 0) : *Font;
+        initScene("Ag", 800s, 600s);
+        defFont = loadFont("NotoSerif-Bold.ttf", 0s) : *Font;
         roots.append(Image(this).load("back.jpg"));
         rnd = Random;
         round = loadTexture("round.png") : *Texture;
-        roots.push(100, Image(this).texture(round).setColor(0xff << 24 | rnd.get(0, 0xffffff)).{
-            animators.append(Shuttle.init(rnd.get(-8, 8), rnd.get(10, 700), 0, 780, _.&setRX(v int){ x := v }));
-            animators.append(Shuttle.init(rnd.get(-8, 8), rnd.get(10, 500), 0, 600-40, _.&setRY(v int){ y := v }));
+        roots.push(100, Image(this).texture(round).setColor(short(0xff << 24 | rnd.get(0, 0xffffff))).{
+            animators.append(Shuttle.init(rnd.get(-8, 8), rnd.get(10, 700), 0, 780, _.&setRX(v short){ x := v }));
+            animators.append(Shuttle.init(rnd.get(-8, 8), rnd.get(10, 500), 0, 600-40, _.&setRY(v short){ y := v }));
         });
         roots.append(Group(this)
-            .add(Group(this).setPos(300, 200).animatePos(300, 10, 1500).addModifier(Opacity.set(0).animate(this, 255, 3000))
-                .add(Image(this).load("star.png").setColor(0xff_2020ff).animateColor(0xff_ff0020, 4000))
-                .add(Label(this).init(defFont, 24, 3, "Argentum").setPos(40, 15)))
-            .add(Group(this).setPos(200, 100).`g{
-                g.add(Frame(this).init("frame.png", 3, 3, 3, 3).setColor(0x60ffffff).setSize(400, 10).animateSize(400, 400, 2000));
-                i = 0;
+            .add(Group(this).setPos(300s, 200s).animatePos(300s, 10s, 1500).addModifier(Opacity.set(0s).animate(this, 255s, 3000))
+                .add(Image(this).load("star.png").setColor(0xff_2020ffs).animateColor(0xff_ff0020s, 4000))
+                .add(Label(this).init(defFont, 24s, 3s, "Argentum").setPos(40s, 15s)))
+            .add(Group(this).setPos(200s, 100s).`g{
+                g.add(Frame(this).init("frame.png", 3s, 3s, 3s, 3s).setColor(0x60ffffffs).setSize(400s, 10s).animateSize(400s, 400s, 2000));
+                i = 0s;
                 addStr = `s `color `start {
-                    g.add(Label(this).init(defFont, 32, 0, s).setColor(color).animateColor(color ^ 0xffffff, 6000).setPos(start, i+16).animatePos(10, i+16, 1500));
-                    i += 64
+                    g.add(Label(this).init(defFont, 32s, 0s, s).setColor(color).animateColor(color ^ 0xffffffs, 6000).setPos(start, i+16s).animatePos(10s, i+16s, 1500));
+                    i += 64s
                 };
-                addStr("No GC, no pauses", 0xff_ffffff, 800);
-                addStr("No leaks, no overheads",0xff_dddddd, -800);
-                addStr("No races, no crashes", 0xff_bbbbbb, 800);
-                addStr("Fast, small, simple", 0xff_444444, -800);
+                addStr("No GC, no pauses", 0xff_ffffffs, 800s);
+                addStr("No leaks, no overheads",0xff_dddddds, -800s);
+                addStr("No races, no crashes", 0xff_bbbbbbs, 800s);
+                addStr("Fast, small, simple", 0xff_444444s, -800s);
             })
-            .add(Label(this).init(defFont, 48, 0, "Year 2024!").setColor(0x80_ff_00_00).animateColor(0xFF_00_ff_ff, 3000).setPos(0, 380).animatePos(270, 380, 300))
+            .add(Label(this).init(defFont, 48s, 0s, "Year 2024!").setColor(0x80_ff_00_00s).animateColor(0xFF_00_ff_ffs, 3000).setPos(0s, 380s).animatePos(270s, 380s, 300))
         );
         nextFrame();
     }
@@ -44,18 +44,18 @@ class Shuttle {
             v = val += delta;
             v < from || v > to
                 ? {delta := -delta;}
-                : setter(val := v);
+                : setter(short(val := v));
             true
         }
     }
-    init(delta int, initial int, from int, to int, setter&(int)) this {
+    init(delta int, initial int, from int, to int, setter&(short)) this {
         this.setter := setter;
         val := initial;
         this.delta := delta;
         this.from := from;
         this.to := to;
     }
-    setter = sys_Object.&dummyXY(y int){};
+    setter = sys_Object.&dummyShuttle(y short){};
     val = 0;
     delta = 0;
     from = 0;
