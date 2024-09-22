@@ -1,11 +1,11 @@
 using sys { String, Blob }
 
-const xEventQuit = 256;
-const xRendererAccelerated = 2;
-const xImgJpg = 1;
-const xImgPng = 2;
-const xInitEverything = 0x7231;
-const xDefaultPos = 0x1FFF0000;
+const xEventQuit = 256s;
+const xRendererAccelerated = 2s;
+const xImgJpg = 1s;
+const xImgPng = 2s;
+const xInitEverything = 0x7231s;
+const xDefaultPos = 0x1FFF0000s;
 
 class Rect{
    x = 0s;
@@ -31,13 +31,13 @@ class Rect{
       h := b - t
    }
    cwh(cx short, cy short, vw short, vh short) this {
-      x := cx - vw / 2;
-      y := cy - vh / 2;
+      x := cx - vw / 2s;
+      y := cy - vh / 2s;
       w := vw;
       h := vh
    }
-   cx() short { x + w / 2 }
-   cy() short { y + h / 2 }
+   cx() short { x + w / 2s }
+   cy() short { y + h / 2s }
    left() short { x }
    top() short { y }
    right() short { x + w }
@@ -70,7 +70,7 @@ fn afterCopyWindow(w Window) { w.internalWndHandle := w.internalRendererHandle :
 
 class Event {
     +sys_Blob;
-    getAt(i short) int { get32At(i) }
+    getAt(i int) short { get32At(i) }
 }
 
 class Texture{

@@ -28,8 +28,8 @@ class Scene{
         } &&
         w.init(
             "Hello from Argentum!",
-            Rect.xywh(sdl_xDefaultPos, sdl_xDefaultPos, 800, 600),
-            0,
+            Rect.xywh(sdl_xDefaultPos, sdl_xDefaultPos, 800s, 600s),
+            0s,
             sdl_xRendererAccelerated);
         background := w.safeLoad("back.jpg");
         foreground := w.safeLoad("fore.png");
@@ -42,9 +42,9 @@ class Scene{
         loop !(sdl.pollEvent() ? {
             _[0] == sdl_xEventQuit ? sys_setMainObject(?sys_Object);
         });
-        w.bltXYWH(background, 0, 0, 800, 600, 0, 0, 800, 600, 0xff_ff_ff_ff);
+        w.bltXYWH(background, 0s, 0s, 800s, 600s, 0s, 0s, 800s, 600s, 0xff_ff_ff_ffs);
         paint(w);
-        w.bltXYWH(foreground, 0, 0, 800, 600, 0, 0, 800, 600, 0xff_ff_ff_ff);
+        w.bltXYWH(foreground, 0s, 0s, 800s, 600s, 0s, 0s, 800s, 600s, 0xff_ff_ff_ffs);
         w.flip();
         rnd.get(0, (size() / 2) + 1) == 0 ?
             append(Flare.initAtBottom(this));
@@ -58,9 +58,12 @@ class Flare {
         paint(dst Window) {
             size = fade >> 8 >> 2;
             dst.bltXYWH(sprite,
-                0, 0, 64, 64,
-                x >> 16 - size/2, y >> 16 - size/2, size, size,
-                fade & 0xff00 << 16 | color);
+                0s, 0s, 64s, 64s,
+                short(x >> 16 - size/2),
+                short(y >> 16 - size/2),
+                short(size),
+                short(size),
+                short(fade & 0xff00 << 16 | color));
         }
         tick(milliseconds int) bool {
             x += dx;
@@ -112,7 +115,7 @@ class Sparkles {
     +Actor {
         paint(dst Window) {
             scene? distributeInCircle(_.rnd, r, r) `x `y {
-                dst.fillRectXYWH(this.x + x, this.y + y, 1, 1, color);
+                dst.fillRectXYWH(short(this.x + x), short(this.y + y), 1s, 1s, short(color));
             }
         }
         tick(milliseconds int) bool { (r -= 1) > 0 }
