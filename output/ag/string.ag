@@ -9,7 +9,7 @@ using array;
 
 class String {
     *cursor() Cursor { Cursor.set(this) }
-    *split(delimiter int) @SharedArray(String) {
+    *split(delimiter short) @SharedArray(String) {
         text = Cursor.set(this);
         SharedArray(String).`r{
             loop !(text.getTill(delimiter) ? r.append(_))
@@ -17,12 +17,12 @@ class String {
     }
 }
 class Cursor {
-    getTill(separator int) ?str {
-        peekCh() != 0 ? {
+    getTill(separator short) ?str {
+        peekCh() != 0s ? {
             r = StrBuilder;
             loop !{
                 c = getCh();
-                c != separator && c != 0 ? r.putCh(c)
+                c != separator && c != 0s ? r.putCh(c)
             };
             r.toStr()
         }
@@ -36,7 +36,7 @@ class StrBuilder {
         pos + bytes >= size ?
             insert(size, size * 2 + 4 + bytes);
     }
-    putCh(codePoint int) this {
+    putCh(codePoint short) this {
         reserve(8);
         pos := putChAt(pos, codePoint)
     }
@@ -44,7 +44,7 @@ class StrBuilder {
         in = Cursor.set(s);
         loop !{
             c = in.getCh();
-            c != 0 ? putCh(c)
+            c != 0s ? putCh(c)
         }
     }
     putOptStr(s ?str) this { s ? putStr(_) }
@@ -54,7 +54,7 @@ class StrBuilder {
         isNeg ? val *= -1;
         p = pos + 21;
         loop {
-            set8At(p -= 1, (val % 10)->{_<0?-_:_} + '0');
+            set8At(p -= 1, short(val % 10)->{_<0s?-_:_} + '0');
             (val /= 10) == 0
         };
         isNeg ? set8At(p -= 1, '-');
@@ -62,7 +62,7 @@ class StrBuilder {
         pos += pos + 21 - p;
     }
     newLine() this {
-        putCh(0x0a);
+        putCh(0x0as);
     }
     toStr() str {
         mkStr(0, pos).{

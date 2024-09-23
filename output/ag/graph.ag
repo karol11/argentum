@@ -10,7 +10,7 @@ class Node {
     isActive = false;
     name = "";
     
-    init(char int) this { name := sys_StrBuilder.putCh(char).toStr() }
+    init(char short) this { name := sys_StrBuilder.putCh(char).toStr() }
 
     hasLoop() bool {
         log("checking node {name} ");
@@ -30,14 +30,14 @@ class Graph {
     fromStr(s str) this {
         log("Building grapgh from {s}{CR}");
         in = s.cursor();
-        byNames = WeakArray(Node).resize('z' + 1);
+        byNames = WeakArray(Node).resize(int('z') + 1);
         getOrCreateNode = \{
             name = in.getCh();
             {
-                byNames[name] : {
+                byNames[int(name)] : {
                     r = nodes.append(Node.init(name));
                     log("new ");
-                    byNames[name] := &r;
+                    byNames[int(name)] := &r;
                     r
                 }
             }.{ log("node {_.name}")}
@@ -48,7 +48,7 @@ class Graph {
             log(" <- ");
             from.connections.append(&getOrCreateNode());
             log("{CR}");
-            in.getCh() == 0
+            in.getCh() == 0s
         };
         log("{nodes.size()} nodes{CR}")
     }    
