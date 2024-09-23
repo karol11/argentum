@@ -910,7 +910,7 @@ struct Parser {
 			return r;
 		}
 		if (match_ns("'")) {
-			auto r = make<ast::ConstInt64>();
+			auto r = make<ast::ConstInt32>();
 			r->value = get_utf8(&cur);
 			if (!r->value)
 				error("incomplete character constant");
@@ -923,10 +923,17 @@ struct Parser {
 			do {
 				auto param = parse_expression();
 				if (auto param_as_int = dom::strict_cast<ast::ConstInt64>(param)) {
-					put_utf8(param_as_int->value, &r->value, [](void* dst, int byte) {
+					if (!put_utf8(param_as_int->value, &r->value, [](void* dst, int byte) {
 						*((string*)dst) += (char)byte;
 						return 1;
-					});
+						}))
+						error("code point should be <= 0x10ffff");
+				} else if (auto param_as_int = dom::strict_cast<ast::ConstInt32>(param)) {
+					if (!put_utf8(param_as_int->value, &r->value, [](void* dst, int byte) {
+						*((string*)dst) += (char)byte;
+						return 1;
+						}))
+						error("code point should be <= 0x10ffff");
 				} else {  // Todo: remove after const evaluation pass
 					error("so far only literal numbers are supported as utf32_ parameter");
 				}
