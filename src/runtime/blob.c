@@ -28,35 +28,35 @@ void ag_m_sys_Blob_delete(AgBlob* b, uint64_t index, uint64_t count) {
 	b->bytes_count -= count;
 }
 
-int64_t ag_m_sys_Blob_get8At(AgBlob* b, uint64_t index) {
+int32_t ag_m_sys_Blob_get8At(AgBlob* b, uint64_t index) {
 	return index < b->bytes_count
 		? b->bytes[index]
 		: 0;
 }
 
-void ag_m_sys_Blob_set8At(AgBlob* b, uint64_t index, int64_t val) {
+void ag_m_sys_Blob_set8At(AgBlob* b, uint64_t index, int32_t val) {
 	if (index < b->bytes_count)
 		b->bytes[index] = (uint8_t)val;
 }
 
-int64_t ag_m_sys_Blob_get16At(AgBlob* b, uint64_t index) {
+int32_t ag_m_sys_Blob_get16At(AgBlob* b, uint64_t index) {
 	return index < b->bytes_count >> 1
 		? ((uint16_t*)b->bytes)[index]
 		: 0;
 }
 
-void ag_m_sys_Blob_set16At(AgBlob* b, uint64_t index, int64_t val) {
+void ag_m_sys_Blob_set16At(AgBlob* b, uint64_t index, int32_t val) {
 	if (index < b->bytes_count >> 1)
 		((uint16_t*)b->bytes)[index] = (uint16_t)val;
 }
 
-int64_t ag_m_sys_Blob_get32At(AgBlob* b, uint64_t index) {
+int32_t ag_m_sys_Blob_get32At(AgBlob* b, uint64_t index) {
 	return index < b->bytes_count >> 2
 		? ((uint32_t*)b->bytes)[index]
 		: 0;
 }
 
-void ag_m_sys_Blob_set32At(AgBlob* b, uint64_t index, int64_t val) {
+void ag_m_sys_Blob_set32At(AgBlob* b, uint64_t index, int32_t val) {
 	if (index < b->bytes_count >> 2)
 		((uint32_t*)b->bytes)[index] = (uint32_t)val;
 }
@@ -102,7 +102,7 @@ static int ag_put_fn(void* ctx, int b) {
 	return 1;
 }
 
-int64_t ag_m_sys_Blob_putChAt(AgBlob* b, int at, int codepoint) {
+int64_t ag_m_sys_Blob_putChAt(AgBlob* b, uint64_t at, uint32_t codepoint) {
 	if (at + 5 > b->bytes_count)
 		return 0;
 	int8_t* cursor = (int8_t*)b->bytes + at;
@@ -110,7 +110,7 @@ int64_t ag_m_sys_Blob_putChAt(AgBlob* b, int at, int codepoint) {
 	return cursor - b->bytes;
 }
 
-AgString* ag_m_sys_Blob_mkStr(AgBlob* b, int at, int count) {
+AgString* ag_m_sys_Blob_mkStr(AgBlob* b, uint64_t at, uint64_t count) {
 	if (count < 0 || at + count > b->bytes_count)
 		count = 0;
 	return ag_make_str(b->bytes + at, count);

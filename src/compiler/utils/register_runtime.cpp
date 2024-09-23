@@ -36,15 +36,15 @@ void register_runtime_content(struct ast::Ast& ast) {
 	ast.mk_method(mut::MUTATING, ast.blob, "insert", FN(&ag_m_sys_Blob_insert), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
 	ast.mk_method(mut::MUTATING, ast.blob, "delete", FN(ag_m_sys_Blob_delete), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
 	ast.mk_method(mut::MUTATING, ast.blob, "copy", FN(ag_m_sys_Blob_copy), new ast::ConstBool, { ast.tp_int64(), ast.get_conform_ref(ast.blob), ast.tp_int64(), ast.tp_int64() });
-	ast.mk_method(mut::ANY, ast.blob, "get8At", FN(ag_m_sys_Blob_get8At), new ast::ConstInt64, { ast.tp_int64() });
-	ast.mk_method(mut::MUTATING, ast.blob, "set8At", FN(ag_m_sys_Blob_set8At), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
-	ast.mk_method(mut::ANY, ast.blob, "get16At", FN(ag_m_sys_Blob_get16At), new ast::ConstInt64, { ast.tp_int64() });
-	ast.mk_method(mut::MUTATING, ast.blob, "set16At", FN(ag_m_sys_Blob_set16At), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
-	ast.mk_method(mut::ANY, ast.blob, "get32At", FN(ag_m_sys_Blob_get32At), new ast::ConstInt64, { ast.tp_int64() });
-	ast.mk_method(mut::MUTATING, ast.blob, "set32At", FN(ag_m_sys_Blob_set32At), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
+	ast.mk_method(mut::ANY, ast.blob, "get8At", FN(ag_m_sys_Blob_get8At), new ast::ConstInt32, { ast.tp_int64() });
+	ast.mk_method(mut::MUTATING, ast.blob, "set8At", FN(ag_m_sys_Blob_set8At), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int32() });
+	ast.mk_method(mut::ANY, ast.blob, "get16At", FN(ag_m_sys_Blob_get16At), new ast::ConstInt32, { ast.tp_int64() });
+	ast.mk_method(mut::MUTATING, ast.blob, "set16At", FN(ag_m_sys_Blob_set16At), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int32() });
+	ast.mk_method(mut::ANY, ast.blob, "get32At", FN(ag_m_sys_Blob_get32At), new ast::ConstInt32, { ast.tp_int64() });
+	ast.mk_method(mut::MUTATING, ast.blob, "set32At", FN(ag_m_sys_Blob_set32At), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int32() });
 	ast.mk_method(mut::ANY, ast.blob, "get64At", FN(ag_m_sys_Blob_get64At), new ast::ConstInt64, { ast.tp_int64() });
 	ast.mk_method(mut::MUTATING, ast.blob, "set64At", FN(ag_m_sys_Blob_set64At), new ast::ConstVoid, { ast.tp_int64(), ast.tp_int64() });
-	ast.mk_method(mut::MUTATING, ast.blob, "putChAt", FN(ag_m_sys_Blob_putChAt), new ast::ConstInt64, { ast.tp_int64(), ast.tp_int64() });
+	ast.mk_method(mut::MUTATING, ast.blob, "putChAt", FN(ag_m_sys_Blob_putChAt), new ast::ConstInt64, { ast.tp_int64(), ast.tp_int32() });
 	ast.mk_method(mut::MUTATING, ast.blob, "mkStr", FN(ag_m_sys_Blob_mkStr), new ast::ConstString, { ast.tp_int64(), ast.tp_int64() });
 
 	ast.str_builder = ast.mk_class("StrBuilder");
@@ -136,8 +136,8 @@ void register_runtime_content(struct ast::Ast& ast) {
 		auto cursor_cls = ast.mk_class("Cursor", {
 				ast.mk_field("_cursor", new ast::ConstInt64),
 				ast.mk_field("_buffer", new ast::ConstString) });
-		ast.mk_method(mut::MUTATING, cursor_cls, "getCh", FN(ag_m_sys_Cursor_getCh), new ast::ConstInt64, {});
-		ast.mk_method(mut::ANY, cursor_cls, "peekCh", FN(ag_m_sys_Cursor_peekCh), new ast::ConstInt64, {});
+		ast.mk_method(mut::MUTATING, cursor_cls, "getCh", FN(ag_m_sys_Cursor_getCh), new ast::ConstInt32, {});
+		ast.mk_method(mut::ANY, cursor_cls, "peekCh", FN(ag_m_sys_Cursor_peekCh), new ast::ConstInt32, {});
 		make_factory(ast.mk_method(mut::MUTATING, cursor_cls, "set", FN(ag_m_sys_Cursor_set), nullptr, { ast.get_shared(ast.string_cls) }));
 	}
 	{
