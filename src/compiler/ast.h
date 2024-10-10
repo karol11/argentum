@@ -6,6 +6,7 @@
 #include <sstream>
 #include "dom/dom.h"
 #include "dom/dom-to-string.h"
+#include <variant>
 
 namespace ast {
 
@@ -14,6 +15,8 @@ namespace ast {
 	using std::unordered_map;
 	using std::unordered_set;
 	using std::vector;
+	using std::variant;
+	using std::get_if;
 	using ltm::weak;
 	using ltm::own;
 	using ltm::pin;
@@ -122,6 +125,14 @@ struct TpDouble : Type {
 	void match(TypeMatcher& matcher) override;
 	DECLARE_DOM_CLASS(TpDouble);
 };
+struct TpFunctionBase : Type {  // represents class/interface param upper bound as any function (that cannot be called and casted)
+	void match(TypeMatcher& matcher) override;
+	DECLARE_DOM_CLASS(TpFunctionBase);
+};
+struct TpDelegateBase : Type {  // represents class/interface param upper bound any delegate (that cannot be called and casted)
+	void match(TypeMatcher& matcher) override;
+	DECLARE_DOM_CLASS(TpDelegateBase);
+};
 struct TpFunction : Type {
 	vector<own<Type>> params;  //+result
 	bool can_x_break = false;  // is lambda or has lambda params, so its result has opt-wrapper
@@ -190,6 +201,9 @@ struct AbstractClass : Node {
 	virtual pin<Class> get_implementation() {
 		error("internal error abstract class has no implementation");
 	}
+	virtual pin<Type> get_type_bound() {
+		return nullptr;
+	}
 	enum struct InstMode {
 		direct,      // this is a well-defined class that can be instantiated with no lookups
 		in_context,  // class param or parameterized instance. requires `this` pointer and lookup in vmt
@@ -198,15 +212,25 @@ struct AbstractClass : Node {
 	virtual InstMode inst_mode() { return InstMode::off; }
 	DECLARE_DOM_CLASS(AbstractClass);
 };
-struct ClassParam: AbstractClass {
+struct ClassParam : AbstractClass {
 	bool is_in = true;
 	bool is_out = true;
 	int index = 0; // in TpClass::params
 	string name;
-	weak<AbstractClass> base;
+	variant<
+		weak<AbstractClass>,
+		weak<Type>  // so far only TpFunctionBase and TpDelegateBase are allowed
+	> base;
 	string get_name() override;
 	pin<Class> get_implementation() override {
-		return base->get_implementation();
+		if (auto* c = get_if<weak<AbstractClass>>(&base))
+			return (*c)->get_implementation();
+		return nullptr;
+	}
+	pin<Type> get_type_bound() override {
+		if (auto* c = get_if<weak<Type>>(&base))
+			return *c;
+		return nullptr;
 	}
 	InstMode inst_mode() override { return InstMode::in_context; }
 	DECLARE_DOM_CLASS(ClassParam);
@@ -314,6 +338,8 @@ struct TypeMatcher {
 	virtual void on_int64(TpInt64& type) = 0;
 	virtual void on_float(TpFloat& type) = 0;
 	virtual void on_double(TpDouble& type) = 0;
+	virtual void on_function_base(TpFunctionBase& type) = 0;
+	virtual void on_delegate_base(TpDelegateBase& type) = 0;
 	virtual void on_function(TpFunction& type) = 0;
 	virtual void on_lambda(TpLambda& type) = 0;
 	virtual void on_delegate(TpDelegate& type) = 0;
@@ -427,6 +453,8 @@ struct Ast: dom::DomItem {
 	pin<TpInt64> tp_int64();
 	pin<TpInt32> tp_int32();
 	pin<TpDouble> tp_double();
+	pin<TpFunctionBase> tp_function_base();
+	pin<TpDelegateBase> tp_delegate_base();
 	pin<TpFloat> tp_float();
 	pin<TpVoid> tp_void();
 	pin<TpNoRet> tp_no_ret();

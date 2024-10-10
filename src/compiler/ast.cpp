@@ -80,6 +80,8 @@ own<TypeWithFills> TpInt32::dom_type_;
 own<TypeWithFills> TpInt64::dom_type_;
 own<TypeWithFills> TpFloat::dom_type_;
 own<TypeWithFills> TpDouble::dom_type_;
+own<TypeWithFills> TpFunctionBase::dom_type_;
+own<TypeWithFills> TpDelegateBase::dom_type_;
 own<TypeWithFills> TpFunction::dom_type_;
 own<TypeWithFills> TpLambda::dom_type_;
 own<TypeWithFills> TpColdLambda::dom_type_;
@@ -313,6 +315,8 @@ void initialize() {
 	TpInt64::dom_type_ = new CppClassType<TpInt64>(cpp_dom, { "m0", "Type", "Int64" });
 	TpFloat::dom_type_ = new CppClassType<TpDouble>(cpp_dom, { "m0", "Type", "Float" });
 	TpDouble::dom_type_ = new CppClassType<TpDouble>(cpp_dom, { "m0", "Type", "Double" });
+	TpFunctionBase::dom_type_ = new CppClassType<TpFunctionBase>(cpp_dom, { "m0", "Type", "FnBase" });
+	TpDelegateBase::dom_type_ = new CppClassType<TpDelegateBase>(cpp_dom, { "m0", "Type", "DelegateBase" });
 	TpFunction::dom_type_ = (new CppClassType<TpFunction>(cpp_dom, { "m0", "Type", "Function" }))
 		->field("params", pin<CField<&TpFunction::params>>::make(own_vector_type));
 	TpLambda::dom_type_ = (new CppClassType<TpLambda>(cpp_dom, { "m0", "Type", "Lambda" }))
@@ -514,6 +518,8 @@ void TpInt32::match(TypeMatcher& matcher) { matcher.on_int32(*this); }
 void TpInt64::match(TypeMatcher& matcher) { matcher.on_int64(*this); }
 void TpFloat::match(TypeMatcher& matcher) { matcher.on_float(*this); }
 void TpDouble::match(TypeMatcher& matcher) { matcher.on_double(*this); }
+void TpFunctionBase::match(TypeMatcher& matcher) { matcher.on_function_base(*this); }
+void TpDelegateBase::match(TypeMatcher& matcher) { matcher.on_delegate_base(*this); }
 void TpFunction::match(TypeMatcher& matcher) { matcher.on_function(*this); }
 void TpLambda::match(TypeMatcher& matcher) { matcher.on_lambda(*this); }
 void TpColdLambda::match(TypeMatcher& matcher) { matcher.on_cold_lambda(*this); }
@@ -643,6 +649,14 @@ pin<TpFloat> Ast::tp_float() {
 }
 pin<TpDouble> Ast::tp_double() {
 	static auto r = own<TpDouble>::make();
+	return r;
+}
+pin<TpFunctionBase> Ast::tp_function_base() {
+	static auto r = own<TpFunctionBase>::make();
+	return r;
+}
+pin<TpDelegateBase> Ast::tp_delegate_base() {
+	static auto r = own<TpDelegateBase>::make();
 	return r;
 }
 pin<TpVoid> Ast::tp_void() {
@@ -962,6 +976,8 @@ std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t) {
 		void on_int64(ast::TpInt64& type) override { dst << "int"; }
 		void on_float(ast::TpFloat& type) override { dst << "float"; }
 		void on_double(ast::TpDouble& type) override { dst << "double"; }
+		void on_function_base(ast::TpFunctionBase& type) override { dst << "fn"; }
+		void on_delegate_base(ast::TpDelegateBase& type) override { dst << "delegate"; }
 		void on_void(ast::TpVoid& type) override { dst << "void"; }
 		void on_no_ret(ast::TpNoRet& type) override { dst << "no_ret"; }
 		void out_proto(ast::TpFunction& type) {
