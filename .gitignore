@@ -1,5 +1,5 @@
 /build*/
-/out*/
+/out*/*
+!/out*/ag
 /.vs*/
 *.deb
-!/out*/ag/*.ag
