@@ -1,0 +1,851 @@
+using sys{
+    Object,
+    par = getParent
+}
+
+fn assertIEq(a int, b int);
+
+fn ints() {
+    assertIEq(7, (2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1)))
+}
+
+fn doubles() {
+    assertIEq(3, int(3.14 - 0.2e-4 * 5.0))
+}
+
+fn block() {
+    assertIEq(3, {1+1}+1) 
+}
+
+fn lambdaWithParams() {
+    assertIEq(40, `a{1+a}(3)*10)
+}
+
+fn passingLambdaToLambda() {
+    assertIEq(99,
+      `a `b `xfn {
+            xfn(t \ a + b + t)
+      } (2, 4) `vfn {
+            vfn(3) * vfn(5)
+      })
+}
+
+fn sequence() {
+    assertIEq(44, {1; 3.14; 44})
+}
+
+fn localAssignment() {
+    assertIEq(10, {
+        a = 2;
+        a := a + 3;
+        a * 2
+    })
+}
+
+fn makeAndConsumeOptionals() {
+    assertIEq(2, (opt){ opt : 2 } (false ? 44))
+}
+
+fn maybeChain() {
+    assertIEq(3, {
+        a = +3.3;  // a: local of type optional(double), having value just(3.3)
+        a ? int(_) : 0  // convert optional(double) to optional(int) and extract replacing `none` with 0
+    })
+}
+
+fn intComparisons() {
+    a = 2;
+    assert(a < 10);
+    assert(a > -1);
+    assert(a != 0)
+}
+
+fn loops() {
+    a = 0;
+    r = 1;
+    assertIEq(39916800,
+        loop {
+            a := a + 1;
+            r  := r * a;
+            a > 10 ? r
+        }
+    )
+}
+
+class Point {
+    x = 0;
+    y = 2;
+}
+
+fn classes() {
+    p = Point;
+    p.x := 1;
+    assertIEq(3, p.y + p.x)
+}
+
+fn classInstanceCopy() {
+    p=Point;
+    p.x := 1;
+    pb = @p;
+    pb.x := 3;
+    sys_assertIEq(4, p.x + pb.x)
+}
+
+class Point {
+    m() int { x+y }
+}
+class P3 {
+    +Point{
+        m() int { x+y+z }
+    }
+    z=3;
+}
+
+fn classMethods() {
+    p=P3;
+    p.x := 10;
+    p.z := 20;
+    sys_assertIEq(32, p.m())
+}
+
+interface Movable {
+    move(x int, y int);
+}
+class P3 {
+    +Movable {
+        move(dx int, dy int) {
+            x := x + dx;
+            y := y + dy
+        }
+    }
+    z = 3;
+}
+
+fn interfaces() {
+    p=P3;         // 1, 2, 3
+    p.x := 10;    // 10, 2, 3
+    p.z := 20;    // 10, 2, 20
+    p.move(2, 3); // 12, 5, 20
+    sys_assertIEq(37, p.m())
+}
+
+interface Sizeable {
+    resize(width int, height int) int; // returns surface
+}
+
+class Widget {
+    +Point;
+    +Movable {
+        moveTo(x int, y int) {
+            this.x := x;
+            this.y := y;
+        }
+    }
+    +Sizeable {
+        resize(width int, height int) {
+            size.x := width;
+            size.y := height;
+            
+        }
+    }
+    size = Point;
+}
+
+fn twoInterfaces() {
+    p = Widget;
+    p.moveTo(1,2);
+    p.resize(100,200);
+    assertIEq(201, p.x + p.size.y)
+}
+
+fn promisedCast() {
+    p = Widget~Movable;
+    p.moveTo(1, 2);
+    p := Point;
+    p.moveTo(10, 20);
+}
+
+fn classCast() {
+    p = Widget~Point;  // `p` is a `Point` holder initialized with a `Widget` instance
+    sys_assertIEq(24, p~Widget?_.color : 0)     // cast `p` to `Widget` and return its `color` field on success
+}
+
+fn interfaceCast() { // TODO interface dispatch with collisions
+    p = Point;
+    w = Widget~Point;
+    assert(!(p~Sizeable), "should not cast");
+    assert(w~Sizeable, "should cast");
+}
+
+fn weaks() {
+    p = Point;
+    w = &p;
+    p.x := 22;
+    r = w?_.x : 100;
+    p := Point;
+    w ? r := r + _.x;
+    sys_assertIEq(22, r)
+}
+
+class Node {
+    parent = &Node;  // Weak(Node) = null
+    left = ?Node;    // Optional(own(Node)) = null
+    right = ?Node;
+
+    scan(expectedParent &Node) int {
+        lcount = left?_.scan(&this) : 0;
+        rcount = right?_.scan(&this) : 0;
+        this.parent == expectedParent
+            ? lcount + rcount + 1
+            : -100
+    }
+}
+
+fn topoCopy() {
+    root = Node;
+    root.left := Node;
+    root.right := Node;
+    root.left?_.parent := &root;
+    root.right?_.parent := &root;
+
+    oldSize = root.scan(&Node);
+
+    root.left := @root;
+    root.left?_.parent := &root;
+
+    sys_assertIEq(35, oldSize * 10 + root.scan(&Node))
+}
+
+fn foreignTestFunction(x int) int;
+
+fn foreignFunctionCall() {
+    foreignTestFunction(4*10);
+    assertIEq(42, foreignTestFunction(2))
+}
+
+fn logicalOr() {
+    a = 3;
+    assert(a > 2 || a < 4, "or")
+}
+
+fn logicalAnd() {
+    a = 3;
+    assert(a > 2 && a < 4, "and")
+}
+
+class Font {
+    ttfHandle = 0;
+    setId(id int) {
+        ttfHandle != 0 ? foreignTestFunction(-ttfHandle);
+        ttfHandle := id;
+        id != 0 ? foreignTestFunction(id);
+    }
+}
+
+fn disposeFont(f Font) {
+    f.ttfHandle != 0 ? foreignTestFunction(-f.ttfHandle);
+}
+
+fn afterCopyFont(f Font) {
+    f.ttfHandle != 0 ? foreignTestFunction(f.ttfHandle);
+}
+
+fn raii() {
+    {
+        foreignTestFunction(2);
+        fa = Font;
+        fa.setId(42);   // foreignTestFunction_state= 2+42
+        fb = @fa;       // foreignTestFunction_state= 2+42+42
+    };                  // foreignTestFunction_state= 2+42+42-42-42 = 2
+    sys_assertIEq(2, foreignTestFunction(0))
+}
+
+class sys_Blob {
+    getAt(i int) int { get64At(i) }
+    setAt(i int, v int) { set64At(i, v) }
+}
+
+fn blobsAndIndexes() {
+    b = sys_Blob;
+    b.insertItems(0, 3);
+    b[1] := 42;
+    c = @b;
+    assertIEq(42, c[1])
+}
+
+class DlCl{
+    x = 11;
+    m(i int) int { x + i }
+}
+fn f(handler &(int)int) int {
+    handler(42) : 0
+}
+
+fn delegates() {
+    c = DlCl;
+    sys_assertIEq(53, f(c.m)); // 42+11=53
+    sys_assertIEq(31, f(c.&diff(i int) int { i - x }))
+}
+
+class ArrayItem {
+    x = 1;
+    y = 0;
+}
+
+fn arrays() {
+    a = sys_Array(ArrayItem);
+    a.insertItems(0, 10);
+    a[0] := ArrayItem;
+    a[1] := ArrayItem;
+    a[1] ? {
+        _.x := 42;
+        _.y := 33;
+    };
+    c = @a;
+    c.delete(0, 1);
+    sys_assertIEq(42, c[0] ? _.x : -1)
+}
+
+fn weakArrays() {
+    n = ArrayItem;
+    a = sys_WeakArray(ArrayItem);
+    a.insertItems(0, 10);
+    a[0] := &n;
+    a[1] := &n;
+    c = @a;
+    c.delete(0, 1);
+    assert(c[0] && _==n, "weakArray")
+}
+
+class CopyDetector{
+    x = 0;
+}
+fn afterCopyCopyDetector(c CopyDetector) { c.x := -1 }
+
+fn mkCopyDetector() @CopyDetector {
+    r = CopyDetector;
+    r.x = 5;
+    r
+}
+
+fn retOwnPtr() {
+    r = mkCopyDetector();
+    assertIEq(r.x, 5);
+    r := CopyDetector.{ _.x := 10 };
+    assertIEq(r.x, 10);
+}
+
+class InitializerNode {
+    x = 1;
+    y = 0;
+    flags = 0;
+    initPos(x int, y int) this {  // Functions marked with this when called on @pointer return @pointer, and with correct derived type!
+        this.x := x;
+        this.y := y;
+    }
+    transpose() this {
+        t = this.x;
+        this.x := this.y;
+        this.y := t;
+    }
+    addFlags(f int) this {
+        this.flags := this.flags | f;
+    }
+    removeFlags(f int) this {
+        this.flags := this.flags & ~f;
+    }
+}
+class InitializerBar {
+    n = InitializerNode  // 1 0 0    // they can be used as rich combinable, named, virtual constructors
+        .initPos(1, 4)   // 1 4 0
+        .transpose()     // 4 1 0
+        .addFlags(3);    // 4 1 3
+}
+
+fn initializerMethods() {
+    b = InitializerBar;
+    b.n.removeFlags(2);      // 4 1 1    // they can be used as normal methods too
+    sys_assertIEq(5, b.n.x + b.n.flags)         // 5
+}
+
+class sys_String{
+    length() int {
+        s = cursor();
+        r = 0;
+        loop {
+            c = s.getCh();
+            c != 0 ? r += 1;
+            c == 0 ? r
+        }
+    }
+}
+class OString {
+    +sys_Blob;
+    pos = 0;
+    put(codePoint int) this {
+        size = capacity();
+        growStep = 100;
+        pos + 5 >= size ?
+            insertItems(size, growStep);
+        pos := putChAt(pos, codePoint)
+    }
+    append(s str) this {
+        cur = s.cursor();
+        loop{
+            c = cur.getCh();
+            c != 0 ? put(c);
+            c == 0
+        }
+    }
+    toStr() str {
+        r.fromBlob(this, 0, pos);
+        pos := 0;
+        r
+    }
+}
+
+fn stringOperations() {
+    a = OString.put('<').append("Hello there").put('>').str();
+    sys_assertIEq(13, a.length())
+}
+
+fn literalStrings() {
+    a = "Hi".cursor();
+    a.getCh(); // a="i"
+    b = @a;
+    a.getCh(); // a=""   b"i"
+    assert(b.getCh() == 'i', "b=i");
+    assert(a.getCh() == 0, "a at end")
+}
+
+fn stringEscapes() {
+    s = utf32_(10, 9, 13, '"', 0x5c, 0x1090e, 0x65, '!').cursor();
+    assertIEq(0x0a, s.getCh());
+    assertIEq(9, s.getCh());
+    assertIEq(0x0d, s.getCh());
+    assertIEq('"', s.getCh());
+    assertIEq(0x5c, s.getCh());
+    assertIEq(0x1090e, s.getCh());
+    assertIEq(0x65, s.getCh());
+    assertIEq('!', s.getCh());
+    assertIEq(0, s.getCh());
+}
+
+class Cl{
+    x = 0xc;
+    getAt(i int) int { x }
+    setAt(i int, v int) { x := v }
+    inc() {
+        x += 1
+    }
+}
+
+fn setOps() {
+    a = 1;    // a=1   x=0xc
+    a *= 10;  // a=10
+    a += 4;   // a=14
+    c = Cl;
+    c.x |= 3;  //     x=0xf(15)
+    c[4] /= 3; //     x = 5
+    c.inc();   //     x=6
+    assertIEq(20, c.x + a)    // 20
+}
+
+class ParentCl{
+    x = 0;
+    inner = ?Cl;
+    new(x int) this { this.x := x }
+}
+
+fn getParent() {
+    a = ParentCl.new(11);
+    a.inner := ParentCl.new(22);
+    a.inner?_.inner := ParentCl.new(33);
+    assertIEq(0, sys_getParent(a) && _~ParentCl ? _.x : 0);
+    assertIEq(11, a.inner && sys_getParent(_) && _~Cl ? _.x : 0);
+    p = a.inner;
+    a.inner := ?ParentCl;
+    assertIEq(0, p
+        ? (sys_getParent(_) && _~ParentCl ? _.x : 0)
+        : -1);
+    assertIEq(22, p && _.inner && sys_getParent(_) && _~ParentCl ? _.x : 0)
+}
+
+fn getParentArray() {
+    a = sys_Array(Object);
+    a.insertItems(0, 10);
+    a[0] := Object;
+    assertIEq(a[0] && par(_) && _==a ? 1:0, 1);
+    v = a[0];
+    a.delete(0, 1);
+    assertIEq(v && !par(_) ? 1 : 0, 1);
+    a[0] := Object;
+    assertIEq(a[0] && par(_) && _==a ? 1:0, 1);
+    v := a[0];
+    a.setOptAt(0, ?Object);
+    assertIEq(v && !getParent(_) ? 1 : 0, 1);
+    assertIEq(!getParent(a) ? 1 : 0, 1)
+}
+
+class SpliceC{ inner = ?SpliceC; }
+
+fn splice() {
+    a = SpliceC;
+    a.inner := SpliceC;
+    temp = a.inner;
+    a.inner := ?SpliceC;
+    assertIEq(temp && !sys_getParent(_) ? 1:0, 1);
+    a.inner @= temp;
+    assertIEq(temp == a.inner ? 1:0, 1)
+}
+
+class SharPoint {
+    x = 0;
+    y = 0;
+    z = *"";
+    at(x int, y int) this {
+       this.x := x;
+       this.y := y
+    }
+    *sum() int { x+y }
+ }
+
+fn shared() {
+      p = *SharPoint.at(1, 2);
+      p2 = p;
+      assertIEq(p2.sum(), 3);
+      assert(p == p2, "p==p2")
+}
+
+const xDefPoint = *Point;
+const xCount = 4;
+const xHello = "Hello world";
+
+fn consts() {
+    p = @xDefPoint;
+    sys_log(xHello);
+    assertIEq(xCount, 4)
+}
+
+fn multiline() {
+    assert("..../
+        Multiline
+        string
+    ",
+    "    Multiline{utf32_(0x10)}    string{utf32_(0x10)}");
+}
+
+class StrBuilder{
+    pos = 0;
+    put(codePoint int) this {
+        size = capacity();
+        growStep = 100;
+        pos + 5 >= size ?
+            insertItems(size, growStep);
+        pos := putChAt(pos, codePoint)
+    }
+    putStr(s String) this {
+        loop !{
+            c = s.getCh();
+            c != 0 ? put(c)
+        }
+    }
+    putInt(v int) this {
+        put(v % 10 + '0')
+    }
+    toStr() str {
+        mkStr(0, pos).{ pos := 0 }
+    }
+}
+
+fn stringInterpolation() {
+    assert("Hi {2*2}!"=="Hi 4!", "single-line");
+    assert("${}/
+        Name=${
+        1 < 2
+            ? "asdf"
+            : "zxcv"}
+        Age=${2 * 2}
+    " == "
+        Name=asdf
+        Age=4
+    ", "multiline");
+}
+
+class Pair(K, V) {
+    key = ?*K;
+    val = ?V;
+    set(k *K, v()@V) this {
+      key := k;
+      val := v();
+    }
+}
+
+fn generics() {
+    p = Pair(sys_String, sys_Blob).set("Hello", Blob);
+    assert(p.key && _ == "Hello");
+}
+
+class sys_WeakArray{
+    append(item T) T {
+        insertItems(capacity(), 1);
+        this[capacity() - 1] := &item;
+        item
+    }
+}
+
+fn reopenGenerics() {
+    a = sys_WeakArray(sys_Object);
+    {
+        x = sys_Object;
+        a.append(x);
+        sys_assertIEq(1, a[0] && x == _ ? 1:0);
+    };
+    sys_assertIEq(1, a[0] ? 0:1);
+}
+
+class Map(K, V) {
+    +sys_Array(Pair(K, V));
+}
+class Dict(X) {
+    +Map(sys_String, X);
+}
+
+fn genericFromGeneric() {
+    d = Dict(sys_Blob);
+    sys_log(d[0] ? _.key : "") // it should compile
+}
+
+fn myFn(s sys_SharedArray(sys_String)) {
+    s[0] ? log(_)
+}
+
+fn genericInstAsType() {
+    myFn(sys_SharedArray(sys_String).{
+        _.insertItems(0, 1);
+        _[0] := "Aloha"
+    })
+}
+
+fn fnReturnFn() int {
+    i = 2;
+    loop {
+        i -= 1;
+        i == 0 ? ^fnReturnFn=42;
+        i < 0
+    };
+    11
+}
+
+fn fnReturnTest() {
+    assertIEq(42, fnReturnFn())
+}
+
+fn breakTest() {
+    i = 2;
+    r = loop {
+        i -= 1;
+        i == 0 ? ^r = 42;
+    };
+    assertIEq(42, r)
+}
+
+fn badFn(a String, b String) {
+    assert(false, "shouldn't be called");
+}
+
+fn breakSkipsCallWithPartialParamsTest() {
+    {=block
+        f("asdf", ?"" : ^block);
+    }
+}
+
+fn breakFromLocalInitializerTest {
+    {=block
+        a = "asdf";
+        b = ?"" : ^block;
+        c = badFn("","");
+        a := "";
+    }
+}
+
+fn breakFromInnerLambdaFn(l()) String {
+    l();
+    "Normal"
+}
+
+fn breakFromInnerLambdaTest {
+    x = breakFromInnerLambdaFn {
+        ^x = "From break"
+    };
+    assert(x == "From break", "expected value from break")
+}
+
+fn boolLambdaFn(l()bool) bool {
+    l()
+}
+
+fn boolLambdaTest() {
+    assert(!boolLambdaFn{false}), "boolLambdaFn() returns !false")
+}
+
+// fn returnFromLambdaParam() {
+//     execute(R"(
+//         using sys{ Array, String }
+//         class Array {
+//             append(t()@T) {
+//                 c = capacity();
+//                 insertItems(c, 1);
+//                 this[c] := t();
+//             }
+//         }
+//         class String {
+//             getOne() ?@String { getCh() != 0 ? "A" }
+//             split() @Array(String) {
+//                 res = Array(String);
+//                 loop {
+//                     res.append(getOne() : ^split=res);
+//                 }
+//             }
+//         }
+//         sys_assertIEq("B".split().capacity(), 2) // ["A", null]
+//     )");
+// }
+
+fn returnFromInnerLambdaPass(l()) String {
+    l();
+    "Normal"
+}
+fn returnFromInnerLambdaSkip() String {
+    returnFromInnerLambdaPass{
+      ^returnFromInnerLambdaSkip = "From break"
+    }
+}
+fn returnFromInnerLambdaTest() {
+    assertIEq(skip().cursor().getCh(), 'F')
+}
+
+TEST(Parser, Unwind) {
+    execute(R"-(
+        fn forRange(from int, to int, body(int)) {
+            loop !(from < to ? {
+                    body(from);
+                    from += 1
+                })
+        }
+        x = {
+                forRange(0, 3) i {
+                    i == 1 ? ^x=42
+                };
+                0
+            };
+        sys_assertIEq(42, x)
+    )-");
+}
+class App{
+    asyncOp(next fn()) {
+        sys_setMainObject(?sys_Object);
+        next()
+    }
+}
+
+fn asyncInnerTest(next fn()) {
+    app = App;
+    sys_setMainObject(app);
+    app.asyncOp~(next);
+}
+
+fn asyncFfiCallbackInvoker(callback &());
+
+class AsyncFfiApp{
+    next = ?fn();
+    onCallback() {
+        sys_setMainObject(?sys_Object);
+        next ? _()
+    }
+}
+
+fn asyncFfi(next fn()) {
+    app = App;
+    app.next := next;
+    sys_setMainObject(app);
+    callbackInvoker(app.onCallback);
+}
+
+TEST(Parser, Multithreading) {
+    execute(R"-(
+        class App{
+            worker = sys_Thread(sys_Object).start(sys_Object);
+        }
+        app = App;
+        sys_setMainObject(app);
+        sys_log("Started on main thread\n");
+        app.worker.root().&workerCode(onEnd &()){
+            sys_log("Hello from the worker thread\n");
+            onEnd~();
+        }~(app.&endEverything(){
+            sys_log("Shutdown from the main thread\n");
+            sys_setMainObject(?sys_Object);        
+        });
+    )-");
+}
+
+/////////////////////////////////
+
+ints();
+doubles();
+block();
+lambdaWithParams();
+passingLambdaToLambda();
+sequence();
+localAssignment();
+makeAndConsumeOptionals();
+maybeChain();
+intComparisons();
+loops();
+classes();
+classInstanceCopy();
+classMethods();
+interfaces();
+twoInterfaces();
+promisedCast();
+classCast();
+interfaceCast();
+weaks();
+topoCopy();
+foreignFunctionCall();
+logicalOr();
+logicalAnd();
+raii();
+blobsAndIndexes();
+delegates();
+arrays();
+weakArrays();
+retOwnPtr();
+initializerMethods();
+stringOperations();
+literalStrings();
+stringEscapes();
+setOps();
+getParent();
+getParentArray();
+splice();
+shared();
+consts();
+multiline();
+stringInterpolation();
+generics();
+reopenGenerics();
+genericFromGeneric();
+genericInstAsType();
+fnReturnTest();
+breakTest();
+breakSkipsCallWithPartialParamsTest();
+breakFromLocalInitializerTest();
+breakFromInnerLambdaTest();
+boolLambdaTest();
+returnFromInnerLambdaTest();
+unwindTest();
+asyncInnerTest \
+asyncFfi \
+multithreading()
