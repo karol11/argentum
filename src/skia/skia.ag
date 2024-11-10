@@ -1,0 +1,45 @@
+using sys { Blob }
+
+class Rect {
+	left = 0f;
+	top = 0f;
+	right = 0f;
+	bottom = 0f;
+	setXYWH(x float, y float, w float, h float) this {
+		left := x;
+		top := y;
+		right := x + w;
+		bottom := y + h;
+	}
+}
+
+class Paint{
+	handle_id=0;
+	setColor(color short) this;
+}
+fn destroyPaint(me Paint);
+fn afterCopyPaint(me Paint) { me.handle := 0 }
+
+class Image{
+	handle_id=0;
+	fromBlob(data *Blob) this;
+}
+fn destroyImage(me Image);
+fn afterCopyImage(me Image) { me.handle := 0 }
+
+class Font{
+	handle_id=0;
+	fromBlob(data()@Blob) this;
+	fromName(name str) this;
+}
+fn destroyFont(me Font);
+fn afterCopyFont(me Font) { me.handle := 0 }
+
+class Canvas {
+	handle_id=0;
+	drawRect(r -Rect, p -Paint) this;
+	drawImage(x int, y int, img -Image) this;
+	drawSimpleText(x int, y int, s str, font -Font, size int, p -Paint) this;
+}
+fn destroyCanvas(me Canvas);
+fn afterCopyFont(me Canvas) { me.handle := 0 }
