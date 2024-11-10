@@ -74,13 +74,21 @@ struct Typer : ast::ActionMatcher {
 		vector<own<ast::Type>> params;
 		for (auto& p : node.names)
 			params.push_back(find_type(p->initializer)->type());
-		for (auto& a : node.body)
-			find_type(a);
-		params.push_back(node.body.back()->type());
+		handle_block_body(node);
+		params.push_back(find_block_ret_type(node, nullptr));
 		node.type_ = ast->tp_lambda(move(params));
 	}
 	void on_const_string(ast::ConstString& node) override {
 		node.type_ = ast->get_shared(ast->string_cls.pinned());
+	}
+	void handle_block_body(ast::Block& node) {
+		pin<ast::Action> prev;
+		for (auto& a : node.body) {
+			if (prev && dom::isa<ast::TpNoRet>(*prev->type()))
+				node.error("unreachable code");
+			find_type(a);
+			prev = a;
+		}
 	}
 	void on_block(ast::Block& node) override {
 		auto prev_underscore_param = current_underscore_var;
@@ -95,27 +103,36 @@ struct Typer : ast::ActionMatcher {
 			node.type_ = ast->tp_void();
 			return;
 		}
-		pin<ast::Action> prev;
-		for (auto& a : node.body) {
-			if (prev && dom::isa<ast::TpNoRet>(*prev->type()))
-				node.error("unreachable code");
-			find_type(a);
-			prev = a;
-		}
+		handle_block_body(node);
 		current_underscore_var = prev_underscore_param;
-		if (auto ret_as_get = dom::strict_cast<ast::Get>(node.body.back())) {
-			if (std::find(node.names.begin(), node.names.end(), ret_as_get->var) != node.names.end()) {
-				node.type_ = ret_as_get->var->type;
-				return;
+		node.type_ = find_block_ret_type(node, nullptr);
+	}
+	own<Type> find_block_ret_type(ast::Block& node, pin<ast::Type> expected) {
+		auto handle_maybe_own = [&](pin<ast::Action> act) {
+			if (auto ret_as_get = dom::strict_cast<ast::Get>(act)) {
+				if (std::find(node.names.begin(), node.names.end(), ret_as_get->var) != node.names.end())
+					return ret_as_get->var->type;
 			}
+			return act->type();
+		};
+		if (expected && dom::isa<ast::TpVoid>(*expected) &&
+			!dom::isa<ast::TpVoid>(*node.body.back()) &&
+			!dom::isa<ast::TpNoRet>(*node.body.back())) {
+			auto ret_void = ast::make_at_location<ast::ConstVoid>(*node.body.back());
+			ret_void->type_ = ast->tp_void();
+			node.body.push_back(ret_void);
 		}
-		node.type_ = node.body.back()->type();
+		auto r = handle_maybe_own(node.body.back());
 		for (auto& b : node.breaks) {
-			if (dom::isa<ast::TpNoRet>(*node.type_))
-				node.type_ = b->result->type();
+			if (!b->type()) // break from never called lambda
+				continue;
+			auto bt = handle_maybe_own(b->result);
+			if (dom::isa<ast::TpNoRet>(*r))
+				r = move(bt);
 			else
-				expect_type(b->result, node.type_, [&] { return ast::format_str("ret vs natural result"); });
+				expect_type(b->result, bt, r, [&] { return ast::format_str("ret vs natural result"); });
 		}
+		return r;
 	}
 	void on_break(ast::Break& node) override {
 		node.type_ = ast->tp_no_ret();
@@ -127,23 +144,25 @@ struct Typer : ast::ActionMatcher {
 		if (fn.params.size() - 1 != actual_params.size())
 			node.error("Mismatched params count: expected ", fn.params.size() - 1, " provided ", actual_params.size(), " see function definition:", callee);
 		for (size_t i = 0; i < actual_params.size(); i++)
-			expect_type(actual_params[i], Type::promote(fn.params[i]), [&] { return ast::format_str("parameter ", i); });
+			expect_type(
+				actual_params[i],
+				Type::promote(fn.params[i]),
+				[&] { return ast::format_str("parameter ", i); });
 		node.type_ = Type::promote(fn.params.back());
 	}
-	void fix_fn_result(pin<ast::MkLambda> fn, pin<ast::Type> expected_result_type) {
-		if (dom::isa<ast::TpVoid>(*expected_result_type) && !dom::isa<ast::TpVoid>(*fn->body.back()->type())) {
-			auto c_void = ast::make_at_location<ast::ConstVoid>(*fn->body.back());
-			c_void->type_ = ast->tp_void();
-			fn->body.push_back(c_void);
-		} else {
-			expect_type(fn->body.back(), expected_result_type, [] { return "checking actual result type against fn declaration"; });
-		}
+	void check_fn_result(pin<ast::Function> fn) {
+		expect_type(
+			nullptr, // we can't coerce expression to required result
+			fn->body.back(),
+			find_block_ret_type(*fn, fn->type_expression->type()),
+			fn->type_expression->type(),
+			[] { return "checking actual result type against fn declaration"; });
 	}
 	pin<ast::TpLambda> type_cold_lambda( // returns the `lambda_type` or type inferred from act_params and fn result
 		pin<ast::TpColdLambda> cold,
 		pin<ast::TpLambda> lambda_type, // null if unknown
 		vector<own<Type>>* act_params, // actual param types, if `lambda_type` not null, points to its params, if not, it's a separte vector and type_cold_lambda can mutate it 
-		ast::Action& node,
+		ast::Node& node,
 		const function<string()>& context)
 	{
 		if (lambda_type)
@@ -165,11 +184,10 @@ struct Typer : ast::ActionMatcher {
 			auto prev_underscore_param = current_underscore_var;
 			if (has_underscore_param)
 				current_underscore_var = fn->names.front();
-			for (auto& p : fn->body)
-				find_type(p);
+			handle_block_body(*fn);
 			current_underscore_var = prev_underscore_param;
-			auto& fn_result = find_type(fn->body.back())->type();
 			if (!lambda_type) {
+				auto fn_result = find_block_ret_type(*fn, nullptr);
 				act_params->push_back(fn_result);
 				if (dom::strict_cast<ast::TpColdLambda>(fn_result) || dom::strict_cast<ast::TpLambda>(fn_result))
 					fn->error("Functions cannot return lambdas");
@@ -177,7 +195,12 @@ struct Typer : ast::ActionMatcher {
 				act_params = &lambda_type->params;
 				cold->resolved = lambda_type;
 			} else {
-				fix_fn_result(fn, Type::promote(lambda_type->params.back()));
+				expect_type(
+					nullptr, // we can't coerce expression to required result
+					fn->body.back(),
+					find_block_ret_type(*fn, lambda_type->params.back()),
+					lambda_type->params.back(),
+					[] { return "combining lambda results"; });
 			}
 		}
 		return lambda_type;
@@ -827,9 +850,13 @@ struct Typer : ast::ActionMatcher {
 		resolve_immediate_delegate(ast, node, cls->get_implementation());
 		dom::strict_cast<ast::MkInstance>(node.names[0]->initializer)->cls = cls;
 		type_fn(&node);
-		for (auto& a : node.body)
-			find_type(a);
-		expect_type(node.body.back(), node.type_expression->type(), [] { return "checking immediate delegate result against declared type"; });
+		handle_block_body(node);
+		expect_type(
+			nullptr,
+			&node,
+			find_block_ret_type(node, node.type_expression->type()),
+			node.type_expression->type(),
+			[] { return "checking immediate delegate result against declared type"; });
 	}
 
 	own<ast::Action>& find_type(own<ast::Action>& node) {
@@ -843,9 +870,6 @@ struct Typer : ast::ActionMatcher {
 		return node;
 	}
 
-	void expect_type(own<ast::Action>& node, pin<Type> expected_type, const function<string()>& context) {
-		expect_type(node, node->type(), expected_type, context);
-	}
 	bool is_compatible(pin<ast::AbstractClass> actual, pin<ast::AbstractClass> expected) {
 		if (actual != expected && !actual->get_implementation()->overloads.count(expected->get_implementation()))
 			return false;
@@ -863,16 +887,22 @@ struct Typer : ast::ActionMatcher {
 		}
 		return true;
 	}
+	void expect_type(own<ast::Action>& node, pin<Type> expected_type, const function<string()>& context) {
+		expect_type(node, node->type(), expected_type, context);
+	}
 	void expect_type(own<ast::Action>& node, pin<Type> actual_type, pin<Type> expected_type, const function<string()>& context) {
-		if (expected_type == ast->tp_void())
-			return;
+		expect_type(&node, node, actual_type, expected_type, context);
+	}
+	void expect_type(own<ast::Action>* converter_host, pin<ast::Node> reporter, pin<Type> actual_type, pin<Type> expected_type, const function<string()>& context) {
+		//if (expected_type == ast->tp_void())
+		//	return;
 		if (actual_type == expected_type)
 			return;
 		if (actual_type == tp_no_ret || expected_type == tp_no_ret)
 			return;
 		if (auto exp_as_ref = dom::strict_cast<ast::TpRef>(expected_type)) {
 			if (dom::isa<ast::TpShared>(*actual_type) || dom::isa<ast::TpConformRef>(*actual_type))
-				node->context_error(context, "expected mutable type, not ", actual_type);
+				reporter->context_error(context, "expected mutable type, not ", actual_type);
 			if (auto actual_class = ast->extract_class(actual_type)) {
 				if (is_compatible(actual_class, exp_as_ref->target))
 					return;
@@ -936,47 +966,51 @@ struct Typer : ast::ActionMatcher {
 				act_as_cold->callees.clear();
 				return;
 			} else if (auto exp_as_lambda = dom::strict_cast<ast::TpLambda>(expected_type)) {
-				type_cold_lambda(act_as_cold, exp_as_lambda, &exp_as_lambda->params, *node, context);
+				type_cold_lambda(act_as_cold, exp_as_lambda, &exp_as_lambda->params, *reporter, context);
 				return;
 			}
 		} else if (auto act_as_lambda = dom::strict_cast<ast::TpLambda>(actual_type)) {
 			if (auto exp_as_cold = dom::strict_cast<ast::TpColdLambda>(expected_type)) {
-				type_cold_lambda(exp_as_cold, act_as_lambda, &act_as_lambda->params, *node, context);
+				type_cold_lambda(exp_as_cold, act_as_lambda, &act_as_lambda->params, *reporter, context);
 				return;
 			}
 		} else if (auto exp_as_opt = dom::strict_cast<ast::TpOptional>(expected_type)) {
 			if (auto act_as_opt = dom::strict_cast<ast::TpOptional>(actual_type)) {
 				if (act_as_opt->depth == exp_as_opt->depth) {
-					expect_type(node, act_as_opt->wrapped, exp_as_opt->wrapped, context);
+					expect_type(nullptr, reporter, act_as_opt->wrapped, exp_as_opt->wrapped, context);
 					return;
 				}
 			} else {
-				expect_type(node, actual_type, exp_as_opt->wrapped, [&] { return ast::format_str("trying to convert to optional while ", context()); });
+				expect_type(nullptr, reporter, actual_type, exp_as_opt->wrapped, [&] { return ast::format_str("trying to convert to optional while ", context()); });
+				if (!converter_host)
+					reporter->context_error(context, "can't auto-wrap optional here, use ?-operator to wrap manually");
 				for (size_t d = exp_as_opt->depth + 1; d; d--) {
-					auto r = ast::make_at_location<ast::If>(*node);
-					auto cond = ast::make_at_location<ast::ConstBool>(*node);
+					auto r = ast::make_at_location<ast::If>(**converter_host);
+					auto cond = ast::make_at_location<ast::ConstBool>(**converter_host);
 					cond->value = true;
 					r->p[0] = cond;
-					r->p[1] = move(node);
-					node = move(r);
+					r->p[1] = move(*converter_host);
+					*converter_host = move(r);
 				}
-				find_type(node);
+				find_type(*converter_host);
 				return;
 			}
 		} else if (auto exp_as_lambda = dom::strict_cast<ast::TpLambda>(expected_type)) {
 			if (exp_as_lambda->params.size() == 1) {
+				if (!converter_host)
+					reporter->context_error(context, "can't auto-wrap in lambda here, use \\-operator to wrap manually");
 				auto actual_as_own = dom::strict_cast<ast::TpOwn>(actual_type);
 				auto result_as_own = dom::strict_cast<ast::TpOwn>(exp_as_lambda->params.back());
 				if (actual_as_own && result_as_own && is_compatible(actual_as_own->target, result_as_own->target)) {
-					auto r = ast::make_at_location<ast::MkLambda>(*node);
-					r->body.push_back(move(node));
+					auto r = ast::make_at_location<ast::MkLambda>(**converter_host);
+					r->body.push_back(move(*converter_host));
 					r->type_ = ast->tp_lambda({ actual_type });
-					node = move(r);
+					*converter_host = move(r);
 					return;
 				}
 			}
 		}
-		node->context_error(context, "Expected type: ", expected_type, " not ", actual_type);
+		reporter->context_error(context, "Expected type: ", expected_type, " not ", actual_type);
 	}
 
 	void process_method(own<ast::Method>& m) {
@@ -988,12 +1022,20 @@ struct Typer : ast::ActionMatcher {
 		} else if (m->mut == ast::Mut::ANY) {
 			m->names[0]->type = ast->get_conform_ref(ast->extract_class(m->names[0]->type));
 		}
-		for (auto& a : m->body)
-			find_type(a);
+		handle_block_body(*m);
 		if (!m->body.empty())  // empty == interface method
-			fix_fn_result(m, m->type_expression->type());
-		if (m->base)
-			expect_type(m, m->base->type(), [] { return "checking method type against overridden"; });
+			check_fn_result(m);
+		if (m->base != m)
+			expect_type(m, m->type(), m->base->type(), [] { return "checking method type against overridden"; });
+		current_module = prevm;
+	}
+
+	void process_fn_body(own<ast::Function>& m) {
+		pin<ast::Module> prevm = current_module;
+		current_module = m->module;
+		handle_block_body(*m);
+		if (!m->is_platform)
+			check_fn_result(m);
 		current_module = prevm;
 	}
 
@@ -1043,10 +1085,7 @@ struct Typer : ast::ActionMatcher {
 		for (auto& m : ast->modules) {
 			current_module = m.second;
 			for (auto& fn : m.second->functions) {
-				for (auto& a : fn.second->body)
-					find_type(a);
-				if (!fn.second->is_platform)
-					fix_fn_result(fn.second, fn.second->type_expression->type());
+				process_fn_body(fn.second);
 			}
 		}
 		expect_type(find_type(ast->starting_module->entry_point), ast->tp_lambda({ ast->tp_void() }), []{ return "main fn return value"; });

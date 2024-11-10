@@ -12,27 +12,39 @@ class App {
         roots.append(Image(this).load("back.jpg"));
         rnd = Random;
         round = loadTexture("round.png") : *Texture;
-        roots.push(100, Image(this).texture(round).setColor(short(0xff << 24 | rnd.get(0, 0xffffff))).{
-            animators.append(Shuttle.init(rnd.get(-8, 8), rnd.get(10, 700), 0, 780, _.&setRX(v short){ x := v }));
-            animators.append(Shuttle.init(rnd.get(-8, 8), rnd.get(10, 500), 0, 600-40, _.&setRY(v short){ y := v }));
+        roots.push(100, Image(this)
+            .texture(round)
+            .setColor(short(0xff << 24 | rnd.get(0, 0xffffff))).{
+            animators.append(Shuttle.init(rnd.get(-8, 8), rnd.get(10, 700), -20, 780, _.&setRX(v short){ x := v }));
+            animators.append(Shuttle.init(rnd.get(-8, 8), rnd.get(10, 500), -20, 600-40, _.&setRY(v short){ y := v }));
         });
         roots.append(Group(this)
-            .add(Group(this).setPos(300s, 200s).animatePos(300s, 10s, 1500).addModifier(Opacity.set(0s).animate(this, 255s, 3000))
-                .add(Image(this).load("star.png").setColor(0xff_2020ffs).animateColor(0xff_ff0020s, 4000))
-                .add(Label(this).init(defFont, 24s, 3s, "Argentum").setPos(40s, 15s)))
+            .add(Group(this)
+                .setPos(300s, 200s).animatePos(300s, 10s, 1500)
+                .addModifier(Opacity.set(0s).animate(this, 255s, 3000))
+                .add(Image(this).load("star.png")
+                    .setColor(0xff_2020ffs).animateColor(0xff_ff8800s, 14000))
+                .add(Label(this).init(defFont, 24s, 3s, "Argentum")
+                    .setPos(40s, 15s)))
             .add(Group(this).setPos(200s, 100s).`g{
-                g.add(Frame(this).init("frame.png", 3s, 3s, 3s, 3s).setColor(0x60ffffffs).setSize(400s, 10s).animateSize(400s, 400s, 2000));
+                g.add(Frame(this).init("frame.png", 3s, 3s, 3s, 3s)
+                    .setColor(0x60ffffffs)
+                    .setSize(400s, 10s).animateSize(400s, 400s, 2000));
                 i = 0s;
                 addStr = `s `color `start {
-                    g.add(Label(this).init(defFont, 32s, 0s, s).setColor(color).animateColor(color ^ 0xffffffs, 6000).setPos(start, i+16s).animatePos(10s, i+16s, 1500));
+                    g.add(Label(this).init(defFont, 32s, 0s, s)
+                        .setColor(color).animateColor(color ^ 0xffffffs, 6000)
+                        .setPos(10s, start).animatePos(10s, i+16s, 5000));
                     i += 64s
                 };
-                addStr("No GC, no pauses", 0xff_ffffffs, 800s);
+                addStr("No GC, no pauses ", 0xff_ffffffs, 800s);
                 addStr("No leaks, no overheads",0xff_dddddds, -800s);
                 addStr("No races, no crashes", 0xff_bbbbbbs, 800s);
                 addStr("Fast, small, simple", 0xff_444444s, -800s);
             })
-            .add(Label(this).init(defFont, 48s, 0s, "Year 2024!").setColor(0x80_ff_00_00s).animateColor(0xFF_00_ff_ffs, 3000).setPos(0s, 380s).animatePos(270s, 380s, 300))
+            .add(Label(this).init(defFont, 48s, 0s, "Year 2024!")
+                .setColor(0x80_ff_00_00s).animateColor(0xFF_00_ff_ffs, 3000)
+                .setPos(0s, 380s).animatePos(270s, 380s, 300))
         );
         nextFrame();
     }
@@ -43,8 +55,8 @@ class Shuttle {
         step(deltaMs int) bool {
             v = val += delta;
             v < from || v > to
-                ? {delta := -delta;}
-                : setter(short(val := v));
+                ? { delta := -delta; }
+                : { setter(short(val := v)); };
             true
         }
     }

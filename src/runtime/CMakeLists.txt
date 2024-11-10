@@ -1,5 +1,3 @@
-project ("ag_runtime")
-
 add_library (ag_runtime STATIC
     runtime.h
     runtime.c

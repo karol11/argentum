@@ -682,8 +682,6 @@ pin<TpFunction> Ast::tp_function(vector<own<Type>>&& params) {
 	return r;
 }
 pin<TpLambda> Ast::tp_lambda(vector<own<Type>>&& params) {
-	if (dom::isa<ast::TpNoRet>(*params.back()))
-		params.back() = tp_void();
 	auto at = lambda_types_.find(&params);
 	if (at != lambda_types_.end())
 		return at->second;
@@ -865,7 +863,6 @@ pin<Type> Ast::convert_maybe_optional(pin<Type> src, std::function<pin<Type>(pin
 	}
 	return converter(src);
 }
-
 
 void Node::err_out(const std::string& message) {
 	std::cerr << message;

@@ -8,7 +8,7 @@ class Array {
 
     findFirst(predicate(T)bool) ?int {
         forRange(0, size()) `i {
-            this[i] && predicate(_) ? ^findFirst = +i
+            this[i] && predicate(_) ? ^findFirst = +i;
         };
         ?0
     }
@@ -62,7 +62,7 @@ class WeakArray {
     append(item &T) {
         n = capacity();
         insert(n, 1);
-        this[n] := item
+        this[n] := item;
     }
     -contain(predicate (T)bool) bool {
         existsInRange(0, capacity()) {

@@ -18,7 +18,7 @@ class Scene {
         roots.each\_.render();
         flip();
         animators.plow\_.step(1000/60);
-        sys_postTimer(frameStartMs + 1000/60, this.nextFrame);
+        sys_postTimer(frameStartMs + 1000/120, this.nextFrame);
     }
     x = 0s;
     y = 0s;
@@ -60,7 +60,9 @@ class XYAnimator {
                 setter(
                     dstX - short(dur * xs >> 32),
                     dstY - short(dur * ys >> 32));
-            } : setter(dstX, dstY);
+            } : {
+                setter(dstX, dstY);
+            };
             isInProgress
         }
     }
@@ -91,7 +93,9 @@ class ArgbAnimator {
                 g = dstG - short(dur * gs >> 32);
                 b = dstB - short(dur * bs >> 32);
                 setter((a << 24s) | (r << 16s) | (g << 8s) | b);
-            } : setter((dstA << 24s) | (dstR << 16s) | (dstG << 8s) | dstB);
+            } : {
+                setter((dstA << 24s) | (dstR << 16s) | (dstG << 8s) | dstB);
+            };
             isInProgress
         }
     }
@@ -126,7 +130,9 @@ class ValAnimator {
             isInProgress ? {
                 dur -= deltaMs;
                 setter(end - short(dur * scaler >> 32));
-            } : setter(end);
+            } : {
+                setter(end);
+            };
             isInProgress
         }
     }

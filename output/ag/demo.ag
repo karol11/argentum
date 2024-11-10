@@ -23,9 +23,7 @@ class Scene{
     foreground = *Texture;
 
     init() this {
-        sdl.init(sdl_xInitEverything, sdl_xImgJpg | sdl_xImgPng ).{
-            sys_log("sdl init {_?"+":"-"}")
-        } &&
+        sdl.init(sdl_xInitEverything, sdl_xImgJpg | sdl_xImgPng ) &&
         w.init(
             "Hello from Argentum!",
             Rect.xywh(sdl_xDefaultPos, sdl_xDefaultPos, 800s, 600s),

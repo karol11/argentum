@@ -500,7 +500,7 @@ struct Break : Action {
 	weak<Block> block;
 	own<Action> result;
 	string block_name;
-	weak<Var> x_var;  // if not null, this is the opt.var that holds the result
+	size_t lexical_depth = 0;  // nesting level of fn they resides in
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(Break);
 };
@@ -516,11 +516,10 @@ struct Block : Action {
 };
 
 struct MkLambda : Block {  // MkLambda locals are params 
-	size_t access_depth = 0;  // most nested non-own local used by this lambda, lambda cannot be returned above this level
 	size_t lexical_depth = 0;  // its nesting level
 	vector<weak<Var>> captured_locals;  // its params and its nested blocks' locals that were captured by nested lambdas
 	vector<weak<Var>> mutables;  // its params and its nested blocks locals that were not captured but were modified by Set actions
-	unordered_set<weak<Block>> x_targets; // all its break targets, and targets of called lambdas, that go outside of this lambda
+	unordered_set<weak<Break>> x_breaks; // all its breaks, and breaks of called lambdas, that go outside of this lambda
 	void match(ActionMatcher& matcher) override;
 	DECLARE_DOM_CLASS(MkLambda);
 };
