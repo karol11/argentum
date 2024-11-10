@@ -5,14 +5,14 @@ using sys {
     StrBuilder,
     SharedArray
 }
-using array;
+//using array;
 
 class String {
     *cursor() Cursor { Cursor.set(this) }
     *split(delimiter short) @SharedArray(String) {
         text = Cursor.set(this);
         SharedArray(String).`r{
-            loop !(text.getTill(delimiter) ? r.append(_))
+        //    loop !(text.getTill(delimiter) ? r.append(_))
         }
     }
 }

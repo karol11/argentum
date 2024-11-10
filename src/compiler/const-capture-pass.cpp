@@ -34,68 +34,16 @@ struct ConstCapturePass : ast::ActionScanner {
 	pin<dom::Dom> dom;
 	pin<ast::Ast> ast;
 	vector<pin<ast::MkLambda>> lambda_levels;   // Nested lambdas, `back` is the current lambda
-	unordered_map<pin<ast::Node>, own<LambdaDep>> node_lambdas;  // lambda dependency graph holding data on what lambdas a given node can return, can have cycles. built per-callable
+
+	// lambda dependency graph holding data on what lambdas a given node can return
+	// can have cycles. built per-callable
+	// a node can return either a direct single lambda or combine lambda-deps of the other nodes
+	unordered_map<pin<ast::Node>, own<LambdaDep>> node_lambdas;
 	vector<weak<ast::Call>> calls_to_fix; // calls of the current function which `activates_lambdas` to fill by tracing the `node_lambdas`
 
 	ConstCapturePass(pin<ast::Ast> ast, pin<dom::Dom> dom)
 		: dom(dom)
 		, ast(ast) {}
-
-/*  // Todo Assess if a Loop->Star and full scan approach works better than multiple DFS
-	void fix_calls() {
-		unordered_set<pin<LambdaDep>> seen;
-		unordered_set<pin<LambdaDep>> path_set;
-		vector<pin<LambdaDep>> path_vec;
-		unordered_map<
-			pin<LambdaDep>,
-			shared_ptr<unordered_set<pin<LambdaDep>>>> loops;
-		function<void(pin<LambdaDep>)> find_loops = [&](pin<LambdaDep>& n) {
-			if (seen.count(n)) return;
-			seen.insert(n);
-			if (auto as_pull = get_if<LambdaDep::tp_pull>(&n->val)) {
-				if (!path_set.insert(n).second) {
-					unordered_set<shared_ptr<unordered_set<pin<LambdaDep>>>> intersections;
-					for (int i = path_vec.size() - 1;; --i) {
-						if (auto it = loops.find(path_vec[i]); it != loops.end()) {
-							intersections.insert(it->second);
-						}
-						if (path_vec[i] == n)
-							break;
-					}
-					auto loop = intersections.size() == 1
-						? *intersections.begin()
-						: std::make_shared<unordered_set<pin<LambdaDep>>>();
-					for (int i = path_vec.size() - 1;; --i) {
-						if (loop->insert(path_vec[i]).second)
-							loops.insert({ path_vec[i], loop });
-						if (path_vec[i] == n)
-							break;
-					}
-					if (intersections.size() > 1) {
-						for (auto& l : intersections) {
-							for (auto& dep : *l) {
-								loop->insert(dep);
-								loops.insert({ dep, loop });
-							}
-						}
-					}
-				}
-				path_vec.push_back(n);
-				for (auto& i : *as_pull)
-					find_loops(i);
-				path_vec.pop_back();
-				path_set.erase(n);
-			}
-		};
-		for (auto& n : node_lambdas)	
-			find_loops(n.second);
-		while (!loops.empty()) {
-			auto star = new LambdaDep(unordered_set<weak<LambdaDep>>());
-			auto l = loops.begin()->second;
-			// turn loops to stars
-		}
-		// DFS node_lambdas calls to fix
-	}*/
 
 	void fix_globals() {
 		for (auto& c : ast->classes_in_order) {
@@ -118,8 +66,10 @@ struct ConstCapturePass : ast::ActionScanner {
 		}
 	}
 	void fix_fn(ast::MkLambda& fn) {
-		auto prev_calls_to_fix = move(calls_to_fix);
-		auto prev_node_lambdas = move(node_lambdas);
+		auto prev_node_lambdas = node_lambdas;
+		decltype(calls_to_fix) prev_calls_to_fix;
+		swap(prev_calls_to_fix, calls_to_fix);
+		swap(prev_node_lambdas, node_lambdas);
 		fn.lexical_depth = lambda_levels.size();
 		lambda_levels.push_back(&fn);
 		fix_block(fn, true);
@@ -129,10 +79,10 @@ struct ConstCapturePass : ast::ActionScanner {
 				if (auto as_direct = get_if<LambdaDep::tp_direct>(&n->val)) {
 					if (&fn != *as_direct) {
 						c->activates_lambdas.insert(*as_direct);
-						if (!as_direct) {
-							for (auto& t : (*as_direct)->x_targets) {
-								if (t->lexical_depth < fn.lexical_depth)
-									fn.x_targets.insert(t);
+						if (*as_direct) {
+							for (auto& xb : (*as_direct)->x_breaks) {
+								if (xb->block->lexical_depth < fn.lexical_depth)
+									fn.x_breaks.insert(xb);
 							}
 						}
 					}
@@ -158,14 +108,12 @@ struct ConstCapturePass : ast::ActionScanner {
 		node_lambdas = move(prev_node_lambdas);
 	}
 	void fix_block(ast::Block& b, bool is_fn = false) {
-		// bool has_lambda_names = false;
 		b.lexical_depth = lambda_levels.size() - 1;
 		for (auto& p : b.names) {
 			if (p->initializer)
 				fix(p->initializer);
 			p->lexical_depth = lambda_levels.size() - 1;
 			if (auto it_l = node_lambdas.find(p->initializer); it_l != node_lambdas.end()) {
-				// has_lambda_names = true;
 				node_lambdas.insert({
 					p,
 					is_fn
@@ -176,6 +124,38 @@ struct ConstCapturePass : ast::ActionScanner {
 		}
 		for (auto& b : b.body)
 			fix(b);
+		pin<ast::Block> break_target;
+		for (auto br_it = b.breaks.begin(); br_it != b.breaks.end();) {
+			auto& br = *br_it;
+			if (br->lexical_depth != br->block->lexical_depth) {
+				if (!break_target) {
+					if (dom::isa<ast::Block>(b)) {
+						break_target = &b;
+					} else {
+						break_target = ast::make_at_location<ast::Block>(b);
+						break_target->type_ = cast<ast::TpLambda>(b.type())->params.back();
+						break_target->lexical_depth = b.lexical_depth;
+						std::swap(b.body, break_target->body);
+						b.body.push_back(break_target);
+					}
+					auto x_var = ast::make_at_location<ast::Var>(b);
+					x_var->name = "_x_break";
+					x_var->is_mutable = true;
+					x_var->captured = true;
+					x_var->type = ast->tp_optional(cast<ast::TpLambda>(b.type())->params.back());
+					x_var->lexical_depth = b.lexical_depth;
+					lambda_levels.back()->captured_locals.push_back(x_var);
+					break_target->names.insert(break_target->names.begin(), x_var);
+				}
+				if (&b != break_target) {
+					br->block = break_target;
+					break_target->breaks.insert(br);
+					br_it = b.breaks.erase(br_it);
+				}
+			} else {
+				++br_it;
+			}
+		}
 	}
 
 	void fix_var_depth(pin<ast::Var> var) {
@@ -186,11 +166,17 @@ struct ConstCapturePass : ast::ActionScanner {
 				var->captured = true;
 				lambda_levels[var->lexical_depth]->captured_locals.push_back(var);
 			}
-			if (lambda_levels.back()->access_depth < var->lexical_depth)
-				lambda_levels.back()->access_depth = var->lexical_depth;
 		}
 	}
-
+	void on_break(ast::Break& node) override {
+		ast::ActionScanner::on_break(node);
+		if (node.block) {
+			node.lexical_depth = lambda_levels.size() - 1;
+			for (size_t i = lambda_levels.size() - 1; i > node.block->lexical_depth; --i) {
+				lambda_levels[i]->x_breaks.insert(weak<ast::Break>(&node));
+			}
+		}
+	}
 	void on_bin_op(ast::BinaryOp& node) override {
 		ast::ActionScanner::on_bin_op(node);
 		auto l_it = node_lambdas.find(node.p[0]);
@@ -214,39 +200,8 @@ struct ConstCapturePass : ast::ActionScanner {
 	void on_get(ast::Get& node) override {
 		fix_var_depth(node.var);
 		if (dom::isa<ast::TpLambda>(*node.type())) {
-			if (auto it = node_lambdas.find(node.var); it != node_lambdas.end())
+			if (auto it = node_lambdas.find(node.var); it != node_lambdas.end()) {
 				node_lambdas.insert({ &node, it->second });
-		}
-	}
-
-	void on_break(ast::Break& node) override {
-		if (node.block_name.empty())
-			return; // it's a type-only node
-		fix(node.result);
-		if (node.block->lexical_depth != lambda_levels.size() - 1) {
-			if (!dom::isa<ast::Block>(*node.block.pinned())) {
-				if (node.block->body.size() == 1 && dom::isa<ast::Block>(*node.block->body.back())) {
-					node.block = cast<ast::Block>(node.block->body.back());
-				} else {
-					auto block = ast::make_at_location<ast::Block>(*node.block.pinned());
-					std::swap(block->body, node.block->body);
-					node.block->body.push_back(block);
-					block->type_ = cast<ast::TpLambda>(node.block->type())->params.back();
-					block->lexical_depth = node.block->lexical_depth;
-					node.block = block;
-				}
-			}
-			if (node.block->names.empty() || node.block->names[0]->name != "_x_break") {
-				auto x_var = pin<ast::Var>::make();
-				x_var->name = "_x_break";
-				x_var->is_mutable = true; // it'll be marked as captured in `fix_var_depth`
-				x_var->type = ast->tp_optional(node.result->type());
-				fix_var_depth(x_var);
-				node.block->names.insert(node.block->names.begin(), x_var);
-			}
-			node.x_var = node.block->names[0];
-			for (size_t i = lambda_levels.size() - 1; i > node.block->lexical_depth; --i) {
-				lambda_levels[i]->x_targets.insert(node.block);
 			}
 		}
 	}
@@ -258,10 +213,12 @@ struct ConstCapturePass : ast::ActionScanner {
 			node.var->is_mutable = true;
 			lambda_levels[node.var->lexical_depth]->mutables.push_back(node.var);
 		}
-		if (auto var_it = node_lambdas.find(node.var); var_it != node_lambdas.end()) {
-			if (auto val_it = node_lambdas.find(node.val); val_it != node_lambdas.end()) {
-				get_if<LambdaDep::tp_pull>(&var_it->second->val)->insert(val_it->second);
-				node_lambdas.insert({ &node, var_it->second });
+		if (dom::isa<ast::TpLambda>(*node.val->type())) {
+			if (auto var_it = node_lambdas.find(node.var); var_it != node_lambdas.end()) {
+				if (auto val_it = node_lambdas.find(node.val); val_it != node_lambdas.end()) {
+					get_if<LambdaDep::tp_pull>(&var_it->second->val)->insert(val_it->second);
+					node_lambdas.insert({ &node, var_it->second });
+				}
 			}
 		}
 	}
@@ -278,18 +235,7 @@ struct ConstCapturePass : ast::ActionScanner {
 	void on_call(ast::Call& node) override {
 		ast::ActionScanner::on_call(node);
 		if (cast<ast::TpLambda>(node.callee->type())->can_x_break) {
-			LambdaDep::tp_pull set;
 			calls_to_fix.push_back(&node);
-			auto add_dep = [&](own<ast::Action>& n) {
-				if (auto it = node_lambdas.find(n); it != node_lambdas.end())
-					set.insert(it->second);
-			};
-			add_dep(node.callee);
-			for (auto& p : node.params)
-				add_dep(p);
-			node_lambdas.insert({
-				&node,
-				new LambdaDep(move(set))});
 		}
 	}
 

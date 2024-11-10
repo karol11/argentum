@@ -1,6 +1,4 @@
-﻿project(ag_http_client)
-
-find_package(CURL REQUIRED)
+﻿find_package(CURL REQUIRED)
 
 add_library (ag_http_client STATIC http-client.c)
 

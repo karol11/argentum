@@ -3,6 +3,7 @@
 #include <stdio.h> // puts
 #include <assert.h>
 #include <time.h>  // timespec, timespec_get
+#include <math.h>  // pow
 
 #include "ag-threads.h"
 #include "utf8.h"
@@ -509,7 +510,9 @@ int32_t ag_m_sys_Cursor_peekCh(AgCursor* s) {
 		? get_utf8(&pos)
 		: 0;
 }
-
+int64_t ag_m_sys_Cursor_offset(AgCursor* s) {
+	return s->str ? s->pos - s->str->chars : 0;
+}
 void ag_m_sys_Cursor_set(AgCursor* th, AgString* s) {
 	ag_retain_shared_nn(&s->head);
 	ag_release_shared(&th->str->head);
@@ -517,6 +520,7 @@ void ag_m_sys_Cursor_set(AgCursor* th, AgString* s) {
 	th->pos = s->chars;
 }
 
+double ag_fn_sys_powDbl(double v, double p) { return pow(v, p); }
 AgObject* ag_fn_sys_getParent(AgObject* obj) {  // obj not null, result is nullable
 	AgObject* r = ag_getParentNoLock(obj);
 	ag_retain_pin(r);

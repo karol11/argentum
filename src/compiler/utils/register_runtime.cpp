@@ -138,6 +138,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 				ast.mk_field("_buffer", new ast::ConstString) });
 		ast.mk_method(mut::MUTATING, cursor_cls, "getCh", FN(ag_m_sys_Cursor_getCh), new ast::ConstInt32, {});
 		ast.mk_method(mut::ANY, cursor_cls, "peekCh", FN(ag_m_sys_Cursor_peekCh), new ast::ConstInt32, {});
+		ast.mk_method(mut::ANY, cursor_cls, "offset", FN(ag_m_sys_Cursor_offset), new ast::ConstInt64, {});
 		make_factory(ast.mk_method(mut::MUTATING, cursor_cls, "set", FN(ag_m_sys_Cursor_set), nullptr, { ast.get_shared(ast.string_cls) }));
 	}
 	{
@@ -206,6 +207,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 	ast.mk_fn("terminate", FN(ag_fn_sys_terminate), new ast::Break, { ast.tp_int64() });
 	ast.mk_fn("setMainObject", FN(ag_fn_sys_setMainObject), new ast::ConstVoid, { ast.tp_optional(ast.get_ref(ast.object))});
 	ast.mk_fn("weakExists", FN(ag_fn_sys_weakExists), new ast::ConstBool, { ast.get_weak(ast.object) });
+	ast.mk_fn("powDbl", FN(ag_fn_sys_powDbl), new ast::ConstDouble, { ast.tp_double(), ast.tp_double() });
 	ast.mk_fn("postTimer", FN(ag_fn_sys_postTimer), new ast::ConstVoid, {
 		ast.tp_int64(),
 		ast.tp_delegate({ ast.tp_void() })

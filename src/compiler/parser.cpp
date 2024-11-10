@@ -553,7 +553,7 @@ struct Parser {
 			r = fill(
 				make<ast::Else>(),
 				r,
-				parse_lambda_0_params([&] { return parse_ifs(); }));
+				parse_lambda_0_params([&] { return parse_expression(); }));
 		return r;
 	}
 
@@ -902,7 +902,7 @@ struct Parser {
 		if (match("double"))
 			return fill(make<ast::ToDoubleOp>(), parse_expression_in_parethesis());
 		if (match("loop")) 
-			return fill(make<ast::Loop>(), parse_unar());
+			return fill(make<ast::Loop>(), parse_expression());
 		if (match("_")) {
 			auto r = make<ast::Get>();
 			r->var_name = "_";
@@ -911,9 +911,11 @@ struct Parser {
 		}
 		if (match_ns("'")) {
 			auto r = make<ast::ConstInt32>();
+			auto prev = cur;
 			r->value = get_utf8(&cur);
 			if (!r->value)
 				error("incomplete character constant");
+			pos += cur - prev;
 			expect("'");
 			return r;
 		}
