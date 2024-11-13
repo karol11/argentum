@@ -147,6 +147,9 @@ bool      ag_eq_shared          (AgObject* a, AgObject* b);
 
 AgObject* ag_fn_sys_getParent   (AgObject* obj);   // obj not null
 
+double    ag_fn_sys_powDbl      (double v, double p);
+double    ag_fn_sys_log10Dbl    (double v);
+
 // Checks if a weak target exists.
 // Works cross-threads.
 // Eventually consistent.

@@ -521,6 +521,8 @@ void ag_m_sys_Cursor_set(AgCursor* th, AgString* s) {
 }
 
 double ag_fn_sys_powDbl(double v, double p) { return pow(v, p); }
+double ag_fn_sys_log10Dbl(double v) { return log10(v); }
+
 AgObject* ag_fn_sys_getParent(AgObject* obj) {  // obj not null, result is nullable
 	AgObject* r = ag_getParentNoLock(obj);
 	ag_retain_pin(r);

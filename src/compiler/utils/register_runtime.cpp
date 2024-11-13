@@ -208,6 +208,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 	ast.mk_fn("setMainObject", FN(ag_fn_sys_setMainObject), new ast::ConstVoid, { ast.tp_optional(ast.get_ref(ast.object))});
 	ast.mk_fn("weakExists", FN(ag_fn_sys_weakExists), new ast::ConstBool, { ast.get_weak(ast.object) });
 	ast.mk_fn("powDbl", FN(ag_fn_sys_powDbl), new ast::ConstDouble, { ast.tp_double(), ast.tp_double() });
+	ast.mk_fn("log10Dbl", FN(ag_fn_sys_log10Dbl), new ast::ConstDouble, { ast.tp_double() });
 	ast.mk_fn("postTimer", FN(ag_fn_sys_postTimer), new ast::ConstVoid, {
 		ast.tp_int64(),
 		ast.tp_delegate({ ast.tp_void() })
