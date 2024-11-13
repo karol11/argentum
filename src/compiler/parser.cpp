@@ -1169,6 +1169,14 @@ struct Parser {
 		return true;
 	}
 
+	bool match_ns(char c) {
+		if (*cur != c)
+			return false;
+		cur++;
+		pos++;
+		return true;
+	}
+
 	bool match(const char* str) {
 		if (match_ns(str)) {
 			match_ws();
@@ -1246,9 +1254,11 @@ struct Parser {
 		return is_id_head(c) || is_num(c);
 	};
 
-	static int get_digit(char c) {
+	static int get_digit(char c, int radix) {
 		if (c >= '0' && c <= '9')
 			return c - '0';
+		if (radix < 16)
+			return 255;
 		if (c >= 'a' && c <= 'f')
 			return c - 'a' + 10;
 		if (c >= 'A' && c <= 'F')
@@ -1282,7 +1292,7 @@ struct Parser {
 		for (;; cur++, pos++) {
 			if (*cur == '_')
 				continue;
-			int digit = get_digit(*cur);
+			int digit = get_digit(*cur, radix);
 			if (digit == 255)
 				break;
 			if (digit >= radix)
@@ -1306,12 +1316,12 @@ struct Parser {
 		}
 		std::feclearexcept(FE_ALL_EXCEPT);
 		double d = double(result);
-		if (match_ns(".")) {
+		if (match_ns('.')) {
 			for (double weight = 0.1; is_num(*cur); weight *= 0.1, cur++, pos++)
 				d += weight * (*cur - '0');
 		}
-		if (match_ns("e")) {
-			int sign = match_ns("-") ? -1 : (match_ns("+"), 1);
+		if (match_ns('e')) {
+			int sign = match_ns('-') ? -1 : (match_ns('+'), 1);
 			int exp = 0;
 			for (; *cur >= '0' && *cur < '9'; cur++, pos++)
 				exp = exp * 10 + *cur - '0';
