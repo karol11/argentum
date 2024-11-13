@@ -83,10 +83,6 @@ class Parser {
     /// Otherwise returns false and leave the position intact, allowing to `try_*` or `get_*` other types.
     tryNull() bool { isStr("null") }
 
-    /// Checks if the current position contains `null`.
-    /// Skips it regardless of result.
-    getNull() bool { isStr("null") || { skipValue(); false } }
-
     /// Attempts to extract the string from the current position.
     /// Expands the \uXXXX escapes to utf8 encoding. Handles surrogate pairs.
     /// If current position contains a string:
@@ -260,6 +256,7 @@ class Parser {
     /// It can be called from any `onField` / `onItem` handlers, to terminate parsing.
     /// In error state, `Parser` responds with nothing/false to all calls, quits all `get/try Object/Array` aggregated calls.
     setError(text str) {
+        c := 0s;
         errorText
             || errorText := text
     }
@@ -388,3 +385,53 @@ class Parser {
 // };
 
 // sys_log("{Parser.init("false").getBool(true) ? "+" : "-"}")
+
+// class Point{
+//     x = 0.0f;
+//     y = 0.0f;
+// } 
+// class Polygon {
+//     name = "";
+//     points = Array(Point);
+//     isActive = false;
+// }
+
+// fn parseJson(data str) Array(Polygon) {
+//     json = Parser.init(data);
+//     Array(Polygon).{                                              // 1
+//         json.getArr {
+//             _.append(Polygon)-> json.getObj `f {                  // 2
+//                 f=="active" ? { _.isActive := json.getBool(false); } :
+//                 f=="name"   ? { _.name := json.getStr(""); } :
+//                 f=="points" ? json.getArr {
+//                     _.points.append(Point)-> json.getObj `f {     // 3
+//                         f=="x" ? { _.x := float(json.getNum(0.0)); } :
+//                         f=="y" ? { _.y := float(json.getNum(0.0)); } : {}
+//                     }
+//                 } : {}
+//             }
+//         }
+//     }
+//  }
+//  p = parseJson("
+//     [
+//         {
+//             "active": false,
+//             "name": "p1",
+//             "points": [
+//                 {"x": 11, "y": 32},
+//                 {"y": 23, "x": 12},
+//                 {"x": -1, "y": 4}
+//             ]
+//         },
+//         {
+//             "points": [
+//                 {"x": 10, "y": 0},
+//                 {"x": 0, "y": 10},
+//                 {"y": 0, "x": 0}
+//             ],
+//             "active": true,
+//             "name": "Corner"
+//         }
+//     ]
+// ");
