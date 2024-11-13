@@ -3,16 +3,18 @@ using sys {
     Cursor,
     Blob,
     StrBuilder,
-    SharedArray
+    SharedArray,
+    powDbl,
+    log10Dbl
 }
-//using array;
+using array;
 
 class String {
     *cursor() Cursor { Cursor.set(this) }
     *split(delimiter short) @SharedArray(String) {
         text = Cursor.set(this);
         SharedArray(String).`r{
-        //    loop !(text.getTill(delimiter) ? r.append(_))
+            loop !(text.getTill(delimiter) ? r.append(_))
         }
     }
 }
@@ -38,7 +40,7 @@ class StrBuilder {
     }
     putCh(codePoint short) this {
         reserve(8);
-        pos := putChAt(pos, codePoint)
+        pos := putChAt(pos, codePoint);
     }
     putStr(s str) this {
         in = Cursor.set(s);
@@ -47,7 +49,7 @@ class StrBuilder {
             c != 0s ? putCh(c)
         }
     }
-    putOptStr(s ?str) this { s ? putStr(_) }
+    putOptStr(s ?str) this { s ? putStr(_); }
     putInt(val int) this {
         reserve(22);
         isNeg = val < 0;
@@ -60,6 +62,36 @@ class StrBuilder {
         isNeg ? set8At(p -= 1, '-');
         copy(pos, this, p, pos + 21 - p);
         pos += pos + 21 - p;
+    }
+    putDouble(v double) this {
+        v < 0.0 ? { v := -v; putCh('-') };
+        exp = v > 4_503_599_627_370_497.0 || v < 1.0e-6 && v != 0.0 
+            ? int(log10Dbl(v)).{
+                v /= powDbl(10.0, double(_));
+            };
+        putInt(int(v).{ v -= double(_) });
+        v != 0.0 ? {
+            putCh('.');
+            p = 0.1;
+            s = 10.0;
+            r = 0.0;
+            loop {
+                n = short(v * s) % 10s;
+                r += double(n) * p;
+                upper = r + p - v;
+                lower = v - r;
+                n < 9s && upper < 1.0e-15 && upper < lower ? {
+                    putCh(n + '1');
+                    true
+                } : {
+                    putCh(n + '0');
+                    p *= 0.1;
+                    s *= 10.0;
+                    lower < 1.0e-15
+                }
+            }
+        };
+        exp ? putCh('e').putInt(_);
     }
     newLine() this {
         putCh(0x0as);
