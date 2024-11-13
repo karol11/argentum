@@ -766,7 +766,7 @@ struct Typer : ast::ActionMatcher {
 	void on_shl(ast::ShlOp& node) override { on_int_op(node, [] { return "shl operator"; }); }
 	void on_shr(ast::ShrOp& node) override { on_int_op(node, [] { return "shr operator"; }); }
 	void on_lt(ast::LtOp& node) override {
-		on_int_or_double_op(node, [] { return "ordering operator"; });
+		on_int_or_double_op(node, [] { return "comparison operator"; });
 		node.type_ = tp_bool;
 	}
 	void on_eq(ast::EqOp& node) override {
