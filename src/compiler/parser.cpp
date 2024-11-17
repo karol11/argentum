@@ -699,7 +699,7 @@ struct Parser {
 					if (match(":=")) {
 						auto si = make_at_location<ast::SetAtIndex>(*gi);
 						si->indexes = move(gi->indexes);
-						si->value = parse_expression();
+						si->value = parse_ifs();
 						gi = si;
 					}
 					gi->indexed = r;
@@ -736,19 +736,19 @@ struct Parser {
 						gf->base = field_base;
 						sf->val = op;
 						op->p[0] = gf;
-						op->p[1] = parse_expression();
+						op->p[1] = parse_ifs();
 						block->body.push_back(sf);
 						r = block;
 					} else {
 						if (match(":=")) {
 							auto sf = make_at_location<ast::SetField>(*gf);
 							sf->field_name = gf->field_name;
-							sf->val = parse_expression();
+							sf->val = parse_ifs();
 							gf = sf;
 						} else if (match("@=")) {
 							auto sf = make_at_location<ast::SpliceField>(*gf);
 							sf->field_name = gf->field_name;
-							sf->val = parse_expression();
+							sf->val = parse_ifs();
 							gf = sf;
 						}
 						gf->base = r;
@@ -756,11 +756,11 @@ struct Parser {
 					}
 				}
 			} else if (match(":=")) {
-				r = make_set_op(r, [&] { return parse_expression(); });
+				r = make_set_op(r, [&] { return parse_ifs(); });
 			} else if (auto op = match_set_op()) {
 				r = make_set_op(r, [&] {
 					op->p[0] = r;
-					op->p[1] = parse_expression();
+					op->p[1] = parse_ifs();
 					return op;
 					});
 			} else if (match("->")) {
