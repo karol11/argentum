@@ -373,7 +373,15 @@ class Writer {
             putHex = `n putCh(n > 9s ? n - 10s + 'a' : n + '0');
             putCh('"');
             v.cursor() -> loop _.getCh()-> {
-                _ >= ' ' ? putCh(_) :
+                _ >= ' ' ? {
+                    _ == '"' || _ == '/' || _ == 0x5Cs ? putCh(0x5Cs);
+                    putCh(_)
+                } :
+                _ == 8s ? putCh('/').putCh('b') :
+                _ == 0xCs ? putCh('/').putCh('f') :
+                _ == 0xAs ? putCh('/').putCh('n') :
+                _ == 0xDs ? putCh('/').putCh('r') :
+                _ == 0x9s ? putCh('/').putCh('t') :
                 _ != 0s ? {
                     putCh(0x5Cs).putCh('x').putCh('0').putCh('0');
                     putHex(_ >> 4s);
@@ -452,7 +460,7 @@ class Writer {
 // sys_log(Writer.num(42.3).toStr());
 // sys_log(Writer.null().toStr());
 
-// sys_log(Writer.str("
+// sys_log(Writer.str("ttrn\
 //     asdf
 //     zxcv
 // ").toStr());
