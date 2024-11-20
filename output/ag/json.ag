@@ -362,8 +362,15 @@ class Writer {
     written = false;
     indentVal = 0;
     indentChar = 0s;
-    useSpaces() this { indentChar := ' ' }
-    useTabs() this { indentChar := 9s }
+    indentStep = 0;
+    useSpaces(indentStep int) this {
+        indentChar := ' ';
+        this.indentStep := indentStep
+    }
+    useTabs() this {
+        indentChar := 9s;
+        indentStep := 1
+    }
 
     bool(v bool) this {
         handleDup() ? putStr(v ? "true" : "false")
@@ -401,9 +408,9 @@ class Writer {
             inArr := true;
             written := false;
             putCh('[');
-            indentVal += 1;
+            indentVal += indentStep;
             itemWriter(this);
-            indentVal-=1;
+            indentVal -= indentStep;
             written ? indent();
             putCh(']');
             written := true;
@@ -413,7 +420,7 @@ class Writer {
     obj(fieldWriter((str)Writer)) this {
         handleDup() ? {
             putCh('{');
-            indentVal+=1;
+            indentVal += indentStep;
             savedInArr = inArr;
             inArr := false;
             firstField = true;
@@ -432,7 +439,7 @@ class Writer {
                 this
             };
             written : putStr("null").indent();
-            indentVal -= 1;
+            indentVal -= indentStep;
             firstField : indent();
             putCh('}');
             inArr := savedInArr;
@@ -461,14 +468,14 @@ class Writer {
 // sys_log(Writer.null().toStr());
 
 // sys_log(Writer.str("ttrn\
-//     asdf
-//     zxcv
+//     "asdf"
+//     \zxcv/
 // ").toStr());
 
-// sys_log(Writer.arr{
-//     _.num(1.1);
-//     _.num(1.2);
-//     _.num(1.3);
+// sys_log(Writer.arr{_
+//     .num(1.1)
+//     .num(1.2)
+//     .num(1.3)
 // }.toStr());
 
 // sys_log(Writer.useTabs().arr{
@@ -480,7 +487,7 @@ class Writer {
 //     _.num(1.2);
 // }.toStr());
 
-// sys_log(Writer.useTabs().obj {
+// sys_log(Writer.useSpaces(2).obj {
 //     _("year").num(1972.0);
 //     _("name").str("Andrey");
 //     _("details").obj {         // nested object
