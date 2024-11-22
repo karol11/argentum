@@ -882,4 +882,6 @@ std::ostream& operator<< (std::ostream& dst, const ltm::pin<ast::Type>& t);
 
 }
 
+[[noreturn]] void panic();
+
 #endif // AST_H

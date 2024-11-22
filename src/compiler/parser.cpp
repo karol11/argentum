@@ -1342,7 +1342,7 @@ struct Parser {
 	template<typename... T>
 	[[noreturn]] void error(const T&... t) {
 		std::cerr << "error " << ast::format_str(t...) << " " << module_name << ":" << line << ":" << pos << std::endl;
-		throw 1;
+		panic();
 	}
 
 	bool is_eof() {
@@ -1361,6 +1361,6 @@ void parse(
 	ast->starting_module = Parser(ast, start_module_name, modules_in_dep_path).parse(module_text_provider);
 	if (!ast->starting_module->entry_point || ast->starting_module->entry_point->body.empty()) {
 		std::cerr << "error starting module has no entry point" << std::endl;
-		throw 1;
+		panic();
 	}
 }

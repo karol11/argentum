@@ -864,9 +864,9 @@ pin<Type> Ast::convert_maybe_optional(pin<Type> src, std::function<pin<Type>(pin
 	return converter(src);
 }
 
-void Node::err_out(const std::string& message) {
+[[noreturn]] void Node::err_out(const std::string& message) {
 	std::cerr << message;
-	throw 1;
+	panic();
 }
 
 string Node::get_annotation() {
@@ -911,8 +911,8 @@ string Class::get_name() {
 		: name;
 }
 
-string AbstractClass::get_name() {
-	throw 1;
+[[noreturn]] string AbstractClass::get_name() {
+	panic();
 }
 
 string ClassParam::get_name() {
