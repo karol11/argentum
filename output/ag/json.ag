@@ -32,7 +32,7 @@ class Parser {
                 ? -1
                 : { isCh('+'); 1};
             r = 0;
-            loop!(c > '0' && c < '9' ? {
+            loop!(c >= '0' && c <= '9' ? {
                 r := r * 10 + int(c - '0');
                 c := getCh()
             });
@@ -41,7 +41,7 @@ class Parser {
         r = double(getInt());
         isCh('.') ? {
             weight = r < 0.0 ? -0.1 : 0.1;
-            loop! (c >= '0' && c < '9' ? {
+            loop! (c >= '0' && c <= '9' ? {
                 r += weight * double(c - '0');
                 weight *= 0.1;
                 c := getCh()
@@ -262,10 +262,10 @@ class Parser {
             || errorText := text
     }
 
-    // Returns error position in the parsed json.
+    /// Returns error position in the parsed json.
     getErrorPos() ?Cursor { errorText ? this }
 
-    // Returns error text either set by `setError` manually or as a result of the internal parsing errors.
+    /// Returns error text either set by `setError` manually or as a result of the internal parsing errors.
     getErrorMessage() ?str { errorText }
 
     // TODO: make private
@@ -363,18 +363,36 @@ class Writer {
     indentVal = 0;
     indentChar = 0s;
     indentStep = 0;
+
+    /// Make pretty printed JSON with space-indentation
+    /// Should be called before any data writing calls.
     useSpaces(indentStep int) this {
         indentChar := ' ';
         this.indentStep := indentStep
     }
+
+    /// Make pretty printed JSON with tab-indentation
+    /// Should be called before any data writing calls.
     useTabs() this {
         indentChar := 9s;
         indentStep := 1
     }
 
+    /// Writes boolean node.
+    /// Can be called:
+    /// - one time after Writer creation to write root element
+    /// - multiple times inside `arr` lambda to write array items
+    /// - one time after call to field lambda to write field value.
     bool(v bool) this {
         handleDup() ? putStr(v ? "true" : "false")
     }
+
+    /// Writes string node.
+    /// It encodes strings in utf8. It makes escapes required by JSON standard. 
+    /// `str` can be called:
+    /// - one time after Writer creation to write root element
+    /// - multiple times inside `arr` lambda to write array items
+    /// - one time after call to field lambda to write field value.
     str(v str) this {
         handleDup() ? {
             putHex = `n putCh(n > 9s ? n - 10s + 'a' : n + '0');
@@ -400,8 +418,35 @@ class Writer {
             }
         }
     }
+
+    /// Writes numeric node.
+    /// It preserves exact integer value for up to 52 bits (by JSON standard).
+    /// Use string type for 64-bit integers.
+    /// `num` `an be called:
+    /// - one time after Writer creation to write root element
+    /// - multiple times inside `arr` lambda to write array items
+    /// - one time after call to field lambda to write field value.
     num(v double) this { handleDup() ? putDouble(v) }
+
+    /// Writes null node.
+    /// Can be called:
+    /// - one time after Writer creation to write root element
+    /// - multiple times inside `arr` lambda to write array items
+    /// - one time after call to field lambda to write field value.
     null() this { handleDup() ? putStr("null") }
+
+    /// Writes array node.
+    /// It takes an itemWriter lambda in which you can call any writer methods
+    /// to produce array items. Example:
+    /// log(Writer.arr {
+    ///     _.num(1.0);
+    ///     _.num(2.0);
+    /// }.toStr());
+    /// It writes: [1,2]
+    /// `arr` can be called:
+    /// - one time after Writer creation to write root element
+    /// - multiple times inside `arr` lambda to write array items
+    /// - one time after call to field lambda to write field value.
     arr(itemWriter(Writer)) this {
         handleDup() ? {
             savedInArr = inArr;
@@ -417,7 +462,23 @@ class Writer {
             inArr := savedInArr;
         }
     }
-    obj(fieldWriter((str)Writer)) this {
+
+    /// Writes object node.
+    /// It takes an objWriter lambda in which you should write all fields.
+    /// This objWriter lambda is called with a fieldWriter lambda.
+    /// Wo write a field you call this fieldWriter with a field name
+    /// and in return you receive a Writer instance to write field data.
+    /// Example:
+    /// log(Writer.obj {
+    ///   _("field a").num(42.0);
+    ///   _("field b").bool(true);
+    /// }.toStr());
+    /// This prints: {"field a":42,"field b":true}
+    /// `obj` can be called:
+    /// - one time after Writer creation to write root element
+    /// - multiple times inside `arr` lambda to write array items
+    /// - one time after call to field lambda to write field value.
+    obj(objWriter((str)Writer)) this {
         handleDup() ? {
             putCh('{');
             indentVal += indentStep;
@@ -425,7 +486,7 @@ class Writer {
             inArr := false;
             firstField = true;
             written := true;
-            fieldWriter {
+            objWriter {
                 !written ? putStr("null");
                 firstField
                     ? firstField := false
@@ -519,7 +580,6 @@ class Writer {
 // Parser.init("[false, true, true, false]")->
 //    _.getArr\_.getBool(true)->sys_log("{_ ? "+" : "-"}")
 
-// //Not working - fix x-breaks
 // class Point{
 //     x = 0.0f;
 //     y = 0.0f;
@@ -531,7 +591,7 @@ class Writer {
 // }
 
 // fn polygonsToJson(data Array(Polygon)) str {
-//     Writer.useSpaces().arr{
+//     Writer.useSpaces(4).arr{
 //         data.each `poly _.obj{
 //             _("name").str(poly.name);
 //             _("active").bool(poly.isActive);
@@ -543,7 +603,7 @@ class Writer {
 //     }.toStr()
 // }
 
-// sys_log(polygonsToJson(myPolygonArray));
+// // sys_log(polygonsToJson(myPolygonArray));
 
 // fn parseJson(data str) Array(Polygon) {
 //     Array(Polygon).{                                              // 1
@@ -551,9 +611,10 @@ class Writer {
 //         json.getArr\_.append(Polygon)-> json.getObj `f            // 2
 //             f=="active" ? _.isActive := json.getBool(false) :
 //             f=="name"   ? _.name := json.getStr("") :
-//             f=="points" ? json.getArr\_.points.append(Point)-> json.getObj `f (  // 3
+//             f=="points" ? json.getArr\_.points.append(Point)-> json.getObj `f   // 3
 //                 f=="x" ? _.x := float(json.getNum(0.0)) :
-//                 f=="y" ? _.y := float(json.getNum(0.0)));
+//                 f=="y" ? _.y := float(json.getNum(0.0));
+//         json.success() : sys_log("error {json.getErrorMessage()}");
 //     }
 //  }
 //  p = parseJson("
@@ -578,3 +639,5 @@ class Writer {
 //         }
 //     ]
 // ");
+
+// polygonsToJson(p) -> sys_log(_);
