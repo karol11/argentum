@@ -80,14 +80,14 @@ class StrBuilder {
                 r += double(n) * p;
                 upper = r + p - v;
                 lower = v - r;
-                n < 9s && upper < 1.0e-15 && upper < lower ? {
+                n < 9s && upper < 1.0e-14 && upper < lower ? {
                     putCh(n + '1');
                     true
                 } : {
                     putCh(n + '0');
                     p *= 0.1;
                     s *= 10.0;
-                    lower < 1.0e-15
+                    lower < 1.0e-14
                 }
             }
         };
