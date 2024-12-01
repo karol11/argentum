@@ -941,6 +941,12 @@ struct Generator : ast::ActionScanner {
 			Generator* gen;
 			llvm::DIType* result = nullptr;
 			DiTypeMatcher(Generator* gen) :gen(gen) {}
+			llvm::DIType* to_class_ptr(ast::TpOwn& type) {
+				auto cls = type.target->get_implementation();
+				return cls->is_interface
+					? gen->di_obj_ptr
+					: gen->classes.at(cls).di_ptr;
+			}
 			void on_int32(ast::TpInt32& type) override { result = gen->di_int32; }
 			void on_int64(ast::TpInt64& type) override { result = gen->di_int; }
 			void on_float(ast::TpFloat& type) override { result = gen->di_float; }
@@ -954,12 +960,12 @@ struct Generator : ast::ActionScanner {
 				else if (isa<ast::TpVoid>(*type.wrapped)) result = gen->di_byte;
 				else type.wrapped->match(*this);
 			}
-			void on_own(ast::TpOwn& type) override { result = gen->classes.at(type.target->get_implementation()).di_ptr; }
-			void on_ref(ast::TpRef& type) override { result = gen->classes.at(type.target->get_implementation()).di_ptr; }
-			void on_shared(ast::TpShared& type) override { result = gen->classes.at(type.target->get_implementation()).di_ptr; }
+			void on_own(ast::TpOwn& type) override { result = to_class_ptr(type); }
+			void on_ref(ast::TpRef& type) override { result = to_class_ptr(type); }
+			void on_shared(ast::TpShared& type) override { result = to_class_ptr(type); }
 			void on_weak(ast::TpWeak& type) override { result = gen->di_weak_ptr; }
 			void on_frozen_weak(ast::TpFrozenWeak& type) override { result = gen->di_weak_ptr; }
-			void on_conform_ref(ast::TpConformRef& type) override { result = gen->classes.at(type.target->get_implementation()).di_ptr;; }
+			void on_conform_ref(ast::TpConformRef& type) override { result = to_class_ptr(type); }
 			void on_conform_weak(ast::TpConformWeak& type) override { result = gen->di_weak_ptr; }
 			void on_delegate(ast::TpDelegate& type) override { result = gen->di_delegate; }
 			void on_enum(ast::TpEnum& type) override { result = gen->di_int; }
