@@ -1,6 +1,7 @@
-using sys { String, Array, Cursor, StrBuilder, powDbl }
+using sys { String, Array, Cursor, StrBuilder, Map, powDbl }
 using string;
-// using array;
+using array;
+using map;
 
 class Parser {
     +Cursor;
@@ -523,6 +524,69 @@ class Writer {
         }
     }
 }
+
+/// DOM
+interface Node{ write(w Writer); }
+class JNum{
+    +Node{
+        write(w Writer) { w.num(n) }
+    }
+    n = 0.0;
+}
+fn jnum(n double) @JNum { JNum.{_.n := n} }
+class JBool{
+    +Node{
+        write(w Writer) { w.bool(b) }
+    }
+    b = false;
+}
+fn jbool(b bool) @JBool { JBool.{_.b := b} }
+class JStr{
+    +Node{
+        write(w Writer) { w.str(s) }
+    }
+    s = "";
+}
+fn jstr(s str) @JStr { JStr.{_.s := s} }
+class JNull{
+    +Node{
+        write(w Writer) { w.null() }
+    }
+}
+fn jnull() @JNull { JNull }
+class JArr{
+    +Node{
+        write(w Writer) { w.arr{ each\_.write(w) } }
+    }
+    +Array(Node);
+}
+fn jarr(maker(JArr)) @JArr { JArr.{ maker(_) } }
+class JObj{
+    +Node{
+        write(w Writer) { w.obj{ each`k`v v.write(_(k)) } }
+    }
+    +Map(String, Node);
+}
+fn jobj(maker(JObj)) @JObj { JObj.{ maker(_) } }
+
+fn read(p Parser) @Node {
+    p.isArr() ? ^read=jarr\p.getArr\_.append(read(p)) ~ Node;
+    p.isObj() ? ^read=jobj\p.getObj`f _[f] := read(p) ~ Node;
+    p.tryBool() ? ^read=jbool(_) ~ Node;
+    p.tryNum() ? ^read=jnum(_) ~ Node;
+    p.tryStr() ? ^read=jstr(_) ~ Node;
+    p.tryNull();
+    jnull() ~ Node
+}
+
+// root = read(Parser.init("
+//     {
+//         "x": 1,
+//         "z": {"a":"sss"},
+//         "y": "asdf"
+//     }
+// "));
+// sys_log(Writer.useTabs().{root.write(_)}.toStr());
 
 // sys_log(Writer.bool(true).toStr());
 // sys_log(Writer.num(42.3).toStr());
