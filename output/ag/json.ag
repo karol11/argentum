@@ -526,44 +526,44 @@ class Writer {
 }
 
 /// DOM
-interface Node{ write(w Writer); }
+interface Node{ write(w Writer) Writer; }
 class JNum{
     +Node{
-        write(w Writer) { w.num(n) }
+        write(w Writer) Writer { w.num(n) }
     }
     n = 0.0;
 }
 fn jnum(n double) @JNum { JNum.{_.n := n} }
 class JBool{
     +Node{
-        write(w Writer) { w.bool(b) }
+        write(w Writer) Writer { w.bool(b) }
     }
     b = false;
 }
 fn jbool(b bool) @JBool { JBool.{_.b := b} }
 class JStr{
     +Node{
-        write(w Writer) { w.str(s) }
+        write(w Writer) Writer { w.str(s) }
     }
     s = "";
 }
 fn jstr(s str) @JStr { JStr.{_.s := s} }
 class JNull{
     +Node{
-        write(w Writer) { w.null() }
+        write(w Writer) Writer { w.null() }
     }
 }
 fn jnull() @JNull { JNull }
 class JArr{
     +Node{
-        write(w Writer) { w.arr{ each\_.write(w) } }
+        write(w Writer) Writer { w.arr{ each\_.write(w) } }
     }
     +Array(Node);
 }
 fn jarr(maker(JArr)) @JArr { JArr.{ maker(_) } }
 class JObj{
     +Node{
-        write(w Writer) { w.obj{ each`k`v v.write(_(k)) } }
+        write(w Writer) Writer { w.obj{ each`k`v v.write(_(k)) } }
     }
     +Map(String, Node);
 }
@@ -586,7 +586,12 @@ fn read(p Parser) @Node {
 //         "y": "asdf"
 //     }
 // "));
-// sys_log(Writer.useTabs().{root.write(_)}.toStr());
+// root~JObj ? `r
+// r["x"] ? _~JNum ? `xn
+// r["z"] ? _~JObj ? _["a1"] := jnum(3.14 + xn.n);
+
+// sys_log(root.write(Writer.useSpaces(2)).toStr());
+//sys_log(Writer.useSpaces(2).{root.write(_)}.toStr());
 
 // sys_log(Writer.bool(true).toStr());
 // sys_log(Writer.num(42.3).toStr());
