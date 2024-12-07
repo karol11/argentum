@@ -638,9 +638,20 @@ struct MkInstance : Action {
 
 struct UnaryOp : Action {
 	own<Action> p;
+
+	pin<ast::Action> fill(pin<ast::Action> param) {
+		p = param;
+		return this;
+	}
 };
 struct BinaryOp : Action {
 	own<Action> p[2];
+
+	pin<ast::Action> fill(pin<ast::Action> param1, pin<ast::Action> param2) {
+		p[0] = param1;
+		p[1] = param2;
+		return this;
+	}
 };
 
 struct CastOp : BinaryOp { // p[0] can be null to indicate no-op conversion of p[1] to this.type()
