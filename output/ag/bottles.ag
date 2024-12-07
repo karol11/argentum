@@ -1,11 +1,11 @@
 using utils { forRange }
 using string;
 
-bottles = `c `n
+bottles = `c `n {
     c == 0
         ? "{n}o more bottles"
-        : "{c} bottle{c != 1 ? "s"}";
-
+        : "{c} bottle{c != 1 ? "s"}"
+};
 forRange(0, 100) `count
     sys_log("{}\
         { bottles(99-count, "N") } of beer on the wall, {

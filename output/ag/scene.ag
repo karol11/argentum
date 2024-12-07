@@ -316,7 +316,7 @@ class Group {
                 c.y += y;
                 modifiers.each\_.do(c);
                 items.each\_.render();
-                forRange(-modifiers.size(), 0) \ modifiers[1 + _] ? _.undo(c);
+                forRange(-modifiers.size(), 0){ modifiers[1 + _] ? _.undo(c) };
                 c.x -= x;
                 c.y -= y;    
             }
