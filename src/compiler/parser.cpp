@@ -52,6 +52,8 @@ struct Parser {
 	pin<ast::Module> module;
 	int32_t pos = 1;
 	int32_t line = 1;
+	int32_t last_match_pos = 1;
+	int32_t last_match_line = 1;
 	const char* cur = nullptr;
 	unordered_set<string>& modules_in_dep_path;
 	unordered_map<string, pin<ast::ImmediateDelegate>> delegates;
@@ -416,14 +418,12 @@ struct Parser {
 		};
 		if (match("&")) {
 			if (match("-")) {
-				return fill(
-					make<ast::MkWeakOp>(),
-					fill(make<ast::ConformOp>(), parse_pointer()));
+				return make<ast::MkWeakOp>()->fill(
+					make<ast::ConformOp>()->fill(parse_pointer()));
 			}
 			if (match("*")) {
-				return fill(
-					make<ast::MkWeakOp>(),
-					fill(make<ast::FreezeOp>(), parse_pointer()));
+				return make<ast::MkWeakOp>()->fill(
+					make<ast::FreezeOp>()->fill(parse_pointer()));
 			}
 			if (match("(")) {
 				auto fn = make<ast::ImmediateDelegate>();
@@ -432,13 +432,13 @@ struct Parser {
 				fn->type_expression = parse_maybe_void_type();
 				return fn;
 			}
-			return fill(make<ast::MkWeakOp>(), parse_pointer());
+			return make<ast::MkWeakOp>()->fill(parse_pointer());
 		}
 		if (match("-")) {
-			return fill(make<ast::ConformOp>(), parse_pointer());
+			return make<ast::ConformOp>()->fill(parse_pointer());
 		}
 		if (match("*")) {
-			return fill(make<ast::FreezeOp>(), parse_pointer());
+			return make<ast::FreezeOp>()->fill(parse_pointer());
 		}
 		if (match("@")) {
 			return parse_pointer();
@@ -456,7 +456,7 @@ struct Parser {
 			return fn;
 		}
 		if (is_id_head(*cur)) {
-			return fill(make<ast::RefOp>(), parse_pointer());
+			return make<ast::RefOp>()->fill(parse_pointer());
 		}
 		return make<ast::ConstVoid>();
 	}
@@ -507,7 +507,7 @@ struct Parser {
 				parse_block(r);
 			else {
 				expect("\\");
-				r->body.push_back(parse_expression());
+				r->body.push_back(parse_unar());
 			}
 			if (underscore_accessed) {
 				r->names.push_back(make<ast::Var>());
@@ -522,7 +522,7 @@ struct Parser {
 		if (match("`"))
 			error("expected lambda without parameters or an expression");
 		return match("\\")
-			? parse_expression()
+			? parse_unar()
 			: single_expression_parser();
 	}
 
@@ -540,7 +540,7 @@ struct Parser {
 				parse_block(r);
 			} else {
 				r->body.push_back(match("\\")
-					? parse_expression()
+					? parse_unar()
 					: single_expression_parser());
 			}
 		}
@@ -549,24 +549,21 @@ struct Parser {
 
 	pin<Action> parse_elses() {
 		auto r = parse_ifs();
-		while (match(":"))
-			r = fill(
-				make<ast::Else>(),
+		return match(":")
+			? make<ast::Else>()->fill(
 				r,
-				parse_lambda_0_params([&] { return parse_expression(); }));
-		return r;
+				parse_lambda_0_params([&] { return parse_elses(); }))
+			: r;
 	}
 
 	pin<Action> parse_ifs() {
 		auto r = parse_ors();
 		if (match("&&"))
-			return fill(
-				make<ast::LAnd>(),
+			return make<ast::LAnd>()->fill(
 				r,
 				parse_lambda_1_param([&] { return parse_ifs(); }));
 		if (match("?")) {
-			return fill(
-				make<ast::If>(),
+			return make<ast::If>()->fill(
 				r,
 				parse_lambda_1_param([&] { return parse_ifs(); }));
 		}
@@ -576,8 +573,7 @@ struct Parser {
 	pin<Action> parse_ors() {
 		auto r = parse_comparisons();
 		while (match("||"))
-			r = fill(
-				make<ast::LOr>(),
+			r = make<ast::LOr>()->fill(
 				r,
 				parse_lambda_0_params([&] { return parse_comparisons(); }));
 		return r;
@@ -585,20 +581,20 @@ struct Parser {
 
 	pin<Action> parse_comparisons() {
 		auto r = parse_adds();
-		if (match("==")) return fill(make<ast::EqOp>(), r, parse_adds());
-		if (match(">=")) return fill(make<ast::NotOp>(), fill(make<ast::LtOp>(), r, parse_adds()));
-		if (match("<=")) return fill(make<ast::NotOp>(), fill(make<ast::LtOp>(), parse_adds(), r));
-		if (match("<")) return fill(make<ast::LtOp>(), r, parse_adds());
-		if (match(">")) return fill(make<ast::LtOp>(), parse_adds(), r);
-		if (match("!=")) return fill(make<ast::NotOp>(), fill(make<ast::EqOp>(), r, parse_adds()));
+		if (match("==")) return make<ast::EqOp>()->fill(r, parse_adds());
+		if (match(">=")) return make<ast::NotOp>()->fill(make<ast::LtOp>()->fill(r, parse_adds()));
+		if (match("<=")) return make<ast::NotOp>()->fill(make<ast::LtOp>()->fill(parse_adds(), r));
+		if (match("<")) return make<ast::LtOp>()->fill(r, parse_adds());
+		if (match(">")) return make<ast::LtOp>()->fill(parse_adds(), r);
+		if (match("!=")) return make<ast::NotOp>()->fill(make<ast::EqOp>()->fill(r, parse_adds()));
 		return r;
 	}
 
 	pin<Action> parse_adds() {
 		auto r = parse_muls();
 		for (;;) {
-			if (match("+")) r = fill(make<ast::AddOp>(), r, parse_muls());
-			else if (match("-")) r = fill(make<ast::SubOp>(), r, parse_muls());
+			if (match("+")) r = make<ast::AddOp>()->fill(r, parse_muls());
+			else if (match("-")) r = make<ast::SubOp>()->fill(r, parse_muls());
 			else break;
 		}
 		return r;
@@ -607,14 +603,14 @@ struct Parser {
 	pin<Action> parse_muls() {
 		auto r = parse_unar();
 		for (;;) {
-			if (match("*")) r = fill(make<ast::MulOp>(), r, parse_unar());
-			else if (match("/")) r = fill(make<ast::DivOp>(), r, parse_unar());
-			else if (match("%")) r = fill(make<ast::ModOp>(), r, parse_unar());
-			else if (match("<<")) r = fill(make<ast::ShlOp>(), r, parse_unar());
-			else if (match(">>")) r = fill(make<ast::ShrOp>(), r, parse_unar());
-			else if (match_and_not("&", '&')) r = fill(make<ast::AndOp>(), r, parse_unar());
-			else if (match_and_not("|", '|')) r = fill(make<ast::OrOp>(), r, parse_unar());
-			else if (match("^")) r = fill(make<ast::XorOp>(), r, parse_unar());
+			if (match("*")) r = make<ast::MulOp>()->fill(r, parse_unar());
+			else if (match("/")) r = make<ast::DivOp>()->fill(r, parse_unar());
+			else if (match("%")) r = make<ast::ModOp>()->fill(r, parse_unar());
+			else if (match("<<")) r = make<ast::ShlOp>()->fill(r, parse_unar());
+			else if (match(">>")) r = make<ast::ShrOp>()->fill(r, parse_unar());
+			else if (match_and_not("&", '&')) r = make<ast::AndOp>()->fill(r, parse_unar());
+			else if (match_and_not("|", '|')) r = make<ast::OrOp>()->fill(r, parse_unar());
+			else if (match("^")) r = make<ast::XorOp>()->fill(r, parse_unar());
 			else break;
 		}
 		return r;
@@ -786,7 +782,7 @@ struct Parser {
 							auto get = make<ast::Get>();
 							get->var_name = param->name;
 							if (is_by_weak)
-								c->params.push_back(fill(make<ast::MkWeakOp>(), get));
+								c->params.push_back(make<ast::MkWeakOp>()->fill(get));
 							else
 								c->params.push_back(get);
 						}
@@ -804,7 +800,7 @@ struct Parser {
 				if (match("("))
 					r = parse_call(r, make<ast::AsyncCall>());
 				else
-					r = fill(make<ast::CastOp>(), r, parse_unar_head());
+					r = make<ast::CastOp>()->fill(r, parse_unar_head());
 			} else if (auto lambda_tail = maybe_parse_lambda()) {
 				auto call = make_at_location<ast::Call>(*lambda_tail);
 				call->callee = r;
@@ -848,17 +844,17 @@ struct Parser {
 		if (auto r = maybe_parse_lambda())
 			return r;
 		if (match("*"))
-			return fill(make<ast::FreezeOp>(), parse_unar());
+			return make<ast::FreezeOp>()->fill(parse_unar());
 		if (match("@"))
-			return fill(make<ast::CopyOp>(), parse_unar());
+			return make<ast::CopyOp>()->fill(parse_unar());
 		if (match("&"))
-			return fill(make<ast::MkWeakOp>(), parse_unar());
+			return make<ast::MkWeakOp>()->fill(parse_unar());
 		if (match("!"))
-			return fill(make<ast::NotOp>(), parse_unar());
+			return make<ast::NotOp>()->fill(parse_unar());
 		if (match("-"))
-			return fill(make<ast::NegOp>(), parse_unar());
+			return make<ast::NegOp>()->fill(parse_unar());
 		if (match("~"))
-			return fill(make<ast::InvOp>(), parse_unar());
+			return make<ast::InvOp>()->fill(parse_unar());
 		if (match("^")) {
 			auto r = make<ast::Break>();
 			r->block_name = expect_id("block to break");
@@ -894,15 +890,15 @@ struct Parser {
 			return r;
 		}
 		if (match("short"))
-			return fill(make<ast::ToInt32Op>(), parse_expression_in_parethesis());
+			return make<ast::ToInt32Op>()->fill(parse_expression_in_parethesis());
 		if (match("float"))
-			return fill(make<ast::ToFloatOp>(), parse_expression_in_parethesis());
+			return make<ast::ToFloatOp>()->fill(parse_expression_in_parethesis());
 		if (match("int"))
-			return fill(make<ast::ToIntOp>(), parse_expression_in_parethesis());
+			return make<ast::ToIntOp>()->fill(parse_expression_in_parethesis());
 		if (match("double"))
-			return fill(make<ast::ToDoubleOp>(), parse_expression_in_parethesis());
+			return make<ast::ToDoubleOp>()->fill(parse_expression_in_parethesis());
 		if (match("loop")) 
-			return fill(make<ast::Loop>(), parse_expression());
+			return make<ast::Loop>()->fill(parse_expression());
 		if (match("_")) {
 			auto r = make<ast::Get>();
 			r->var_name = "_";
@@ -984,7 +980,7 @@ struct Parser {
 			inst->cls = p.ast->str_builder.pinned();
 			pin<Action> r = inst;
 			for (auto& part : parts)
-				r = p.fill(make_at_location<ast::ToStrOp>(*part), r, part);
+				r = make_at_location<ast::ToStrOp>(*part)->fill(r, part);
 			auto delegate = p.make<ast::GetField>();
 			delegate->base = r;
 			delegate->field_name = "toStr";
@@ -1116,26 +1112,16 @@ struct Parser {
 	template<typename T>
 	pin<T> make() {
 		auto r = pin<T>::make();
-		r->line = line;
-		r->pos = pos;
+		r->line = last_match_line;
+		r->pos = last_match_pos;
 		r->module = module;
 		return r;
-	}
-
-	pin<ast::Action> fill(pin<ast::UnaryOp> op, pin<ast::Action> param) {
-		op->p = param;
-		return op;
-	}
-
-	pin<ast::Action> fill(pin<ast::BinaryOp> op, pin<ast::Action> param1, pin<ast::Action> param2) {
-		op->p[0] = param1;
-		op->p[1] = param2;
-		return op;
 	}
 
 	optional<string> match_id() {
 		if (!is_id_head(*cur))
 			return nullopt;
+		set_maybe_match_pos();
 		string result;
 		while (is_id_body(*cur)) {
 			result += *cur++;
@@ -1146,6 +1132,7 @@ struct Parser {
 	}
 
 	string expect_id(const char* message) {
+		set_maybe_match_pos();
 		if (auto r = match_id())
 			return *r;
 		error("expected ", message);
@@ -1164,6 +1151,7 @@ struct Parser {
 		int i = match_length(str);
 		if (i == 0 || (is_id_body(str[i - 1]) && is_id_body(cur[i])))
 			return false;
+		set_maybe_match_pos();
 		cur += i;
 		pos += i;
 		return true;
@@ -1172,6 +1160,7 @@ struct Parser {
 	bool match_ns(char c) {
 		if (*cur != c)
 			return false;
+		set_maybe_match_pos();
 		cur++;
 		pos++;
 		return true;
@@ -1188,6 +1177,7 @@ struct Parser {
 	bool match_and_not(const char* str, char after) {
 		if (int i = match_length(str)) {
 			if (cur[i] != after) {
+				set_maybe_match_pos();
 				cur += i;
 				pos += i;
 				match_ws();
@@ -1198,11 +1188,18 @@ struct Parser {
 	}
 
 	void expect(const char* str) {
+		set_maybe_match_pos();
 		if (!match(str))
 			error(string("expected '") + str + "'");
 	}
 
+	void set_maybe_match_pos() {
+		last_match_line = line;
+		last_match_pos = pos;
+	}
+
 	bool match_eoln() {
+		set_maybe_match_pos();
 		if (*cur == '\n') {
 			if (*++cur == '\r')
 				++cur;
