@@ -499,7 +499,7 @@ struct Parser {
 			if (match("{"))
 				parse_block(r);
 			else
-				r->body.push_back(parse_expression());
+				r->body.push_back(parse_unar());
 		} else {
 			bool prev_underscore = underscore_accessed;
 			underscore_accessed = false;
