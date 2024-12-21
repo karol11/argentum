@@ -3049,7 +3049,7 @@ struct Generator : ast::ActionScanner {
 		return combined_result;
 	}
 
-	llvm::orc::ThreadSafeModule build() {
+	llvm::orc::ThreadSafeModule build(bool test_mode, string entry_point_name) {
 		std::unordered_set<pin<ast::Class>> special_copy_and_dispose = {
 			ast->blob,
 			ast->own_array,
@@ -3509,19 +3509,24 @@ struct Generator : ast::ActionScanner {
 		current_ll_fn = llvm::Function::Create(
 			llvm::FunctionType::get(int_type, {}, false),
 			llvm::Function::ExternalLinkage,
-			"main", module.get());
-		compile_fn_body(*ast->starting_module->entry_point, "main");
-		// Compile tests
-		for (auto& m : ast->modules) {
-			for (auto& test : m.second->tests) {
-				auto fn = llvm::Function::Create(
-					llvm::FunctionType::get(void_type, {}, false),
-					llvm::Function::ExternalLinkage,
-					ast::format_str("ag_test_", m.first, "_", test.first),
-					module.get());
-				current_ll_fn = fn;
-				compile_fn_body(*test.second, ast::format_str("ag_test_", m.first, "_", test.first));
+			entry_point_name, module.get());
+		compile_fn_body(*ast->starting_module->entry_point, entry_point_name);
+		if (test_mode) {
+			// Compile tests
+			for (auto& m : ast->modules) {
+				for (auto& test : m.second->tests) {
+					auto fn = llvm::Function::Create(
+						llvm::FunctionType::get(void_type, {}, false),
+						llvm::Function::ExternalLinkage,
+						ast::format_str("ag_test_", m.first, "_", test.first),
+						module.get());
+					current_ll_fn = fn;
+					compile_fn_body(*test.second, ast::format_str("ag_test_", m.first, "_", test.first));
+				}
 			}
+			// TODO: build test_main that calls all tests
+		} else {
+			compile_fn_body(*ast->starting_module->entry_point, entry_point_name);		
 		}
 		while (!execute_in_global_scope.empty()) {
 			auto fn = move(execute_in_global_scope.back());
@@ -3552,9 +3557,9 @@ struct Generator : ast::ActionScanner {
 	}
 };
 
-llvm::orc::ThreadSafeModule generate_code(ltm::pin<ast::Ast> ast, bool add_debug_info) {
+llvm::orc::ThreadSafeModule generate_code(ltm::pin<ast::Ast> ast, bool add_debug_info, bool test_mode, string entry_point_name) {
 	Generator gen(ast, add_debug_info);
-	return gen.build();
+	return gen.build(test_mode, entry_point_name);
 }
 
 #ifdef AG_STANDALONE_COMPILER_MODE

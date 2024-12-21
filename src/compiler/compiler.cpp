@@ -57,7 +57,9 @@ int main(int argc, char* argv[]) {
     bool output_bitcode = false;
     bool output_asm = false;
     bool add_debug_info = false;
+    bool test_mode = false;
     string src_dir_name, start_module_name, out_file_name, opt_level;
+    string entry_point_name = "main";
     for (auto arg = argv + 1, end = argv + argc; arg != end; arg++) {
         auto param = [&] {
             if (++arg == end) {
@@ -78,6 +80,8 @@ int main(int argc, char* argv[]) {
                 "  -g         : generate debug info\n"
                 "  -emit-llvm : output bitcode\n"
                 "  -ON        : optimize 0-none, 1-less, 2-default, 3-aggressive\n"
+                "  -e fn_name : entry point fn name (default `main`)\n"
+                "  -T         : build tests\n"
                 "  -S         : output asm file\n";
             return 0;
         } else if (strcmp(*arg, "-S") == 0) {
@@ -90,6 +94,10 @@ int main(int argc, char* argv[]) {
             opt_level = (*arg) + 2;
         } else if (strcmp(*arg, "-target") == 0) {
             target_triple = param();
+        } else if (strcmp(*arg, "-e") == 0) {
+            entry_point_name = param();
+        } else if (strcmp(*arg, "-T") == 0) {
+            test_mode = true;
         } else if (strcmp(*arg, "-o") == 0) {
             out_file_name = param();
         } else if (strcmp(*arg, "-start") == 0) {
@@ -125,7 +133,7 @@ int main(int argc, char* argv[]) {
     llvm::InitializeAllTargets();
     llvm::InitializeAllTargetMCs();
     llvm::InitializeAllAsmPrinters();
-    auto threadsafe_module = generate_code(ast, add_debug_info);
+    auto threadsafe_module = generate_code(ast, add_debug_info, test_mode, entry_point_name);
     threadsafe_module.withModuleDo([&](llvm::Module& module) {
         std::error_code err_code;
         llvm::raw_fd_ostream out_file(out_file_name, err_code, llvm::sys::fs::OF_None);
