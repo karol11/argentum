@@ -1,0 +1,39 @@
+using sys { String, Blob }
+
+class App {
+    run(appName str, fps int, initializer());
+    onFocused(isFocused bool){} // window got keyboard focus
+    onPaused(isPaused bool){}  // desktop: minimize window, mobile - app sleep
+    onResized(width int, height int){} // desktop - all resizes excep minimize, mobile - rotates, split screen, show/hide kbd
+    onKey(down bool, key short, shifts short){}
+    onCursor(x int, y int) {}
+    onScroll(dx int, dy int, dzoom int) {}
+    pausePaints(isPaused bool); // call to pause/resume fps-bound repaints
+    onPaint(c Canvas) {}
+    onQuit(){}
+    onLowMemory(){}
+}
+
+class Canvas {
+    handle = 0;
+    moveTo(x float, y float);
+    lineTo(x float, y float);
+}
+class Paint { 
+    handle1 = 0;
+    handle2 = 0;
+
+}
+
+class MyApp {
+    +App;
+    onPaint(c Canvas) {
+        c.fill(color_white);
+        forRange(0, 100) {
+            c.moveTo(_*2, 0);
+            c.lineTo(0, 100-i*2);
+        }
+        pausePaints(true);
+    }
+}
+MyApp.run("Hello AG", 60) {_}
