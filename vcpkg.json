@@ -2,10 +2,10 @@
   "name": "argentum",
   "version": "0.0.20",
   "dependencies": [
-    "fmt",
+    "sdl2",
+    "opengl",
     "sqlite3",
     "curl",
-    "sdl2",
     "sdl2-ttf",
     "sdl2-mixer",
     {
@@ -20,7 +20,7 @@
     {
       "name": "skia",
       "default-features": false,
-      "features":["graphite","freetype", "fontconfig", "harfbuzz", "icu"]
+      "features":["gl", "graphite","freetype", "fontconfig", "harfbuzz", "icu"]
     }
   ]
 }
