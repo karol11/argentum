@@ -7,6 +7,7 @@ class Parser {
     +Cursor;
     c = 0s;
     errorText = ?"";
+    sb = StrBuilder;
 
     init(text str) this {
       set(text);
@@ -126,25 +127,24 @@ class Parser {
             v |= getHex();
             v
         };
-        r = StrBuilder;
         loop getCh() -> {
             _ == 0s ? error("incomplete string");
             _ == '"' ? {
                 c := getCh();
                 skipWsAfterValue();
-                ^tryStrWithLimit = +r.toStr()
+                ^tryStrWithLimit = +sb.toStr()
             };
             _ == 0x5Cs ? getCh() -> { // '\' (encoded as hex to avoid syntax hilite artifacts in IDEs)
                 _ == 0s ? error("incomplete escape");
-                _ == 0x5Cs ? r.putCh(0x5Cs) :
-                _ == '"' ? r.putCh('"') :
-                _ == '/' ? r.putCh('/') :
-                _ == 'b' ? r.putCh(8s) :
-                _ == 'f' ? r.putCh(0xCs) :
-                _ == 'n' ? r.putCh(0xAs) :
-                _ == 'r' ? r.putCh(0xDs) :
-                _ == 't' ? r.putCh(9s) :
-                _ == 'u' ? r.putCh({
+                _ == 0x5Cs ? sb.putCh(0x5Cs) :
+                _ == '"' ? sb.putCh('"') :
+                _ == '/' ? sb.putCh('/') :
+                _ == 'b' ? sb.putCh(8s) :
+                _ == 'f' ? sb.putCh(0xCs) :
+                _ == 'n' ? sb.putCh(0xAs) :
+                _ == 'r' ? sb.putCh(0xDs) :
+                _ == 't' ? sb.putCh(9s) :
+                _ == 'u' ? sb.putCh({
                     v = getUtf16();
                     v >= 0xd800s && v <= 0xdbffs ? error("second surrogare without first one");
                     v >= 0xdd00s && v <= 0xdfffs ? {
@@ -154,10 +154,10 @@ class Parser {
                         v & 0x3ffs << 10s + second & 0x3ffs + 0x10000s
                     } : v
                 }) : error("invalid escape")
-            } : r.putCh(_);
+            } : sb.putCh(_);
             maxSize > 0 && (maxSize -= 1) == 0 ? {
                 skipString();
-                ^tryStrWithLimit = +r.toStr()
+                ^tryStrWithLimit = +sb.toStr()
             };
         }
     }
@@ -364,6 +364,7 @@ class Writer {
     indentVal = 0;
     indentChar = 0s;
     indentStep = 0;
+    cursor = Cursor;
 
     /// Make pretty printed JSON with space-indentation
     /// Should be called before any data writing calls.
@@ -398,7 +399,7 @@ class Writer {
         handleDup() ? {
             putHex = `n putCh(n > 9s ? n - 10s + 'a' : n + '0');
             putCh('"');
-            v.cursor() -> loop _.getCh()-> {
+            cursor.set(v) -> loop _.getCh()-> {
                 _ >= ' ' ? {
                     _ == '"' || _ == '/' || _ == 0x5Cs ? putCh(0x5Cs);
                     putCh(_)
@@ -579,19 +580,33 @@ fn read(p Parser) @Node {
     jnull() ~ Node
 }
 
-// root = read(Parser.init("
+// text = "
+//     [
+//         {"name": "Andrey", "height": 6.5},
+//         {"name": "Katy", "height": 5.8}
+//     ]
+// ";
+// root = read(Parser.init(text));
+// root~JArr ? _.each { _~JObj ? `i{
+//     i["name"] ? _~JStr ? `name
+//     i["height"] ? _~JNum ? `height
+//     sys_log("{name.s}-{height.n} ")
+// }};
+
+// text = "
 //     {
 //         "x": 1,
 //         "z": {"a":"sss"},
 //         "y": "asdf"
 //     }
-// "));
+// ";
+// root = read(Parser.init(text));
 // root~JObj ? `r
 // r["x"] ? _~JNum ? `xn
-// r["z"] ? _~JObj ? _["a1"] := jnum(3.14 + xn.n);
+// r["z"] ? _~JObj ? _["v"] := jnum(3.14 + xn.n);
 
+// sys_log(root.write(Writer).toStr());
 // sys_log(root.write(Writer.useSpaces(2)).toStr());
-//sys_log(Writer.useSpaces(2).{root.write(_)}.toStr());
 
 // sys_log(Writer.bool(true).toStr());
 // sys_log(Writer.num(42.3).toStr());
@@ -677,12 +692,14 @@ fn read(p Parser) @Node {
 // fn parseJson(data str) Array(Polygon) {
 //     Array(Polygon).{                                              // 1
 //         json = Parser.init(data);
-//         json.getArr\_.append(Polygon)-> json.getObj `f            // 2
+//         json.getArr\_.append(Polygon)-> json.getObj `f {           // 2
 //             f=="active" ? _.isActive := json.getBool(false) :
 //             f=="name"   ? _.name := json.getStr("") :
-//             f=="points" ? json.getArr\_.points.append(Point)-> json.getObj `f   // 3
+//             f=="points" ? json.getArr\_.points.append(Point)-> json.getObj `f { // 3
 //                 f=="x" ? _.x := float(json.getNum(0.0)) :
-//                 f=="y" ? _.y := float(json.getNum(0.0));
+//                 f=="y" ? _.y := float(json.getNum(0.0))
+//             }
+//         };
 //         json.success() : sys_log("error {json.getErrorMessage()}");
 //     }
 //  }
