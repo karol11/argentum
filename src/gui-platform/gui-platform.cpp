@@ -17,6 +17,7 @@
 #include "skia/src/gpu/ganesh/gl/GrGLUtil.h"
 #include "skia/codec/SkCodec.h"
 #include "runtime.h"
+#include "skia-bind.h"
 
 #if defined(SK_BUILD_FOR_ANDROID)
 #   include <GLES/gl.h>
@@ -40,31 +41,19 @@
 bool gCheckErrorGL = false;
 bool gLogCallsGL = false;
 
-/*sk_sp<SkData> read_file(const char* path) {
-    FILE* f = fopen(path, "rb");
-    fseek(f, 0, SEEK_END);
-    auto r = SkData::MakeUninitialized(ftell(f));
-    fseek(f, 0, SEEK_SET);
-    fread(r->writable_data(), 1, r->size(), f);
-    fclose(f);
-    return r;
-}
-
+/*
 sk_sp<SkImage> create_cpu_image(SkImageInfo& img_info, std::function<void(SkCanvas*)> painter) {
     sk_sp<SkSurface> surf = SkSurfaces::Raster(img_info);
     painter(surf->getCanvas());
     return surf->makeImageSnapshot();
 }
 */
-struct GuiPlatformCanvas {
-    AgObject head;
-    SkCanvas* canvas = nullptr;
-};
 
 struct GuiPlatformApp {
     AgObject head;
 };
 struct GuiPlatformAppVmt {
+    void (*cast_info)(),
     void (*run)(
         GuiPlatformApp* thiz,
         AgString* appName,
@@ -149,9 +138,7 @@ int main(int argc, char** argv) {
     ag_main();
 }
 
-extern "C" void ag_m_guiPlatform_App_guiPlatform_pausePaints(
-        GuiPlatformApp* thiz,
-        bool isPaused) {
+extern "C" void ag_m_guiPlatform_App_guiPlatform_pausePaints(GuiPlatformApp* thiz, bool isPaused) {
     repaints_are_paused = isPaused;
 }
 extern "C" void ag_m_guiPlatform_App_guiPlatform_run(
@@ -160,6 +147,7 @@ extern "C" void ag_m_guiPlatform_App_guiPlatform_run(
         int64_t fps,
         void* initalizerContext,
         void(*initializer)(void* ctx, GuiPlatformApp*)) {
+    if (app) return;
     frame_duration_ms = 1000 / fps;
     app = thiz;
     uint32_t window_flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE;
@@ -238,14 +226,23 @@ extern "C" void ag_m_guiPlatform_App_guiPlatform_handleTick(GuiPlatformApp* thiz
                 reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onCursor(thiz, event.motion.x, event.motion.y);
             break;
         case SDL_MOUSEBUTTONDOWN:
+        case SDL_MOUSEBUTTONUP:
             if (event.button.state == SDL_PRESSED || event.button.state == SDL_RELEASED)
                 reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onKey(thiz, event.button.state == SDL_PRESSED, event.button.button, shifts);
+            break;
+        case SDL_MOUSEWHEEL:
+            reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onScroll(thiz, event.wheel.x, event.wheel.y, 0);            
             break;
         case SDL_WINDOWEVENT:
             if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED || event.window.event == SDL_WINDOWEVENT_RESIZED) {
                 window_width = event.window.data1;
                 window_height = event.window.data2;
                 reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onResized(thiz, window_width, window_height);
+            } else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED || event.window.event == SDL_WINDOWEVENT_FOCUS_LOST){
+                reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onFocused(thiz, event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED);
+            } else if (event.window.event == SDL_WINDOWEVENT_SHOWN || event.window.event == SDL_WINDOWEVENT_HIDDEN){
+                app_is_in_background = event.window.event != SDL_WINDOWEVENT_HIDDEN;
+                reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onPaused(thiz, event.window.event == SDL_WINDOWEVENT_HIDDEN);
             }
             break;
         case SDL_KEYDOWN:
@@ -257,6 +254,9 @@ extern "C" void ag_m_guiPlatform_App_guiPlatform_handleTick(GuiPlatformApp* thiz
             break;
         case SDL_QUIT:
             reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onQuit(thiz);
+            break;
+        case SDL_APP_LOWMEMORY:
+            reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onLowMemory(thiz);
             break;
         default:
             break;

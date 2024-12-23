@@ -2,6 +2,8 @@
 
 add_library (gui_platform STATIC
     gui-platform.cpp
+	skia-bind.cpp
+	skia-bind.h
 )
 set_property(TARGET gui_platform PROPERTY C_STANDARD 11)
 
