@@ -8,7 +8,7 @@ llvm::orc::ThreadSafeModule generate_code(
     ltm::pin<ast::Ast> ast,
     bool add_debug_info,
     bool test_mode,
-    string entry_point_name);
+    std::string entry_point_name);
 
 int64_t execute(llvm::orc::ThreadSafeModule module, bool dump_ir = false);
 
