@@ -3620,6 +3620,6 @@ int64_t generate_and_execute(ltm::pin<ast::Ast> ast, bool add_debug_info, bool d
 	if (!llvm_inited)
 		llvm::InitLLVM X(argc, argv);
 	llvm_inited = true;
-	auto module = generate_code(ast, add_debug_info);
+	auto module = generate_code(ast, add_debug_info, false, "main");
 	return execute(module, *ast, dump_ir);
 }
