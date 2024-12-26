@@ -2,7 +2,7 @@
 
 ## Links
 
-* Site: [aglang.org](aglang.org)
+* Site: [https://aglang.org](aglang.org)
 * Playground: [runs on my RaspberryPi](http://lat.asuscomm.com:3000/)
 
 ## Main language features:
