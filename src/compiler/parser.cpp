@@ -1299,8 +1299,7 @@ struct Parser {
 				error("overflow");
 			result = next;
 		}
-		if (match_ns("s")) {
-			match_ws();
+		if (match("s")) {
 			if ((result >> (radix == 10 ? 31 : 32)) != 0)
 				error("32-bit overflow");
 			return (uint32_t)result;
@@ -1317,14 +1316,14 @@ struct Parser {
 			for (double weight = 0.1; is_num(*cur); weight *= 0.1, cur++, pos++)
 				d += weight * (*cur - '0');
 		}
-		if (match_ns('e')) {
+		if (match_ns("e")) {
 			int sign = match_ns('-') ? -1 : (match_ns('+'), 1);
 			int exp = 0;
 			for (; *cur >= '0' && *cur < '9'; cur++, pos++)
 				exp = exp * 10 + *cur - '0';
 			d *= pow(10, exp * sign);
 		}
-		if (match_ns("f")) {
+		if (match("f")) {
 			float f = (float) d;
 			if (std::fetestexcept(FE_OVERFLOW | FE_UNDERFLOW))
 				error("float overflow");
