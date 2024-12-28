@@ -688,7 +688,7 @@ struct Parser {
 					si->indexes = gi->indexes;
 					si->value = op;
 					op->p[0] = gi;
-					op->p[1] = parse_expression();
+					op->p[1] = parse_adds();
 					block->body.push_back(si);
 					r = block;
 				} else {
@@ -732,7 +732,7 @@ struct Parser {
 						gf->base = field_base;
 						sf->val = op;
 						op->p[0] = gf;
-						op->p[1] = parse_ifs();
+						op->p[1] = parse_adds();
 						block->body.push_back(sf);
 						r = block;
 					} else {
@@ -756,9 +756,9 @@ struct Parser {
 			} else if (auto op = match_set_op()) {
 				r = make_set_op(r, [&] {
 					op->p[0] = r;
-					op->p[1] = parse_ifs();
+					op->p[1] = parse_adds();
 					return op;
-					});
+				});
 			} else if (match("->")) {
 				auto block = parse_lambda_1_param([&] { return parse_unar(); });
 				block->names.front()->initializer = r;
