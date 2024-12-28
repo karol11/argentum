@@ -12,6 +12,26 @@
 #include "blob.h"
 #include "skia-bind.h"
 
+extern "C" {
+	void ag_fn_guiPlatform_disposePaint(AgSkPaint* me);
+	void ag_m_guiPlatform_Paint_guiPlatform_color(AgSkPaint* me, int32_t color);
+	void ag_m_guiPlatform_Paint_guiPlatform_fill(AgSkPaint* me);
+	void ag_m_guiPlatform_Paint_guiPlatform_stroke(AgSkPaint* me, int32_t width);
+
+	void ag_fn_guiPlatform_disposeImage(AgSkImage* me);
+	void ag_m_guiPlatform_Image_guiPlatform_fromBlob(AgSkImage* me, AgBlob* data);
+
+	void ag_fn_guiPlatform_disposeFont(AgSkFont* me);
+	void ag_m_guiPlatform_Font_guiPlatform_fromBlob(AgSkFont* me, AgBlob* data);
+	void ag_m_guiPlatform_Font_guiPlatform_fromName(AgSkFont* me, AgString* name);
+
+	void ag_m_guiPlatform_Canvas_guiPlatform_clear(AgSkCanvas* me, int32_t color);
+	void ag_m_guiPlatform_Canvas_guiPlatform_drawLine(AgSkCanvas* me, float x0, float y0, float x1, float y1, AgSkPaint* p);
+	void ag_m_guiPlatform_Canvas_guiPlatform_drawRect(AgSkCanvas* me, AgSkRect* rect, AgSkPaint* paint);
+	void ag_m_guiPlatform_Canvas_guiPlatform_drawImage(AgSkCanvas* me, float x, float y, AgSkImage* image);
+	void ag_m_guiPlatform_Canvas_guiPlatform_drawSimpleText(AgSkCanvas* me, float x, float y, AgString* s, AgSkFont* font, float size, AgSkPaint* paint);
+}
+
 //
 // Paint
 //
@@ -91,15 +111,9 @@ void ag_m_guiPlatform_Font_guiPlatform_fromName(AgSkFont* me, AgString* name) {
 //
 // Canvas
 //
-inline const sk_sp<SkCanvas>& get_canvas(AgSkCanvas* me) {
-	return reinterpret_cast<sk_sp<SkTypeface>&>(me->rc_font);
-}
-void ag_fn_guiPlatform_disposeCanvas(AgSkCanvas* me) {
-	get_canvas(me).~sk_sp();
-}
 void ag_m_guiPlatform_Canvas_guiPlatform_clear(AgSkCanvas* me, int32_t color) {
-	if (auto& c = get_canvas(me))
-		c->clear(color);
+	if (me->canvas)
+		me->canvas->clear(color);
 }
 
 void ag_m_guiPlatform_Canvas_guiPlatform_drawLine(AgSkCanvas* me, float x0, float y0, float x1, float y1, AgSkPaint* p) {
@@ -108,21 +122,21 @@ void ag_m_guiPlatform_Canvas_guiPlatform_drawLine(AgSkCanvas* me, float x0, floa
 }
 
 void ag_m_guiPlatform_Canvas_guiPlatform_drawRect(AgSkCanvas* me, AgSkRect* rect, AgSkPaint* paint) {
-	if (auto& c = get_canvas(me))
-		c->drawRect(rect->rect, *get_paint(paint));
+	if (me->canvas)
+		me->canvas->drawRect(rect->rect, *get_paint(paint));
 }
 
 void ag_m_guiPlatform_Canvas_guiPlatform_drawImage(AgSkCanvas* me, float x, float y, AgSkImage* image) {
-	if (auto& c = get_canvas(me)) {
+	if (me->canvas) {
 		if (auto& i = get_image(image))
-			c->drawImage(i, x, y);
+			me->canvas->drawImage(i, x, y);
 	}
 }
 
 void ag_m_guiPlatform_Canvas_guiPlatform_drawSimpleText(AgSkCanvas* me, float x, float y, AgString* s, AgSkFont* font, float size, AgSkPaint* paint) {
-	if (auto& c = get_canvas(me)) {
+	if (me->canvas) {
 		if (auto& f = get_font(font)) {
-			c->drawSimpleText(
+			me->canvas->drawSimpleText(
 				s->chars, strlen(s->chars),
 				SkTextEncoding::kUTF8,
 				x, y,

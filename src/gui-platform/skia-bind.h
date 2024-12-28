@@ -1,3 +1,6 @@
+#ifndef _AG_SKIA_BIND_H_
+#define _AG_SKIA_BIND_H_
+
 #include <core/SkSurface.h>
 #include <core/SkCanvas.h>
 #include <core/SkPaint.h>
@@ -35,7 +38,9 @@ typedef struct {
 
 typedef struct {
 	AgObject  header;
-	void* canvas;
+	SkCanvas* canvas;
 } AgSkCanvas;
 
 }  // extern "C"
+
+#endif // _AG_SKIA_BIND_H_

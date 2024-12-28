@@ -6,6 +6,9 @@ endif()
 
 project (Argentum)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+
 set(OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/output)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${OUTPUT_DIRECTORY}/$<$<CONFIG:Debug>:/debug>/bin)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${OUTPUT_DIRECTORY}/$<$<CONFIG:Debug>:/debug>/libs)
@@ -49,3 +52,4 @@ add_subdirectory("src/compiler")
 add_subdirectory("src/sqlite")
 add_subdirectory("src/http-client")
 add_subdirectory("src/sdl")
+add_subdirectory("src/gui-platform")
