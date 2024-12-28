@@ -1,0 +1,78 @@
+using sys { String, Blob }
+
+class App {
+    run(appName str, fps int, initializer(App)) {
+        (?App) ? { // This forces these methods to be retained in vmt
+            onFocused(false);
+            onPaused(false);
+            onResized(0, 0);
+            onKey(false, 'a', 1s);
+            onCursor(0, 0);
+            onScroll(0, 0, 0);
+            pausePaints(true);
+            onPaint(Canvas); // This forces Canvas disp to retain in the executable
+            onQuit();
+            onLowMemory();
+        };
+        runInternal(appName, fps, initializer)
+    }
+    runInternal(appName str, fps int, initializer(App));
+    onFocused(isFocused bool){} // window got keyboard focus
+    onPaused(isPaused bool){}  // desktop: minimize window, mobile - app sleep
+    onResized(width int, height int){} // desktop - all resizes excep minimize, mobile - rotates, split screen, show/hide kbd
+    onKey(down bool, key short, shifts short){}
+    onCursor(x int, y int) {}
+    onScroll(dx int, dy int, dzoom int) {}
+    pausePaints(isPaused bool); // call to pause/resume fps-bound repaints
+    onPaint(c Canvas) {}
+    onQuit(){}
+    onLowMemory(){}
+}
+
+class Rect {
+    left = 0f;
+    top = 0f;
+    right = 0f;
+    bottom = 0f;
+    setXYWH(x float, y float, w float, h float) this {
+        left := x;
+        top := y;
+        right := x + w;
+        bottom := y + h;
+    }
+}
+
+class Paint{
+    handleId=0;
+    color(argb short) this;
+    fill() this;
+    stroke(width short) this;
+}
+fn destroyPaint(me Paint);
+fn afterCopyPaint(me Paint) { me.handleId := 0 }
+
+class Image{
+    handleId=0;
+    fromBlob(data *Blob) this;
+}
+fn destroyImage(me Image);
+fn afterCopyImage(me Image) { me.handleId := 0 }
+
+class Font{
+    handleId=0;
+    fromBlob(data()@Blob) this;
+    fromName(name str) this;
+}
+fn destroyFont(me Font);
+fn afterCopyFont(me Font) { me.handleId := 0 }
+
+class Canvas {
+    handleId=0;
+    clear(color short);
+    drawLine(x0 float, y0 float, x1 float, y1 float, p -Paint) this;
+    drawRect(r -Rect, p -Paint) this;
+    drawImage(x int, y int, img -Image) this;
+    drawSimpleText(x int, y int, s str, font -Font, size int, p -Paint) this;
+}
+fn destroyCanvas(me Canvas);
+fn afterCopyCanvas(me Canvas) { me.handleId := 0 }

@@ -41,63 +41,69 @@
 bool gCheckErrorGL = false;
 bool gLogCallsGL = false;
 
-/*
-sk_sp<SkImage> create_cpu_image(SkImageInfo& img_info, std::function<void(SkCanvas*)> painter) {
-    sk_sp<SkSurface> surf = SkSurfaces::Raster(img_info);
-    painter(surf->getCanvas());
-    return surf->makeImageSnapshot();
-}
-*/
+extern "C" {
+    typedef struct {
+        AgObject head;
+    } GuiPlatformApp;
 
-struct GuiPlatformApp {
-    AgObject head;
-};
-struct GuiPlatformAppVmt {
-    void (*cast_info)(),
-    void (*run)(
+    typedef struct {
+        void (*run)(
+            GuiPlatformApp* thiz,
+            AgString* appName,
+            int64_t fps,
+            void* initalizerContext,
+            void(*initializer)(void* ctx, GuiPlatformApp*));
+        void (*onFocused)(
+            GuiPlatformApp* thiz,
+            bool isFocused);
+        void (*onPaused)(
+            GuiPlatformApp* thiz,
+            bool isPaused);
+        void (*onResized)(
+            GuiPlatformApp* thiz,
+            int64_t width,
+            int64_t height);
+        void (*onKey)(
+            GuiPlatformApp* thiz,
+            bool down,
+            int32_t key,
+            int32_t shifts);
+        void (*onCursor)(
+            GuiPlatformApp* thiz,
+            int64_t x,
+            int64_t y);
+        void (*onScroll)(
+            GuiPlatformApp* thiz,
+            int64_t dx,
+            int64_t dy,
+            int64_t dZoom);
+        void (*pausePaints)(
+            GuiPlatformApp* thiz,
+            bool isPaused);
+        void (*onPaint)(
+            GuiPlatformApp* thiz,
+            AgSkCanvas* canvas);
+        void (*onQuit)(
+            GuiPlatformApp* thiz);
+        void (*onLowMemory)(
+            GuiPlatformApp* thiz);
+        void* cast_info;
+        AgVmt base;
+    } GuiPlatformAppVmt;
+
+    int    ag_main(void);
+    void** ag_disp_guiPlatform_Canvas(uint64_t interface_and_method_ordinal);
+
+    void ag_fn_guiPlatform_disposeApp(GuiPlatformApp* thiz);
+    void ag_m_guiPlatform_App_guiPlatform_pausePaints(GuiPlatformApp* thiz, bool isPaused);
+    void ag_m_guiPlatform_App_guiPlatform_handleTick(GuiPlatformApp* thiz);
+    void ag_m_guiPlatform_App_guiPlatform_runInternal(
         GuiPlatformApp* thiz,
         AgString* appName,
         int64_t fps,
         void* initalizerContext,
         void(*initializer)(void* ctx, GuiPlatformApp*));
-    void (*onFocused)(
-        GuiPlatformApp* thiz,
-        bool isFocused);
-    void (*onPaused)(
-        GuiPlatformApp* thiz,
-        bool isPaused);
-    void (*onResized)(
-        GuiPlatformApp* thiz,
-        int64_t width,
-        int64_t height);
-    void (*onKey)(
-        GuiPlatformApp* thiz,
-        bool down,
-        int32_t key,
-        int32_t shifts);
-    void (*onCursor)(
-        GuiPlatformApp* thiz,
-        int64_t x,
-        int64_t y);
-    void (*onScroll)(
-        GuiPlatformApp* thiz,
-        int64_t dx,
-        int64_t dy,
-        int64_t dZoom);
-    void (*pausePaints)(
-        GuiPlatformApp* thiz,
-        bool isPaused);
-    void (*onPaint)(
-        GuiPlatformApp* thiz,
-        GuiPlatformCanvas* canvas);
-    void (*onQuit)(
-        GuiPlatformApp* thiz);
-    void (*onLowMemory)(
-        GuiPlatformApp* thiz);
-    AgVmt base;
-};
-
-namespace internal {
+}
 
 int window_width = 0;
 int window_height = 0;
@@ -108,7 +114,7 @@ int64_t mouse_buttons = 0;
 int64_t shifts = 0;
 bool repaints_are_paused = false;
 bool app_is_in_background = false;
-struct GuiPlatformCanvas* gui_platform_canvas = nullptr;
+AgSkCanvas gui_platform_canvas;
 int64_t frame_duration_ms = 1000 / 60;
 
 sk_sp<const GrGLInterface> gr_gl_interface;
@@ -125,31 +131,106 @@ void handle_error() {
     exit(-1);
 }
 
-}  // namespace internal
-using namespace internal;
-
-extern "C" int ag_main(void);
-
 #if defined(SK_BUILD_FOR_ANDROID)
 int SDL_main(int argc, char** argv) {
-#else
-int main(int argc, char** argv) {
-#endif
-    ag_main();
+    return ag_main();
 }
+#endif
 
-extern "C" void ag_m_guiPlatform_App_guiPlatform_pausePaints(GuiPlatformApp* thiz, bool isPaused) {
+void ag_m_guiPlatform_App_guiPlatform_pausePaints(GuiPlatformApp* thiz, bool isPaused) {
     repaints_are_paused = isPaused;
 }
-extern "C" void ag_m_guiPlatform_App_guiPlatform_run(
+
+void ag_m_guiPlatform_App_guiPlatform_handleTick(GuiPlatformApp* thiz) {
+    if (thiz != app) return;
+    auto start_frame_ms = ag_fn_sys_nowMs();
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+        switch (event.type) {
+        case SDL_MOUSEMOTION:
+            if (event.motion.state == SDL_PRESSED)
+                reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onCursor(thiz, event.motion.x, event.motion.y);
+            break;
+        case SDL_MOUSEBUTTONDOWN:
+        case SDL_MOUSEBUTTONUP:
+            if (event.button.state == SDL_PRESSED || event.button.state == SDL_RELEASED)
+                reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onKey(thiz, event.button.state == SDL_PRESSED, event.button.button, shifts);
+            break;
+        case SDL_MOUSEWHEEL:
+            reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onScroll(thiz, event.wheel.x, event.wheel.y, 0);            
+            break;
+        case SDL_WINDOWEVENT:
+            if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED || event.window.event == SDL_WINDOWEVENT_RESIZED) {
+                window_width = event.window.data1;
+                window_height = event.window.data2;
+                reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onResized(thiz, window_width, window_height);
+            } else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED || event.window.event == SDL_WINDOWEVENT_FOCUS_LOST){
+                reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onFocused(thiz, event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED);
+            } else if (event.window.event == SDL_WINDOWEVENT_SHOWN || event.window.event == SDL_WINDOWEVENT_HIDDEN){
+                app_is_in_background = event.window.event == SDL_WINDOWEVENT_HIDDEN;
+                reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onPaused(thiz, event.window.event == SDL_WINDOWEVENT_HIDDEN);
+            } else if (event.window.event == SDL_WINDOWEVENT_CLOSE) {
+                SDL_Event e;
+                e.type = SDL_QUIT;
+                SDL_PushEvent(&e);
+            }
+            break;
+        case SDL_KEYDOWN:
+        case SDL_KEYUP:
+            reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onKey(thiz,
+                event.type == SDL_KEYDOWN,
+                event.key.keysym.scancode,
+                shifts = event.key.keysym.mod);
+            break;
+        case SDL_QUIT:
+            reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onQuit(thiz);
+            ag_fn_sys_setMainObject(nullptr);
+            return;
+        case SDL_APP_LOWMEMORY:
+            reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onLowMemory(thiz);
+            break;
+        default:
+            break;
+        }
+    }
+    if (app_is_in_background) {
+        ag_fn_sys_postTimer(
+            start_frame_ms + 500, // when in bg, check for events every 1/2 sec
+            ag_mk_weak(&thiz->head),
+            (ag_fn)ag_m_guiPlatform_App_guiPlatform_handleTick);
+        return;
+    }
+    //if (!repaints_are_paused) {
+        SkCanvas* canvas = sk_framebuffer_surface->getCanvas();
+        gui_platform_canvas.canvas = canvas;
+        //canvas->scale(
+        //    (float)window_width / sdl_display_mode.w,
+        //    (float)window_height / sdl_display_mode.h);
+        reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onPaint(thiz, &gui_platform_canvas);
+        if (auto as_direct_context = GrAsDirectContext(canvas->recordingContext()))
+            as_direct_context->flushAndSubmit();
+        SDL_GL_SwapWindow(window);
+    //}
+    ag_fn_sys_postTimer(
+        start_frame_ms + frame_duration_ms,
+        ag_mk_weak(&thiz->head),
+        (ag_fn)ag_m_guiPlatform_App_guiPlatform_handleTick);
+}
+
+void ag_m_guiPlatform_App_guiPlatform_runInternal(
         GuiPlatformApp* thiz,
         AgString* appName,
         int64_t fps,
         void* initalizerContext,
         void(*initializer)(void* ctx, GuiPlatformApp*)) {
     if (app) return;
-    frame_duration_ms = 1000 / fps;
     app = thiz;
+    frame_duration_ms = 1000 / fps;
+    gui_platform_canvas.header.dispatcher = ag_disp_guiPlatform_Canvas;
+    gui_platform_canvas.header.ctr_mt = AG_CTR_STEP;
+    gui_platform_canvas.header.wb_p = AG_IN_STACK | AG_F_PARENT;
+    gui_platform_canvas.canvas = nullptr;
+
     uint32_t window_flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE;
 
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -190,10 +271,11 @@ extern "C" void ag_m_guiPlatform_App_guiPlatform_run(
     gr_gl_interface = GrGLMakeNativeInterface();
     gr_gl_context = GrDirectContexts::MakeGL(gr_gl_interface);
     SkASSERT(gr_gl_context);
-    GR_GL_GetIntegerv(gr_gl_interface.get(), GR_GL_FRAMEBUFFER_BINDING, (GrGLint*)&sk_framebuffer_info.fFBOID);
+    //GR_GL_GetIntegerv(gr_gl_interface.get(), GR_GL_FRAMEBUFFER_BINDING, (GrGLint*)&sk_framebuffer_info.fFBOID);
+    gr_gl_interface.get()->fFunctions.fGetIntegerv(GR_GL_FRAMEBUFFER_BINDING, (GrGLint*)&sk_framebuffer_info.fFBOID);
     sk_framebuffer_info.fFormat = window_format == SDL_PIXELFORMAT_RGBA8888 || context_type != SDL_GL_CONTEXT_PROFILE_ES
-            ? GR_GL_RGBA8
-            : GR_GL_BGRA8;
+        ? GR_GL_RGBA8
+        : GR_GL_BGRA8;
     sk_render_target = GrBackendRenderTargets::MakeGL(
         window_width, window_height,
         0, // MSAA Sample Count
@@ -215,77 +297,7 @@ extern "C" void ag_m_guiPlatform_App_guiPlatform_run(
         (ag_fn)ag_m_guiPlatform_App_guiPlatform_handleTick);
 }
 
-extern "C" void ag_m_guiPlatform_App_guiPlatform_handleTick(GuiPlatformApp* thiz) {
-    if (thiz != app) return;
-    auto start_frame_ms = ag_fn_sys_nowMs();
-    SDL_Event event;
-    while (SDL_PollEvent(&event)) {
-        switch (event.type) {
-        case SDL_MOUSEMOTION:
-            if (event.motion.state == SDL_PRESSED)
-                reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onCursor(thiz, event.motion.x, event.motion.y);
-            break;
-        case SDL_MOUSEBUTTONDOWN:
-        case SDL_MOUSEBUTTONUP:
-            if (event.button.state == SDL_PRESSED || event.button.state == SDL_RELEASED)
-                reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onKey(thiz, event.button.state == SDL_PRESSED, event.button.button, shifts);
-            break;
-        case SDL_MOUSEWHEEL:
-            reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onScroll(thiz, event.wheel.x, event.wheel.y, 0);            
-            break;
-        case SDL_WINDOWEVENT:
-            if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED || event.window.event == SDL_WINDOWEVENT_RESIZED) {
-                window_width = event.window.data1;
-                window_height = event.window.data2;
-                reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onResized(thiz, window_width, window_height);
-            } else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED || event.window.event == SDL_WINDOWEVENT_FOCUS_LOST){
-                reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onFocused(thiz, event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED);
-            } else if (event.window.event == SDL_WINDOWEVENT_SHOWN || event.window.event == SDL_WINDOWEVENT_HIDDEN){
-                app_is_in_background = event.window.event != SDL_WINDOWEVENT_HIDDEN;
-                reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onPaused(thiz, event.window.event == SDL_WINDOWEVENT_HIDDEN);
-            }
-            break;
-        case SDL_KEYDOWN:
-        case SDL_KEYUP:
-            reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onKey(thiz,
-                event.type == SDL_KEYDOWN,
-                event.key.keysym.scancode,
-                shifts = event.key.keysym.mod);
-            break;
-        case SDL_QUIT:
-            reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onQuit(thiz);
-            break;
-        case SDL_APP_LOWMEMORY:
-            reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onLowMemory(thiz);
-            break;
-        default:
-            break;
-        }
-    }
-    if (app_is_in_background) {
-        ag_fn_sys_postTimer(
-            start_frame_ms + 500, // when in bg, check for events every 1/2 sec
-            ag_mk_weak(&thiz->head),
-            (ag_fn)ag_m_guiPlatform_App_guiPlatform_handleTick);
-        return;
-    }
-    if (!repaints_are_paused) {
-        gui_platform_canvas->canvas->scale(
-            (float)window_width / sdl_display_mode.w,
-            (float)window_height / sdl_display_mode.h);
-        reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onPaint(thiz, gui_platform_canvas);
-        if (auto as_direct_context = GrAsDirectContext(gui_platform_canvas->canvas->recordingContext()))
-            as_direct_context->flushAndSubmit();
-        gui_platform_canvas->canvas = nullptr;
-        SDL_GL_SwapWindow(window);
-    }
-    ag_fn_sys_postTimer(
-        start_frame_ms + frame_duration_ms,
-        ag_mk_weak(&thiz->head),
-        (ag_fn)ag_m_guiPlatform_App_guiPlatform_handleTick);
-}
-
-extern "C" void ag_dispose_guiPlatform_App(GuiPlatformApp* thiz) {
+void ag_fn_guiPlatform_disposeApp(GuiPlatformApp* thiz) {
     if (thiz != app) return;
     sk_framebuffer_surface = nullptr;
     sk_render_target.GrBackendRenderTarget::~GrBackendRenderTarget();
@@ -295,37 +307,4 @@ extern "C" void ag_dispose_guiPlatform_App(GuiPlatformApp* thiz) {
     SDL_GL_DeleteContext(gl_context);
     SDL_DestroyWindow(window);
     SDL_Quit();
-}
-
-
-extern "C" void ag_m_guiPlatform_Canvas_() {
-        for (auto& r : rects) {
-    canvas->clear(SK_ColorWHITE);
-        paint.setColor(rand.nextU() | 0x80808080);
-        canvas->drawRoundRect(r, 5.0f, 5.0f, paint);
-    }
-    paint.setColor(SK_ColorBLACK);
-    canvas->drawImage(my_image, 10.0, 20.0);
-    canvas->drawString("Silverdom", 100.0f, 100.0f, font, paint);
-    canvas->save();
-    canvas->translate((sdl_display_mode.w - 100) / 2.0, (sdl_display_mode.h - 100) / 2.0);
-    canvas->rotate(rotation++);
-    paint.setColor(SK_ColorBLACK);
-    canvas->drawPath(hexagon, paint);
-    canvas->restore();
-
-}
-
-extern "C" void makeFont_makeImage(){
-    #ifdef __linux__
-        sk_sp<SkTypeface> typeface = SkFontMgr_New_FCI(SkFontConfigInterface::RefGlobal())->legacyMakeTypeface("", SkFontStyle());
-#elif __APPLE__
-        sk_sp<SkTypeface> typeface = SkFontMgr_New_CoreText(nullptr)->legacyMakeTypeface("", SkFontStyle());
-#else
-        sk_sp<SkTypeface> typeface = SkFontMgr_New_GDI()->matchFamilyStyle("Arial", SkFontStyle::Normal());
-#endif
-        //SkFont font(typeface, 24);
-        //auto [itmp, unused] = SkCodec::MakeFromData(read_file("C:/Users/andre/cpp/silverdom/test.png"))->getImage();
-        //sk_sp<SkImage> my_image = std::move(itmp);
-
 }

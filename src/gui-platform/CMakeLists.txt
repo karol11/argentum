@@ -1,4 +1,6 @@
-﻿find_package(SDL2 CONFIG REQUIRED)
+﻿find_package(unofficial-skia CONFIG REQUIRED)
+find_package(SDL2 CONFIG REQUIRED)
+find_package(OpenGL REQUIRED)
 
 add_library (gui_platform STATIC
     gui-platform.cpp
@@ -18,7 +20,7 @@ target_link_libraries(gui_platform
 target_link_libraries(gui_platform PRIVATE ag_runtime)
 
 #ag_copy_win_dll(ag_sdl)
+#ag_copy_libs(gui_platform OpenGL::GL)
+#ag_copy_libs(gui_platform unofficial::skia::skia)
 ag_copy_libs(gui_platform SDL2::SDL2)
-ag_copy_libs(gui_platform unofficial::skia::skia)
-ag_copy_libs(gui_platform )
-ag_copy_ag(ag_sdl_gl "guiPlatform.ag")
+ag_copy_ag(gui_platform "guiPlatform.ag")
