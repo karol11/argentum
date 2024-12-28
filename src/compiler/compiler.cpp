@@ -40,7 +40,7 @@ std::string read_file(std::string file_name) {
         return r;
     } else {
         std::cerr << "Can't read :" << file_name << std::endl;
-        throw 1;
+        panic();
     }
 }
 
