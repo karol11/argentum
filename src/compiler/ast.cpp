@@ -911,7 +911,7 @@ string Class::get_name() {
 		: name;
 }
 
-[[noreturn]] string AbstractClass::get_name() {
+string AbstractClass::get_name() {
 	panic();
 }
 

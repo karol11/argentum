@@ -641,10 +641,6 @@ struct Generator : ast::ActionScanner {
 				current_di_scope));
 		}
 		action->match(*this);
-		if (!r.type || r.type == action->type()) {
-		} else {
-			__debugbreak();
-		}
 		assert(!r.type || r.type == action->type());
 		if (!r.type)
 			r.type = action->type();

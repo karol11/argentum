@@ -1,5 +1,8 @@
+/vcpkg*
 /build*/
-/out*/*
-!/out*/ag
+/out*/apps
+/out*/debug
+/out*/libs
+/out*/bin
 /.vs*/
 *.deb
