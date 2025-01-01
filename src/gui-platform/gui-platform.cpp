@@ -47,12 +47,7 @@ extern "C" {
     } GuiPlatformApp;
 
     typedef struct {
-        void (*run)(
-            GuiPlatformApp* thiz,
-            AgString* appName,
-            int64_t fps,
-            void* initalizerContext,
-            void(*initializer)(void* ctx, GuiPlatformApp*));
+        // run, run_internal
         void (*onFocused)(
             GuiPlatformApp* thiz,
             bool isFocused);
@@ -87,6 +82,8 @@ extern "C" {
             GuiPlatformApp* thiz);
         void (*onLowMemory)(
             GuiPlatformApp* thiz);
+        void (*onStart)(
+            GuiPlatformApp* thiz);
         void* cast_info;
         AgVmt base;
     } GuiPlatformAppVmt;
@@ -100,9 +97,9 @@ extern "C" {
     void ag_m_guiPlatform_App_guiPlatform_runInternal(
         GuiPlatformApp* thiz,
         AgString* appName,
-        int64_t fps,
-        void* initalizerContext,
-        void(*initializer)(void* ctx, GuiPlatformApp*));
+        int64_t fps);
+
+    bool ag_m_sys_Blob_guiPlatform_loadFile(AgBlob* thiz, AgString* path);
 }
 
 int window_width = 0;
@@ -220,9 +217,7 @@ void ag_m_guiPlatform_App_guiPlatform_handleTick(GuiPlatformApp* thiz) {
 void ag_m_guiPlatform_App_guiPlatform_runInternal(
         GuiPlatformApp* thiz,
         AgString* appName,
-        int64_t fps,
-        void* initalizerContext,
-        void(*initializer)(void* ctx, GuiPlatformApp*)) {
+        int64_t fps) {
     if (app) return;
     app = thiz;
     frame_duration_ms = 1000 / fps;
@@ -307,4 +302,17 @@ void ag_fn_guiPlatform_disposeApp(GuiPlatformApp* thiz) {
     SDL_GL_DeleteContext(gl_context);
     SDL_DestroyWindow(window);
     SDL_Quit();
+}
+
+bool ag_m_sys_Blob_guiPlatform_loadFile(AgBlob* thiz, AgString* path) {
+    FILE* f = fopen(path->chars, "rb");
+    if (!f)
+        return false;
+    fseek(f, 0, SEEK_END);
+    ag_make_blob_fit(thiz, ftell(f));
+    fseek(f, 0, SEEK_SET);
+    bool r = fread(thiz->bytes, 1, thiz->bytes_count, f)
+        == thiz->bytes_count;
+    fclose(f);
+    return r;
 }

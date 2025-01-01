@@ -8,6 +8,7 @@ add_library (gui_platform STATIC
 	skia-bind.h
 )
 set_property(TARGET gui_platform PROPERTY C_STANDARD 11)
+set_property(TARGET gui_platform PROPERTY CXX_STANDARD 17)
 
 target_link_libraries(gui_platform PRIVATE OpenGL::GL)
 target_link_libraries(gui_platform PRIVATE unofficial::skia::skia)
