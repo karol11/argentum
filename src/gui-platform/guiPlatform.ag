@@ -1,6 +1,8 @@
 using sys { String, Blob }
 
 class App {
+    width = 0f;
+    height = 0f;
     run(appName str, fps int) {
         (?App) ? { // This forces these methods to be retained in vmt
             onFocused(false);

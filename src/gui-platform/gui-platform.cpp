@@ -44,6 +44,8 @@ bool gLogCallsGL = false;
 extern "C" {
     typedef struct {
         AgObject head;
+        float width;
+        float height;
     } GuiPlatformApp;
 
     typedef struct {
@@ -160,6 +162,8 @@ void ag_m_guiPlatform_App_guiPlatform_handleTick(GuiPlatformApp* thiz) {
             if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED || event.window.event == SDL_WINDOWEVENT_RESIZED) {
                 window_width = event.window.data1;
                 window_height = event.window.data2;
+                thiz->width = float(window_width);
+                thiz->height = float(window_height);
                 reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onResized(thiz, window_width, window_height);
             } else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED || event.window.event == SDL_WINDOWEVENT_FOCUS_LOST){
                 reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onFocused(thiz, event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED);
@@ -263,6 +267,8 @@ void ag_m_guiPlatform_App_guiPlatform_runInternal(
     SDL_GL_GetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, &context_type);
 
     SDL_GL_GetDrawableSize(window, &window_width, &window_height);
+    thiz->width = float(window_width);
+    thiz->height = float(window_height);
     gr_gl_interface = GrGLMakeNativeInterface();
     gr_gl_context = GrDirectContexts::MakeGL(gr_gl_interface);
     SkASSERT(gr_gl_context);

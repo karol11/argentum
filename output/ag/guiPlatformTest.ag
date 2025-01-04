@@ -2,9 +2,6 @@ using sys { Blob, log }
 using guiPlatform { Canvas, Paint, Rect, Font, Image }
 using string;
 
-const w = 1024f;
-const h = 768f;
-
 fn forRangeFS(from float, to float, step float, do(float)) {
     from -> loop!(_ += step < to ? do(_));
 }
@@ -26,24 +23,22 @@ class MyApp {
             ph += 1s;
             c.clear(0xff_ffffffs);
             p = Paint;
-            (x + dx) -> (_ < 0f || _ > w ? dx *= -1f : x := _);
-            (y += dy) -> (y < 0f || y > h ? dy *= -1f : y := _);
+            (x + dx) -> (_ < 0f || _ > width ? dx *= -1f : x := _);
+            (y + dy) -> (_ < 0f || _ > height ? dy *= -1f : y := _);
             c.drawRect(Rect.setXYWH(x-50f, y-50f, 100f, 100f), p.color(0xff_ff0000s));
-            forRangeFS(0f, 700f, 4f) {
-                p.color(0xff_008800s | (short(_) + ph));
-                c.drawLine(_,     0f, 0f,     700f - _, p);
-                c.drawLine(w - _, 0f,  w,     700f - _, p);
-                c.drawLine(_,      h, 0f, h - 700f + _, p);
-                c.drawLine(w - _,  h,  w, h - 700f + _, p);
+            forRangeFS(0f, 700f, 4f)`i {
+                p.color(0xff_008800s | (short(i) + ph));
+                c.drawLine(        i,      0f,     0f,          700f - i, p);
+                c.drawLine(width - i,      0f,  width,          700f - i, p);
+                c.drawLine(        i,  height,     0f, height - 700f + i, p);
+                c.drawLine(width - i,  height,  width, height - 700f + i, p);
             };
-            c.drawSimpleText((w - 48f) / 2f, (h - 16f) / 2f, "Hello", f, 16f, p.color(0xff_004400s));
-            c.drawImage((w - 108f) / 2f, (h - 100f) / 2f - 100f, img);
+            c.drawSimpleText((width - 48f) / 2f, (height - 16f) / 2f, "Hello", f, 16f, p.color(0xff_004400s));
+            c.drawImage((width - 108f) / 2f, (height - 100f) / 2f - 100f, img);
         }
         onKey(pressed bool, key short, shifts short) {
-            sys_log("{}\
-                key {int(key)} shifts{int(shifts)}
-            ");
-            pressed && key == 20s ? sys_setMainObject(?MyApp)
+            sys_log("{int(key)}-{int(shifts)} ");
+            pressed && key == 41s ? sys_setMainObject(?MyApp)
         }
    }
 }
