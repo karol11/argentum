@@ -2,6 +2,8 @@
 #include <fstream>
 #include <optional>
 #include <string>
+#include <vector>
+#include <filesystem>
 
 #include "llvm/IR/Module.h"
 #include "llvm/IR/LegacyPassManager.h"
@@ -29,9 +31,11 @@
 using ltm::own;
 using ast::Ast;
 using std::optional;
+using std::nullopt;
 using std::string;
+using std::vector;
 
-std::string read_file(std::string file_name) {
+optional<string> read_file(string file_name) {
     std::ifstream f(file_name, std::ios::binary | std::ios::ate);
     if (f) {
         std::string r(f.tellg(), '\0');
@@ -39,9 +43,41 @@ std::string read_file(std::string file_name) {
         f.read(r.data(), r.size());
         return r;
     } else {
-        std::cerr << "Can't read :" << file_name << std::endl;
-        panic();
+        return nullopt;
     }
+}
+
+vector<string> src_dir_names;
+string read_source(string moduleName, string& path) {
+    string last_dir;
+    auto handle_dir = [&](string dir) -> optional<string> {
+        path = ast::format_str(dir, "/", moduleName, ".ag");
+        if (auto r = read_file(path))
+            return r;
+        string ref_path = ast::format_str(dir, "/", moduleName, ".ag-ref");
+        if (auto ref = read_file(ref_path)) {
+            path = std::filesystem::path(ast::format_str(dir, "/", *ref)).lexically_normal().generic_string();
+            if (auto r = read_file(path))
+                return r;
+            std::cerr << "Can't read :" << path << " by ref " << ref_path << std::endl;
+            panic();
+        }
+        return nullopt;
+    };
+    for (const auto& dir: src_dir_names) {
+        last_dir = dir;
+        if (auto r = handle_dir(dir))
+            return *r;
+    }
+    while (auto parent = read_file(ast::format_str(last_dir, "/sdk.ref"))) {
+        path = std::filesystem::path(ast::format_str(last_dir, "/", *parent)).lexically_normal().generic_string();
+        src_dir_names.push_back(path);
+        if (auto r = handle_dir(path))
+            return *r;
+        last_dir = *parent;
+    }
+    std::cerr << "Can't read : " << moduleName << std::endl;
+    panic();
 }
 
 int main(int argc, char* argv[]) {
@@ -58,12 +94,12 @@ int main(int argc, char* argv[]) {
     bool output_asm = false;
     bool add_debug_info = false;
     bool test_mode = false;
-    string src_dir_name, start_module_name, out_file_name, opt_level;
+    string start_module_name, out_file_name, opt_level;
     string entry_point_name = "main";
     for (auto arg = argv + 1, end = argv + argc; arg != end; arg++) {
         auto param = [&] {
             if (++arg == end) {
-                llvm::errs() << "expected target parameter\n";
+                llvm::errs() << "expected flag parameter\n";
                 exit(1);
             }
             return *arg;
@@ -103,7 +139,7 @@ int main(int argc, char* argv[]) {
         } else if (strcmp(*arg, "-start") == 0) {
             start_module_name = param();
         } else if (strcmp(*arg, "-src") == 0) {
-            src_dir_name = param();
+            src_dir_names.push_back(param());
         } else {
             llvm::errs() << "unexpected cmdline argument " << *arg << "\n";
             exit(1);
@@ -115,15 +151,17 @@ int main(int argc, char* argv[]) {
             exit(1);
         }
     };
-    check_str(src_dir_name, "source directory");
+    if (src_dir_names.empty()) {
+        llvm::errs() << "at least one -src parameter expected\n";
+        exit(1);
+    }
     check_str(start_module_name, "start module");
     check_str(out_file_name, "output file");
     ast::initialize();
     auto ast = own<Ast>::make();
-    ast->absolute_path = src_dir_name;
     register_runtime_content(*ast);
-    parse(ast, start_module_name, [&](auto name) {
-        return read_file(ast::format_str(src_dir_name, "/", name, ".ag"));
+    parse(ast, start_module_name, [&](auto name, auto& out_path) {
+        return read_source(name, out_path);
     });
     resolve_names(ast);
     check_types(ast);

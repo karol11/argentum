@@ -66,6 +66,7 @@ enum struct Mut {
 struct Module : dom::DomItem {
 	weak<Ast> ast;
 	string name;
+	string path;
 	unordered_map<string, weak<Module>> direct_imports;
 	unordered_map<string, weak<Node>> aliases;
 	unordered_map<string, own<Var>> constants;
@@ -370,7 +371,6 @@ struct ptr_vec_comparer {
 };
 
 struct Ast: dom::DomItem {
-	string absolute_path;
 	own<dom::Dom> dom;
 	unordered_map<
 		const vector<weak<AbstractClass>>*,

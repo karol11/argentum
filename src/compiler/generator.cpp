@@ -641,10 +641,6 @@ struct Generator : ast::ActionScanner {
 				current_di_scope));
 		}
 		action->match(*this);
-		if (!r.type || r.type == action->type()) {
-		} else {
-			__debugbreak();
-		}
 		assert(!r.type || r.type == action->type());
 		if (!r.type)
 			r.type = action->type();
@@ -3097,11 +3093,16 @@ struct Generator : ast::ActionScanner {
 		auto initializer_fn_type = llvm::FunctionType::get(void_type, { ptr_type }, false);
 		if (di_builder) {
 			for (auto& m : ast->modules) {
+				string dir = "";
+				string name = m.second->path;
+				if (auto p = name.find_last_of("/\\"); p != string::npos) {
+					dir = name.substr(0, p);
+					name = name.substr(p + 1);
+				}
 				di_files.insert({
 					m.first,
-					di_builder->createFile(
-							m.first + ".ag",
-							ast->absolute_path)});
+					di_builder->createFile( name, dir)
+				});
 			}
 		}
 		// Make LLVM types for classes
@@ -3510,7 +3511,6 @@ struct Generator : ast::ActionScanner {
 			llvm::FunctionType::get(int_type, {}, false),
 			llvm::Function::ExternalLinkage,
 			entry_point_name, module.get());
-		compile_fn_body(*ast->starting_module->entry_point, entry_point_name);
 		if (test_mode) {
 			// Compile tests
 			for (auto& m : ast->modules) {
