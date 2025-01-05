@@ -3506,7 +3506,6 @@ struct Generator : ast::ActionScanner {
 			llvm::FunctionType::get(int_type, {}, false),
 			llvm::Function::ExternalLinkage,
 			entry_point_name, module.get());
-		compile_fn_body(*ast->starting_module->entry_point, entry_point_name);
 		if (test_mode) {
 			// Compile tests
 			for (auto& m : ast->modules) {
