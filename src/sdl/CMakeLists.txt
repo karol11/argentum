@@ -33,4 +33,3 @@ endif()
 
 ag_copy_win_dll(ag_sdl freetype jpeg62 libpng16 bz2 brotlidec brotlicommon)
 ag_copy_libs(ag_sdl SDL2::SDL2)
-ag_copy_ag(ag_sdl "sdl.ag")

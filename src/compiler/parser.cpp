@@ -33,7 +33,7 @@ using ast::Ast;
 using ast::Node;
 using ast::Action;
 using ast::make_at_location;
-using module_text_provider_t = const std::function<string (string name)>&;
+using module_text_provider_t = const std::function<string (string name, std::string& out_path)>&;
 
 template<typename FN>
 struct Guard{
@@ -173,7 +173,7 @@ struct Parser {
 			module->direct_imports.insert({ "sys", ast->sys });
 		ast->modules.insert({ module_name, module });
 		modules_in_dep_path.insert(module_name);
-		text = module_text_provider(module_name);
+		text = module_text_provider(module_name, module->path);
 		cur = text.c_str();
 		match_ws();
 		while (match("using")) {

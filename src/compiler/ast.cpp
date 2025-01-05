@@ -129,10 +129,10 @@ void initialize() {
 	pin<dom::TypeInfo> weak_set_type = new dom::UnorderedSetType<weak<dom::DomItem>>(weak_type);
 	auto op_array_2 = cpp_dom->mk_type(Kind::FIX_ARRAY, 2, own_type);
 	Ast::dom_type_ = (new CppClassType<Ast>(cpp_dom, { "m0", "Ast" }))
-		->field("src_path", pin<CField<&Ast::absolute_path>>::make(string_type))
-		->field("modules", pin<CField<&Ast::modules>>::make(str_own_map_type))
 		->field("starting", pin<CField<&Ast::starting_module>>::make(weak_type));
 	Module::dom_type_ = (new CppClassType<Module>(cpp_dom, { "m0", "Module" }))
+		->field("name", pin<CField<&Module::name>>::make(string_type))
+		->field("dir", pin<CField<&Module::path>>::make(string_type))
 		->field("imports", pin<CField<&Module::direct_imports>>::make(str_weak_map_type))
 		->field("aliases", pin<CField<&Module::aliases>>::make(str_weak_map_type))
 		->field("constants", pin<CField<&Module::constants>>::make(str_own_map_type))
@@ -624,6 +624,7 @@ Ast::Ast()
 	: dom(new dom::Dom(cpp_dom)) {
 	auto s = pin<Module>::make();
 	s->name = "sys";
+	s->path = "sys";
 	modules.insert({"sys", s});
 	sys = s;
 	register_runtime_content(*this);

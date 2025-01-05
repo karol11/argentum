@@ -13,5 +13,3 @@ else()
     ag_copy_libs(ag_http_client CURL::libcurl)
 endif()
 ag_copy_win_dll(ag_http_client zlib1)
-
-ag_copy_ag(ag_http_client "httpClient.ag")
