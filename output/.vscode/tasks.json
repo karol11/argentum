@@ -1,0 +1,34 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "run current ag in release",
+            "type": "shell",
+            "command": "${workspaceFolder}\\bin\\run-release.bat",
+            "args": [
+                "${fileBasenameNoExtension}"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}\\workdir"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "build current ag in debug",
+            "type": "shell",
+            "command": "${workspaceFolder}\\bin\\build-debug.bat",
+            "args": [
+                "${fileBasenameNoExtension}"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "problemMatcher": []
+        }
+    ]
+}
