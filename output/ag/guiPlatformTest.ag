@@ -3,7 +3,10 @@ using guiPlatform { Canvas, Paint, Rect, Font, Image }
 using string;
 
 fn forRangeFS(from float, to float, step float, do(float)) {
-    from -> loop!(_ += step < to ? do(_));
+    loop!(from < to ? {
+        do(from);
+        from += step
+    })
 }
 
 class MyApp {
@@ -33,7 +36,7 @@ class MyApp {
                 c.drawLine(        i,  height,     0f, height - 700f + i, p);
                 c.drawLine(width - i,  height,  width, height - 700f + i, p);
             };
-            c.drawSimpleText((width - 48f) / 2f, (height - 16f) / 2f, "Hello", f, 16f, p.color(0xff_004400s));
+            c.drawSimpleText((width - 48f) / 2f, (height + float(ph%100s)) / 2f, "Hello", f, float(ph%100s), p.color(0xff_004400s));
             c.drawImage((width - 108f) / 2f, (height - 100f) / 2f - 100f, img);
         }
         onKey(pressed bool, key short, shifts short) {
