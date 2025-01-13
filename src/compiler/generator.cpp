@@ -152,6 +152,7 @@ struct Generator : ast::ActionScanner {
 	llvm::PointerType* ptr_type = nullptr;
 	llvm::Type* void_type = nullptr;
 	llvm::IRBuilder<>* builder = nullptr;
+	bool test_mode = false;
 	Val* result = nullptr;
 	llvm::DataLayout layout;
 	unordered_map<pin<ast::TpLambda>, llvm::FunctionType*> lambda_fns; // function having 0th param of ptr_type
@@ -263,10 +264,11 @@ struct Generator : ast::ActionScanner {
 		llvm::Constant*,
 		vec_ptr_hasher<llvm::Constant>> table_cache;
 
-	Generator(ltm::pin<ast::Ast> ast, bool debug_info_mode)
+	Generator(ltm::pin<ast::Ast> ast, bool debug_info_mode, bool test_mode)
 		: ast(ast)
 		, context(new llvm::LLVMContext)
 		, layout("")
+		, test_mode(test_mode)
 	{
 		module = std::make_unique<llvm::Module>("code", *context);
 		if (debug_info_mode)
@@ -3045,7 +3047,7 @@ struct Generator : ast::ActionScanner {
 		return combined_result;
 	}
 
-	llvm::orc::ThreadSafeModule build(bool test_mode, string entry_point_name) {
+	llvm::orc::ThreadSafeModule build(string entry_point_name) {
 		std::unordered_set<pin<ast::Class>> special_copy_and_dispose = {
 			ast->blob,
 			ast->own_array,
@@ -3558,8 +3560,8 @@ struct Generator : ast::ActionScanner {
 };
 
 llvm::orc::ThreadSafeModule generate_code(ltm::pin<ast::Ast> ast, bool add_debug_info, bool test_mode, string entry_point_name) {
-	Generator gen(ast, add_debug_info);
-	return gen.build(test_mode, entry_point_name);
+	Generator gen(ast, add_debug_info, test_mode);
+	return gen.build(entry_point_name);
 }
 
 #ifdef AG_STANDALONE_COMPILER_MODE
