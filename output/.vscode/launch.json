@@ -9,9 +9,8 @@
             "request": "launch",
             "name": "Launch",
             "program": "${workspaceFolder}/apps/${fileBasenameNoExtension}.exe",
-            "args": [ "-src ..\\ag -start helloWorld -O3 -o ..\\apps\\helloWorld.obj -g" ],
             "cwd": "${workspaceFolder}/workdir",
-            "preLaunchTask": "Build current AG file in Debug"
+            "preLaunchTask": "build current ag in debug"
         }
     ]
 }

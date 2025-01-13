@@ -1,7 +1,9 @@
 using sys { String, Blob }
 
 class App {
-    run(appName str, fps int, initializer(App)) {
+    width = 0f;
+    height = 0f;
+    run(appName str, fps int) {
         (?App) ? { // This forces these methods to be retained in vmt
             onFocused(false);
             onPaused(false);
@@ -14,9 +16,10 @@ class App {
             onQuit();
             onLowMemory();
         };
-        runInternal(appName, fps, initializer)
+        runInternal(appName, fps);
+        onStart();
     }
-    runInternal(appName str, fps int, initializer(App));
+    runInternal(appName str, fps int);
     onFocused(isFocused bool){} // window got keyboard focus
     onPaused(isPaused bool){}  // desktop: minimize window, mobile - app sleep
     onResized(width int, height int){} // desktop - all resizes excep minimize, mobile - rotates, split screen, show/hide kbd
@@ -27,6 +30,7 @@ class App {
     onPaint(c Canvas) {}
     onQuit(){}
     onLowMemory(){}
+    onStart(){}
 }
 
 class Rect {
@@ -53,14 +57,14 @@ fn afterCopyPaint(me Paint) { me.handleId := 0 }
 
 class Image{
     handleId=0;
-    fromBlob(data *Blob) this;
+    fromBlob(data -Blob) this;
 }
 fn destroyImage(me Image);
 fn afterCopyImage(me Image) { me.handleId := 0 }
 
 class Font{
     handleId=0;
-    fromBlob(data()@Blob) this;
+    fromBlob(data -Blob) this;
     fromName(name str) this;
 }
 fn destroyFont(me Font);
@@ -71,8 +75,12 @@ class Canvas {
     clear(color short);
     drawLine(x0 float, y0 float, x1 float, y1 float, p -Paint) this;
     drawRect(r -Rect, p -Paint) this;
-    drawImage(x int, y int, img -Image) this;
-    drawSimpleText(x int, y int, s str, font -Font, size int, p -Paint) this;
+    drawImage(x float, y float, img -Image) this;
+    drawSimpleText(x float, y float, s str, font -Font, size float, p -Paint) this;
 }
 fn destroyCanvas(me Canvas);
 fn afterCopyCanvas(me Canvas) { me.handleId := 0 }
+
+class Blob {
+    loadFile(path str) bool;
+}

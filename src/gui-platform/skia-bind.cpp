@@ -1,13 +1,39 @@
-#include <core/SkSurface.h>
-#include <core/SkCanvas.h>
-#include <core/SkPaint.h>
-#include <core/SkData.h>
-#include <codec/SkCodec.h>
-#include <core/SkTypeface.h>
-#include <core/SkFont.h>
-#include <core/SkFontMgr.h>
-#include <core/SkStream.h>
-#include <ports/SkTypeface_win.h>
+#include "skia/codec/SkCodec.h"
+#include "core/SkStream.h"
+#include "skia/core/SkCanvas.h"
+#include "skia/core/SkColorSpace.h"
+#include "skia/core/SkFont.h"
+#include "skia/core/SkFontMgr.h"
+#include "skia/core/SkSurface.h"
+#include "skia/private/base/SkTArray.h"
+#include "skia/gpu/ganesh/gl/GrGLBackendSurface.h"
+#include "skia/gpu/ganesh/gl/GrGLDirectContext.h"
+#include "skia/gpu/ganesh/SkSurfaceGanesh.h"
+#include "skia/gpu/GrRecordingContext.h"
+#include "skia/gpu/GrDirectContext.h"
+#include "skia/gpu/GrBackendSurface.h"
+#include "skia/src/base/SkRandom.h"
+#include "skia/src/gpu/ganesh/gl/GrGLUtil.h"
+
+#if defined(SK_BUILD_FOR_ANDROID)
+#   include <GLES/gl.h>
+#elif defined(SK_BUILD_FOR_UNIX)
+#   include <GL/gl.h>
+#elif defined(SK_BUILD_FOR_MAC)
+#   include <OpenGL/gl.h>
+#elif defined(SK_BUILD_FOR_IOS)
+#   include <OpenGLES/ES2/gl.h>
+#endif
+
+#ifdef __linux__
+#include "skia/ports/SkFontConfigInterface.h"
+#include "skia/ports/SkFontMgr_FontConfigInterface.h"
+#elif __APPLE__
+#include "skia/ports/SkFontMgr_mac_ct.h"
+#elif WIN32
+#include <skia/ports/SkTypeface_win.h>
+#endif
+
 #include "runtime.h"
 #include "blob.h"
 #include "skia-bind.h"
@@ -59,7 +85,7 @@ void ag_m_guiPlatform_Paint_guiPlatform_stroke(AgSkPaint* me, int32_t width) {
 //
 // Image
 //
-inline const sk_sp<SkImage>& get_image(AgSkImage* me) {
+static inline sk_sp<SkImage>& get_image(AgSkImage* me) {
 	return reinterpret_cast<sk_sp<SkImage>&>(me->rc_image);
 }
 void ag_fn_guiPlatform_disposeImage(AgSkImage* me) {
@@ -67,11 +93,12 @@ void ag_fn_guiPlatform_disposeImage(AgSkImage* me) {
 }
 
 void ag_m_guiPlatform_Image_guiPlatform_fromBlob(AgSkImage* me, AgBlob* data) {
-	ag_fn_guiPlatform_disposeImage(me);
-	auto [itmp, unused] = SkCodec::MakeFromStream(
-		std::make_unique<SkMemoryStream>(data->bytes, data->bytes_count))
-		->getImage();
-	new(me->rc_image) sk_sp<SkImage>(std::move(itmp));
+	if (!data->bytes_count)
+		return;
+	std::unique_ptr<SkCodec> codec = SkCodec::MakeFromStream(
+		SkMemoryStream::MakeDirect(data->bytes, data->bytes_count));
+	auto [itmp, unused] = codec->getImage();
+	get_image(me) = std::move(itmp);
 }
 
 //
@@ -94,7 +121,7 @@ void ag_m_guiPlatform_Font_guiPlatform_fromBlob(AgSkFont* me, AgBlob* data) {
 	auto font_mgr = SkFontMgr_New_GDI();
 #endif
 	reinterpret_cast<sk_sp<SkTypeface>&>(me->rc_font) = font_mgr->makeFromStream(
-		std::make_unique<SkMemoryStream>(data->bytes, data->bytes_count));
+		SkMemoryStream::MakeDirect(data->bytes, data->bytes_count));
 }
 void ag_m_guiPlatform_Font_guiPlatform_fromName(AgSkFont* me, AgString* name) {
 	ag_fn_guiPlatform_disposeFont(me);

@@ -44,15 +44,12 @@ bool gLogCallsGL = false;
 extern "C" {
     typedef struct {
         AgObject head;
+        float width;
+        float height;
     } GuiPlatformApp;
 
     typedef struct {
-        void (*run)(
-            GuiPlatformApp* thiz,
-            AgString* appName,
-            int64_t fps,
-            void* initalizerContext,
-            void(*initializer)(void* ctx, GuiPlatformApp*));
+        // run, run_internal
         void (*onFocused)(
             GuiPlatformApp* thiz,
             bool isFocused);
@@ -87,6 +84,8 @@ extern "C" {
             GuiPlatformApp* thiz);
         void (*onLowMemory)(
             GuiPlatformApp* thiz);
+        void (*onStart)(
+            GuiPlatformApp* thiz);
         void* cast_info;
         AgVmt base;
     } GuiPlatformAppVmt;
@@ -100,9 +99,9 @@ extern "C" {
     void ag_m_guiPlatform_App_guiPlatform_runInternal(
         GuiPlatformApp* thiz,
         AgString* appName,
-        int64_t fps,
-        void* initalizerContext,
-        void(*initializer)(void* ctx, GuiPlatformApp*));
+        int64_t fps);
+
+    bool ag_m_sys_Blob_guiPlatform_loadFile(AgBlob* thiz, AgString* path);
 }
 
 int window_width = 0;
@@ -163,6 +162,8 @@ void ag_m_guiPlatform_App_guiPlatform_handleTick(GuiPlatformApp* thiz) {
             if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED || event.window.event == SDL_WINDOWEVENT_RESIZED) {
                 window_width = event.window.data1;
                 window_height = event.window.data2;
+                thiz->width = float(window_width);
+                thiz->height = float(window_height);
                 reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onResized(thiz, window_width, window_height);
             } else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED || event.window.event == SDL_WINDOWEVENT_FOCUS_LOST){
                 reinterpret_cast<GuiPlatformAppVmt*>(thiz->head.dispatcher)[-1].onFocused(thiz, event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED);
@@ -220,9 +221,7 @@ void ag_m_guiPlatform_App_guiPlatform_handleTick(GuiPlatformApp* thiz) {
 void ag_m_guiPlatform_App_guiPlatform_runInternal(
         GuiPlatformApp* thiz,
         AgString* appName,
-        int64_t fps,
-        void* initalizerContext,
-        void(*initializer)(void* ctx, GuiPlatformApp*)) {
+        int64_t fps) {
     if (app) return;
     app = thiz;
     frame_duration_ms = 1000 / fps;
@@ -268,6 +267,8 @@ void ag_m_guiPlatform_App_guiPlatform_runInternal(
     SDL_GL_GetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, &context_type);
 
     SDL_GL_GetDrawableSize(window, &window_width, &window_height);
+    thiz->width = float(window_width);
+    thiz->height = float(window_height);
     gr_gl_interface = GrGLMakeNativeInterface();
     gr_gl_context = GrDirectContexts::MakeGL(gr_gl_interface);
     SkASSERT(gr_gl_context);
@@ -307,4 +308,17 @@ void ag_fn_guiPlatform_disposeApp(GuiPlatformApp* thiz) {
     SDL_GL_DeleteContext(gl_context);
     SDL_DestroyWindow(window);
     SDL_Quit();
+}
+
+bool ag_m_sys_Blob_guiPlatform_loadFile(AgBlob* thiz, AgString* path) {
+    FILE* f = fopen(path->chars, "rb");
+    if (!f)
+        return false;
+    fseek(f, 0, SEEK_END);
+    ag_make_blob_fit(thiz, ftell(f));
+    fseek(f, 0, SEEK_SET);
+    bool r = fread(thiz->bytes, 1, thiz->bytes_count, f)
+        == thiz->bytes_count;
+    fclose(f);
+    return r;
 }

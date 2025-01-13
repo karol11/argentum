@@ -1,0 +1,48 @@
+using sys { Blob, log }
+using guiPlatform { Canvas, Paint, Rect, Font, Image }
+using string;
+
+fn forRangeFS(from float, to float, step float, do(float)) {
+    loop!(from < to ? {
+        do(from);
+        from += step
+    })
+}
+
+class MyApp {
+    ph = 0s;
+    x = 100f;
+    y = 100f;
+    dx = 1f;
+    dy = 1f;
+    f = Font;
+    img = Image;
+    +guiPlatform_App {
+        onStart() {
+            f.fromName("Arial Bold");
+            img.fromBlob(Blob.{ _.loadFile("sd.png") : log("Img sd.png not loaded") });
+        }
+        onPaint(c Canvas) {
+            ph += 1s;
+            c.clear(0xff_ffffffs);
+            p = Paint;
+            (x + dx) -> (_ < 0f || _ > width ? dx *= -1f : x := _);
+            (y + dy) -> (_ < 0f || _ > height ? dy *= -1f : y := _);
+            c.drawRect(Rect.setXYWH(x-50f, y-50f, 100f, 100f), p.color(0xff_ff0000s));
+            forRangeFS(0f, 700f, 4f)`i {
+                p.color(0xff_008800s | (short(i) + ph));
+                c.drawLine(        i,      0f,     0f,          700f - i, p);
+                c.drawLine(width - i,      0f,  width,          700f - i, p);
+                c.drawLine(        i,  height,     0f, height - 700f + i, p);
+                c.drawLine(width - i,  height,  width, height - 700f + i, p);
+            };
+            c.drawSimpleText((width - 48f) / 2f, (height + float(ph%100s)) / 2f, "Hello", f, float(ph%100s), p.color(0xff_004400s));
+            c.drawImage((width - 108f) / 2f, (height - 100f) / 2f - 100f, img);
+        }
+        onKey(pressed bool, key short, shifts short) {
+            sys_log("{int(key)}-{int(shifts)} ");
+            pressed && key == 41s ? sys_setMainObject(?MyApp)
+        }
+   }
+}
+MyApp.run("Hello AG", 120)
