@@ -1013,7 +1013,11 @@ struct Generator : ast::ActionScanner {
 		return ast->tp_optional(fn_result);
 	}
 
-	void compile_fn_body(ast::MkLambda& node, string name, llvm::Type* closure_struct = nullptr) {
+	void compile_fn_body(ast::MkLambda& node, string name,
+		llvm::Type* closure_struct = nullptr,
+		bool handle_consts = false,
+		bool handle_threads = false)
+	{
 		vector<BreakTrace> prev_breaks = move(active_breaks);
 		active_breaks.clear();
 		unordered_map<weak<ast::Var>, llvm::Value*> outer_locals;
@@ -1158,7 +1162,7 @@ struct Generator : ast::ActionScanner {
 			++param_iter;
 		}
 		vector<Val> consts_to_dispose; // addr of const, todo: optimize with const pass
-		if (&node == &*ast->starting_module->entry_point) {
+		if (handle_consts) {
 			builder->CreateCall(fn_init, {});
 			for (auto& m : ast->modules_in_order) {
 				for (auto& c : m->constants) {
@@ -1232,18 +1236,26 @@ struct Generator : ast::ActionScanner {
 			}
 		};
 		release_params(fn_result);
-		if (&node == &*ast->starting_module->entry_point) {
-			auto main_ret_val = builder->CreateCall(fn_handle_main_thread, {});
-			for (; !consts_to_dispose.empty(); consts_to_dispose.pop_back()) {
-				builder->CreateCall(fn_dispose, {
-					builder->CreateLoad(ptr_type, consts_to_dispose.back().data)
+		auto dispose_consts = [&] {
+			if (handle_consts) {
+				for (; !consts_to_dispose.empty(); consts_to_dispose.pop_back()) {
+					builder->CreateCall(fn_dispose, {
+						builder->CreateLoad(ptr_type, consts_to_dispose.back().data)
 					});
+				}
 			}
+		};
+		if (handle_threads) {
+			auto main_ret_val = builder->CreateCall(fn_handle_main_thread, {});
+			dispose_consts();
 			builder->CreateRet(main_ret_val);
-		} else if (fn_result.data) {
-			builder->CreateRet(fn_result.data);
 		} else {
-			builder->CreateRetVoid();
+			dispose_consts();
+			if (fn_result.data) {
+				builder->CreateRet(fn_result.data);
+			} else {
+				builder->CreateRetVoid();
+			}
 		}
 		if (!active_breaks.empty()) {
 			for (auto& brk : active_breaks) {
@@ -1941,7 +1953,7 @@ struct Generator : ast::ActionScanner {
 				void on_int64(ast::TpInt64& type) override { handle_64_bit(); }
 				void on_enum(ast::TpEnum& type) override { handle_64_bit(); }
 				void on_float(ast::TpFloat& type) override {
-					gen.builder->CreateCall(gen.fn_put_thread_param, {
+					gen.builder->CreateCall(gen.fn_put_thread_param, {		
 						gen.builder->CreateZExt(
 							gen.cast_to(value, gen.int32_type),
 							gen.int_type)
@@ -3523,12 +3535,20 @@ struct Generator : ast::ActionScanner {
 						ast::format_str("ag_test_", m.first, "_", test.first),
 						module.get());
 					current_ll_fn = fn;
-					compile_fn_body(*test.second, ast::format_str("ag_test_", m.first, "_", test.first));
+					compile_fn_body(
+						*test.second,
+						ast::format_str("ag_test_", m.first, "_", test.first),
+						nullptr, // closure type
+						false,   // handle consts
+						true);   // handle threads
 				}
 			}
 			// TODO: build test_main that calls all tests
 		} else {
-			compile_fn_body(*ast->starting_module->entry_point, entry_point_name);		
+			compile_fn_body(*ast->starting_module->entry_point, entry_point_name,
+				nullptr, // closure type
+				true, // handle consts
+				true); // handle threads
 		}
 		while (!execute_in_global_scope.empty()) {
 			auto fn = move(execute_in_global_scope.back());
