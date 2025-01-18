@@ -159,6 +159,7 @@ int main(int argc, char* argv[]) {
     check_str(out_file_name, "output file");
     ast::initialize();
     auto ast = own<Ast>::make();
+    ast->test_mode = test_mode;
     register_runtime_content(*ast);
     parse(ast, start_module_name, [&](auto name, auto& out_path) {
         return read_source(name, out_path);
@@ -171,7 +172,7 @@ int main(int argc, char* argv[]) {
     llvm::InitializeAllTargets();
     llvm::InitializeAllTargetMCs();
     llvm::InitializeAllAsmPrinters();
-    auto threadsafe_module = generate_code(ast, add_debug_info, test_mode, entry_point_name);
+    auto threadsafe_module = generate_code(ast, add_debug_info, entry_point_name);
     threadsafe_module.withModuleDo([&](llvm::Module& module) {
         std::error_code err_code;
         llvm::raw_fd_ostream out_file(out_file_name, err_code, llvm::sys::fs::OF_None);

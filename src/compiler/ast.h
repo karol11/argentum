@@ -223,7 +223,6 @@ struct Field : Node {
 struct Class : AbstractClass {
 	string name;
 	bool is_interface = false;
-	bool is_test = false;
 	bool is_defined = false;
 	bool used = false;  // instantiated, casted to, or has used descendants
 	weak<AbstractClass> base_class; // Class or ClassInstance
@@ -372,6 +371,7 @@ struct ptr_vec_comparer {
 
 struct Ast: dom::DomItem {
 	own<dom::Dom> dom;
+	bool test_mode = false;
 	unordered_map<
 		const vector<weak<AbstractClass>>*,
 		own<ClassInstance>,

@@ -152,7 +152,6 @@ struct Generator : ast::ActionScanner {
 	llvm::PointerType* ptr_type = nullptr;
 	llvm::Type* void_type = nullptr;
 	llvm::IRBuilder<>* builder = nullptr;
-	bool test_mode = false;
 	Val* result = nullptr;
 	llvm::DataLayout layout;
 	unordered_map<pin<ast::TpLambda>, llvm::FunctionType*> lambda_fns; // function having 0th param of ptr_type
@@ -264,11 +263,10 @@ struct Generator : ast::ActionScanner {
 		llvm::Constant*,
 		vec_ptr_hasher<llvm::Constant>> table_cache;
 
-	Generator(ltm::pin<ast::Ast> ast, bool debug_info_mode, bool test_mode)
+	Generator(ltm::pin<ast::Ast> ast, bool debug_info_mode)
 		: ast(ast)
 		, context(new llvm::LLVMContext)
 		, layout("")
-		, test_mode(test_mode)
 	{
 		module = std::make_unique<llvm::Module>("code", *context);
 		if (debug_info_mode)
@@ -3525,7 +3523,7 @@ struct Generator : ast::ActionScanner {
 			llvm::FunctionType::get(int_type, {}, false),
 			llvm::Function::ExternalLinkage,
 			entry_point_name, module.get());
-		if (test_mode) {
+		if (ast->test_mode) {
 			// Compile tests
 			for (auto& m : ast->modules) {
 				for (auto& test : m.second->tests) {
@@ -3543,13 +3541,12 @@ struct Generator : ast::ActionScanner {
 						true);   // handle threads
 				}
 			}
-			// TODO: build test_main that calls all tests
-		} else {
-			compile_fn_body(*ast->starting_module->entry_point, entry_point_name,
-				nullptr, // closure type
-				true, // handle consts
-				true); // handle threads
 		}
+		// Main
+		compile_fn_body(*ast->starting_module->entry_point, entry_point_name,
+			nullptr, // closure type
+			true, // handle consts
+			true); // handle threads
 		while (!execute_in_global_scope.empty()) {
 			auto fn = move(execute_in_global_scope.back());
 			execute_in_global_scope.pop_back();
@@ -3579,8 +3576,8 @@ struct Generator : ast::ActionScanner {
 	}
 };
 
-llvm::orc::ThreadSafeModule generate_code(ltm::pin<ast::Ast> ast, bool add_debug_info, bool test_mode, string entry_point_name) {
-	Generator gen(ast, add_debug_info, test_mode);
+llvm::orc::ThreadSafeModule generate_code(ltm::pin<ast::Ast> ast, bool add_debug_info, string entry_point_name) {
+	Generator gen(ast, add_debug_info);
 	return gen.build(entry_point_name);
 }
 
@@ -3646,6 +3643,6 @@ int64_t generate_and_execute(ltm::pin<ast::Ast> ast, bool add_debug_info, bool d
 	if (!llvm_inited)
 		llvm::InitLLVM X(argc, argv);
 	llvm_inited = true;
-	auto module = generate_code(ast, add_debug_info, false, "main");
+	auto module = generate_code(ast, add_debug_info, "main");
 	return execute(module, *ast, dump_ir);
 }

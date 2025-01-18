@@ -235,7 +235,6 @@ struct Parser {
 				}
 				continue;
 			}
-			bool is_test = match("test");
 			bool is_interface = match("interface");
 			if (is_interface || match("class")) {
 				auto cls = dom::strict_cast<ast::Class>(get_class_by_name(expect_long_name("class or interface", nullptr)));
@@ -248,7 +247,6 @@ struct Parser {
 				cls->is_defined = true;
 				// TODO match attributes if existed
 				cls->is_interface = is_interface;
-				cls->is_test = is_test;
 				if (match("(")) {
 					if (!is_first_time_seen)
 						error("Reopened class must reuse existing type parameters");
@@ -310,13 +308,12 @@ struct Parser {
 			} else if (match("fn")) {
 				auto fn = make<ast::Function>();
 				fn->name = expect_id("function name");
-				fn->is_test = is_test;
 				auto& fn_ref = module->functions[fn->name];
 				if (fn_ref)
 					error("duplicated function name, ", fn->name, " see ", *fn_ref.pinned());
 				fn_ref = fn;
 				parse_fn_def(fn);
-			} else if (is_test) {
+			} else if (match("test")) {
 				auto fn = make<ast::Function>();
 				fn->name = expect_id("test name");
 				fn->is_test = true;
@@ -1355,7 +1352,16 @@ void parse(
 {
 	std::unordered_set<string> modules_in_dep_path;
 	ast->starting_module = Parser(ast, start_module_name, modules_in_dep_path).parse(module_text_provider);
-	if (!ast->starting_module->entry_point || ast->starting_module->entry_point->body.empty()) {
+	if (ast->test_mode) {
+		ast->starting_module->entry_point->body.clear();
+		for (auto& m : ast->modules) {
+			for (auto& t : m.second->tests) {
+				auto call = make_at_location<ast::Call>(*t.second);
+				call->callee = t.second;
+				ast->starting_module->entry_point->body.push_back(move(call));
+			}
+		}
+	} else if (!ast->starting_module->entry_point || ast->starting_module->entry_point->body.empty()) {
 		std::cerr << "error starting module has no entry point" << std::endl;
 		panic();
 	}

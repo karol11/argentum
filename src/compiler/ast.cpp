@@ -277,7 +277,6 @@ void initialize() {
 	Class::dom_type_ = (new CppClassType<Class>(cpp_dom, { "m0", "Class" }))
 		->field("name", pin<CField<&Class::name>>::make(string_type))
 		->field("is_interface", pin<CField<&Class::is_interface>>::make(bool_type))
-		->field("is_test", pin<CField<&Class::is_test>>::make(bool_type))
 		->field("params", pin<CField<&Class::params>>::make(own_vector_type))
 		->field("base", pin<CField<&Class::base_class>>::make(weak_type))
 		->field("fields", pin<CField<&Class::fields>>::make(own_vector_type))
