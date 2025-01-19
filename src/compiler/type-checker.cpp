@@ -556,7 +556,7 @@ struct Typer : ast::ActionMatcher {
 		node.type_ = ast->get_own(node.cls);
 	}
 	void on_make_fn_ptr(ast::MakeFnPtr& node) override {
-		node.type_ = node.fn->type();
+		node.type_ = type_fn(node.fn)->type();
 	}
 	void on_mk_weak(ast::MkWeakOp& node) override {
 		if (auto as_ref = strict_cast<TpRef>(find_type(node.p)->type())) {

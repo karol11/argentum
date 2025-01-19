@@ -371,7 +371,7 @@ struct ptr_vec_comparer {
 
 struct Ast: dom::DomItem {
 	own<dom::Dom> dom;
-	bool test_mode = false;
+	string test_filter;
 	unordered_map<
 		const vector<weak<AbstractClass>>*,
 		own<ClassInstance>,

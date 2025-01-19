@@ -1030,12 +1030,12 @@ struct Generator : ast::ActionScanner {
 		current_function = &node;
 		llvm::DIScope* prev_di_scope = current_di_scope;
 		if (node.module) {
-			if (auto di_file = di_files[node.module->name]) {
+			if (auto di_file = di_files.find(node.module->name); di_file != di_files.end()) {
 				auto sub = di_builder->createFunction(
 					di_cu,
 					name,
 					name,  // linkage name
-					di_file,
+					di_file->second,
 					node.line,
 					to_di_fn_type(*node.type()),
 					node.line,
@@ -3113,7 +3113,7 @@ struct Generator : ast::ActionScanner {
 				}
 				di_files.insert({
 					m.first,
-					di_builder->createFile( name, dir)
+					di_builder->createFile(name, dir)
 				});
 			}
 		}
@@ -3519,19 +3519,18 @@ struct Generator : ast::ActionScanner {
 				}
 			}
 		}
-		current_ll_fn = llvm::Function::Create(
-			llvm::FunctionType::get(int_type, {}, false),
-			llvm::Function::ExternalLinkage,
-			entry_point_name, module.get());
-		if (ast->test_mode) {
+		if (!ast->test_filter.empty()) {
 			// Compile tests
 			for (auto& m : ast->modules) {
 				for (auto& test : m.second->tests) {
+					if (!test.second->used)
+						continue;
 					auto fn = llvm::Function::Create(
 						llvm::FunctionType::get(void_type, {}, false),
 						llvm::Function::ExternalLinkage,
 						ast::format_str("ag_test_", m.first, "_", test.first),
 						module.get());
+					functions.insert({ test.second, fn });
 					current_ll_fn = fn;
 					compile_fn_body(
 						*test.second,
@@ -3543,6 +3542,10 @@ struct Generator : ast::ActionScanner {
 			}
 		}
 		// Main
+		current_ll_fn = llvm::Function::Create(
+			llvm::FunctionType::get(int_type, {}, false),
+			llvm::Function::ExternalLinkage,
+			entry_point_name, module.get());
 		compile_fn_body(*ast->starting_module->entry_point, entry_point_name,
 			nullptr, // closure type
 			true, // handle consts

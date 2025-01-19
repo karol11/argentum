@@ -202,6 +202,7 @@ void register_runtime_content(struct ast::Ast& ast) {
 	}
 	ast.mk_fn("getParent", FN(ag_fn_sys_getParent), opt_ref_to_object, { ast.get_conform_ref(ast.object) });
 	ast.mk_fn("log", FN(ag_fn_sys_log), new ast::ConstVoid, { ast.get_conform_ref(ast.string_cls) });
+	ast.mk_fn("assert0", FN(ag_fn_sys_assert0), new ast::ConstVoid, { ast.tp_optional(ast.tp_void()) });
 	ast.mk_fn("hash", FN(ag_fn_sys_hash), new ast::ConstInt64, { ast.get_shared(ast.object) });
 	ast.mk_fn("nowMs", FN(ag_fn_sys_nowMs), new ast::ConstInt64, {});
 	ast.mk_fn("terminate", FN(ag_fn_sys_terminate), new ast::Break, { ast.tp_int64() });

@@ -11,6 +11,7 @@
 #include <optional>
 #include <cfenv>
 #include <cmath>
+#include <regex>
 #include "utils/utf8.h"
 
 namespace {
@@ -322,6 +323,8 @@ struct Parser {
 					error("duplicated test name, ", fn->name, " see ", *fn_ref.pinned());
 				fn_ref = fn;
 				parse_fn_def(fn);
+				if (ast->test_filter.empty())
+					module->tests.clear();
 			} else {
 				break;
 			}
@@ -1352,14 +1355,37 @@ void parse(
 {
 	std::unordered_set<string> modules_in_dep_path;
 	ast->starting_module = Parser(ast, start_module_name, modules_in_dep_path).parse(module_text_provider);
-	if (ast->test_mode) {
-		ast->starting_module->entry_point->body.clear();
-		for (auto& m : ast->modules) {
-			for (auto& t : m.second->tests) {
-				auto call = make_at_location<ast::Call>(*t.second);
-				call->callee = t.second;
-				ast->starting_module->entry_point->body.push_back(move(call));
+	if (!ast->test_filter.empty()) {
+		try {
+			std::regex filter(ast->test_filter, std::regex::ECMAScript);
+			ast->starting_module->entry_point->body.clear();
+			for (auto& m : ast->modules) {
+				for (auto& t : m.second->tests) {
+					auto name = ast::format_str(m.first, "_", t.first);
+					if (std::regex_search(name, filter)) {
+						{
+							auto log = make_at_location<ast::Call>(*t.second);
+							auto ref = make_at_location<ast::MakeFnPtr>(*t.second);
+							auto str = make_at_location<ast::ConstString>(*t.second);
+							ref->fn = ast->modules["sys"]->functions["log"];
+							str->value = name + "\n";
+							log->callee = move(ref);
+							log->params.push_back(move(str));
+							ast->starting_module->entry_point->body.push_back(move(log));
+						}
+						{
+							auto call = make_at_location<ast::Call>(*t.second);
+							auto ref = make_at_location<ast::MakeFnPtr>(*t.second);
+							ref->fn = t.second;
+							call->callee = move(ref);
+							ast->starting_module->entry_point->body.push_back(move(call));
+						}
+					}
+				}
 			}
+		} catch (const std::regex_error&) {
+			std::cerr << "Invalid regular expression: " << ast->test_filter << std::endl;
+			panic();
 		}
 	} else if (!ast->starting_module->entry_point || ast->starting_module->entry_point->body.empty()) {
 		std::cerr << "error starting module has no entry point" << std::endl;

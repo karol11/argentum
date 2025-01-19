@@ -93,7 +93,7 @@ int main(int argc, char* argv[]) {
     bool output_bitcode = false;
     bool output_asm = false;
     bool add_debug_info = false;
-    bool test_mode = false;
+    string test_filter;
     string start_module_name, out_file_name, opt_level;
     string entry_point_name = "main";
     for (auto arg = argv + 1, end = argv + argc; arg != end; arg++) {
@@ -133,7 +133,7 @@ int main(int argc, char* argv[]) {
         } else if (strcmp(*arg, "-e") == 0) {
             entry_point_name = param();
         } else if (strcmp(*arg, "-T") == 0) {
-            test_mode = true;
+            test_filter = param();
         } else if (strcmp(*arg, "-o") == 0) {
             out_file_name = param();
         } else if (strcmp(*arg, "-start") == 0) {
@@ -159,7 +159,7 @@ int main(int argc, char* argv[]) {
     check_str(out_file_name, "output file");
     ast::initialize();
     auto ast = own<Ast>::make();
-    ast->test_mode = test_mode;
+    ast->test_filter = test_filter;
     register_runtime_content(*ast);
     parse(ast, start_module_name, [&](auto name, auto& out_path) {
         return read_source(name, out_path);

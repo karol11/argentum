@@ -8,6 +8,7 @@ add_library (ag_runtime STATIC
     ag-queue.c
     utf8.h
     utf8.c
+    ag-assert.c
     array/array-base-inc.h
     array/array-base.h
     array/array-base.c

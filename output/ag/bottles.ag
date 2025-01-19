@@ -1,6 +1,10 @@
 using utils { forRange }
 using string;
 
+test bottles(){
+    sys_assert0(2*2 == 4)
+}
+
 bottles = `c `n {
     c == 0
         ? "{n}o more bottles"
