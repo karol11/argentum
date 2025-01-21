@@ -1,69 +1,70 @@
 using sys{
     Object,
-    par = getParent
+    Cursor,
+    StrBuilder,
+    par = getParent,
+    assert=assert0
 }
 
-fn assertIEq(a int, b int);
-
-fn ints() {
-    assertIEq(7, (2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1)))
+test ints() {
+    assert(7 == (2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1)))
 }
 
-fn doubles() {
-    assertIEq(3, int(3.14 - 0.2e-4 * 5.0))
+test doubles() {
+    assert(3 == int(3.14 - 0.2e-4 * 5.0))
 }
 
-fn block() {
-    assertIEq(3, {1+1}+1) 
+test block() {
+    assert(3 == {1+1}+1) 
 }
 
-fn lambdaWithParams() {
-    assertIEq(40, `a{1+a}(3)*10)
+test lambdaWithParams() {
+    assert(40 == `a{1+a}(3)*10)
 }
 
-fn passingLambdaToLambda() {
-    assertIEq(99,
+test passingLambdaToLambda() {
+    assert(0 ==
       `a `b `xfn {
-            xfn(t \ a + b + t)
+            xfn`t {a + b + t}
       } (2, 4) `vfn {
             vfn(3) * vfn(5)
       })
 }
 
-fn sequence() {
-    assertIEq(44, {1; 3.14; 44})
+test sequence() {
+    assert(44 == {1; 3.14; 44})
 }
 
-fn localAssignment() {
-    assertIEq(10, {
+test localAssignment() {
+    assert(10 == {
         a = 2;
         a := a + 3;
         a * 2
     })
 }
 
-fn makeAndConsumeOptionals() {
-    assertIEq(2, (opt){ opt : 2 } (false ? 44))
+test makeAndConsumeOptionals() {
+    assert(2 == `opt { opt : 2 } (false ? 44))
 }
 
-fn maybeChain() {
-    assertIEq(3, {
+test maybeChain() {
+    assert(3 == {
         a = +3.3;  // a: local of type optional(double), having value just(3.3)
         a ? int(_) : 0  // convert optional(double) to optional(int) and extract replacing `none` with 0
     })
 }
 
-fn intComparisons() {
+test intComparisons() {
     a = 2;
     assert(a < 10);
     assert(a > -1);
     assert(a != 0)
 }
 
-fn loops() {
+test loops() {
     a = 0;
     r = 1;
-    assertIEq(39916800,
+    assert(39916800 ==
         loop {
             a := a + 1;
             r  := r * a;
@@ -77,18 +78,18 @@ class Point {
     y = 2;
 }
 
-fn classes() {
+test classes() {
     p = Point;
     p.x := 1;
-    assertIEq(3, p.y + p.x)
+    assert(3 == p.y + p.x)
 }
 
-fn classInstanceCopy() {
+test classInstanceCopy() {
     p=Point;
     p.x := 1;
     pb = @p;
     pb.x := 3;
-    sys_assertIEq(4, p.x + pb.x)
+    assert(4 == p.x + pb.x)
 }
 
 class Point {
@@ -101,36 +102,38 @@ class P3 {
     z=3;
 }
 
-fn classMethods() {
+test classMethods() {
     p=P3;
     p.x := 10;
     p.z := 20;
-    sys_assertIEq(32, p.m())
+    assert(32 == p.m())
 }
 
 interface Movable {
-    move(x int, y int);
+    moveTo(x int, y int);
+}
+interface RelMovable {
+    moveBy(dx int, dy int);
 }
 class P3 {
-    +Movable {
-        move(dx int, dy int) {
+    +RelMovable {
+        moveBy(dx int, dy int) {
             x := x + dx;
             y := y + dy
         }
     }
-    z = 3;
 }
 
-fn interfaces() {
+test interfaces() {
     p=P3;         // 1, 2, 3
     p.x := 10;    // 10, 2, 3
     p.z := 20;    // 10, 2, 20
-    p.move(2, 3); // 12, 5, 20
-    sys_assertIEq(37, p.m())
+    p.moveTo(2, 3); // 12, 5, 20
+    assert(37 == p.m())
 }
 
 interface Sizeable {
-    resize(width int, height int) int; // returns surface
+    resize(width int, height int);
 }
 
 class Widget {
@@ -145,46 +148,49 @@ class Widget {
         resize(width int, height int) {
             size.x := width;
             size.y := height;
-            
+
         }
     }
     size = Point;
+    color = 24;
 }
 
-fn twoInterfaces() {
+test twoInterfaces() {
     p = Widget;
     p.moveTo(1,2);
     p.resize(100,200);
-    assertIEq(201, p.x + p.size.y)
+    assert(201 == p.x + p.size.y)
 }
 
-fn promisedCast() {
-    p = Widget~Movable;
+test promisedCast() { // it should compile
+    p = Widget~Movable; // p is of type Movable containing a Widget instance
     p.moveTo(1, 2);
+    assert(3 == p.x + p.y);
     p := Point;
     p.moveTo(10, 20);
+    assert(30 == p.x + p.y);
 }
 
-fn classCast() {
+test classCast() {
     p = Widget~Point;  // `p` is a `Point` holder initialized with a `Widget` instance
-    sys_assertIEq(24, p~Widget?_.color : 0)     // cast `p` to `Widget` and return its `color` field on success
+    sys_assert0(24 == p~Widget?_.color : 0)     // cast `p` to `Widget` and return its `color` field on success
 }
 
-fn interfaceCast() { // TODO interface dispatch with collisions
+test interfaceCast() { // TODO interface dispatch with collisions
     p = Point;
     w = Widget~Point;
-    assert(!(p~Sizeable), "should not cast");
-    assert(w~Sizeable, "should cast");
+    assert(!(p~Sizeable)); // should not cast
+    assert(w~Sizeable) // should cast
 }
 
-fn weaks() {
+test weaks() {
     p = Point;
     w = &p;
     p.x := 22;
     r = w?_.x : 100;
     p := Point;
     w ? r := r + _.x;
-    sys_assertIEq(22, r)
+    assert(22 == r)
 }
 
 class Node {
@@ -201,7 +207,7 @@ class Node {
     }
 }
 
-fn topoCopy() {
+test topoCopy() {
     root = Node;
     root.left := Node;
     root.right := Node;
@@ -213,51 +219,17 @@ fn topoCopy() {
     root.left := @root;
     root.left?_.parent := &root;
 
-    sys_assertIEq(35, oldSize * 10 + root.scan(&Node))
+    assert(35 == oldSize * 10 + root.scan(&Node))
 }
 
-fn foreignTestFunction(x int) int;
-
-fn foreignFunctionCall() {
-    foreignTestFunction(4*10);
-    assertIEq(42, foreignTestFunction(2))
-}
-
-fn logicalOr() {
+test logicalOr() {
     a = 3;
-    assert(a > 2 || a < 4, "or")
+    assert(a > 2 || a < 4)
 }
 
-fn logicalAnd() {
+test logicalAnd() {
     a = 3;
-    assert(a > 2 && a < 4, "and")
-}
-
-class Font {
-    ttfHandle = 0;
-    setId(id int) {
-        ttfHandle != 0 ? foreignTestFunction(-ttfHandle);
-        ttfHandle := id;
-        id != 0 ? foreignTestFunction(id);
-    }
-}
-
-fn disposeFont(f Font) {
-    f.ttfHandle != 0 ? foreignTestFunction(-f.ttfHandle);
-}
-
-fn afterCopyFont(f Font) {
-    f.ttfHandle != 0 ? foreignTestFunction(f.ttfHandle);
-}
-
-fn raii() {
-    {
-        foreignTestFunction(2);
-        fa = Font;
-        fa.setId(42);   // foreignTestFunction_state= 2+42
-        fb = @fa;       // foreignTestFunction_state= 2+42+42
-    };                  // foreignTestFunction_state= 2+42+42-42-42 = 2
-    sys_assertIEq(2, foreignTestFunction(0))
+    assert(a > 2 && a < 4)
 }
 
 class sys_Blob {
@@ -265,15 +237,15 @@ class sys_Blob {
     setAt(i int, v int) { set64At(i, v) }
 }
 
-fn blobsAndIndexes() {
+test blobsAndIndexes() {
     b = sys_Blob;
     b.insertItems(0, 3);
     b[1] := 42;
     c = @b;
-    assertIEq(42, c[1])
+    assert(42 == c[1])
 }
 
-class DlCl{
+class DelegateClass{
     x = 11;
     m(i int) int { x + i }
 }
@@ -281,10 +253,10 @@ fn f(handler &(int)int) int {
     handler(42) : 0
 }
 
-fn delegates() {
-    c = DlCl;
-    sys_assertIEq(53, f(c.m)); // 42+11=53
-    sys_assertIEq(31, f(c.&diff(i int) int { i - x }))
+test delegates() {
+    c = DelegateClass;
+    assert(53 == f(c.m)); // 42+11=53
+    assert(31 == f(c.&diff(i int) int { i - x }))
 }
 
 class ArrayItem {
@@ -292,7 +264,7 @@ class ArrayItem {
     y = 0;
 }
 
-fn arrays() {
+test arrays() {
     a = sys_Array(ArrayItem);
     a.insertItems(0, 10);
     a[0] := ArrayItem;
@@ -303,10 +275,10 @@ fn arrays() {
     };
     c = @a;
     c.delete(0, 1);
-    sys_assertIEq(42, c[0] ? _.x : -1)
+    assert(42 == c[0] ? _.x : -1)
 }
 
-fn weakArrays() {
+test weakArrays() {
     n = ArrayItem;
     a = sys_WeakArray(ArrayItem);
     a.insertItems(0, 10);
@@ -314,7 +286,7 @@ fn weakArrays() {
     a[1] := &n;
     c = @a;
     c.delete(0, 1);
-    assert(c[0] && _==n, "weakArray")
+    assert(c[0] && _ == n)
 }
 
 class CopyDetector{
@@ -324,15 +296,15 @@ fn afterCopyCopyDetector(c CopyDetector) { c.x := -1 }
 
 fn mkCopyDetector() @CopyDetector {
     r = CopyDetector;
-    r.x = 5;
+    r.x := 5;
     r
 }
 
-fn retOwnPtr() {
+test retOwnPtr() {
     r = mkCopyDetector();
-    assertIEq(r.x, 5);
+    assert(r.x == 5);
     r := CopyDetector.{ _.x := 10 };
-    assertIEq(r.x, 10);
+    assert(r.x == 10);
 }
 
 class InitializerNode {
@@ -362,15 +334,15 @@ class InitializerBar {
         .addFlags(3);    // 4 1 3
 }
 
-fn initializerMethods() {
+test initializerMethods() {
     b = InitializerBar;
     b.n.removeFlags(2);      // 4 1 1    // they can be used as normal methods too
-    sys_assertIEq(5, b.n.x + b.n.flags)         // 5
+    assert(5 == b.n.x + b.n.flags)         // 5
 }
 
 class sys_String{
     length() int {
-        s = cursor();
+        s = Cursor.set(this);
         r = 0;
         loop {
             c = s.getCh();
@@ -382,53 +354,53 @@ class sys_String{
 class OString {
     +sys_Blob;
     pos = 0;
-    put(codePoint int) this {
+    put(codePoint short) this {
         size = capacity();
         growStep = 100;
         pos + 5 >= size ?
-            insertItems(size, growStep);
+            insert(size, growStep);
         pos := putChAt(pos, codePoint)
     }
     append(s str) this {
         cur = s.cursor();
         loop{
             c = cur.getCh();
-            c != 0 ? put(c);
-            c == 0
+            c != 0s ? put(c);
+            c == 0s
         }
     }
     toStr() str {
-        r.fromBlob(this, 0, pos);
-        pos := 0;
-        r
+        mkStr(0, pos).{
+            pos := 0;
+        }
     }
 }
 
-fn stringOperations() {
+test stringOperations() {
     a = OString.put('<').append("Hello there").put('>').str();
-    sys_assertIEq(13, a.length())
+    assert(13, a.length())
 }
 
-fn literalStrings() {
+test literalStrings() {
     a = "Hi".cursor();
     a.getCh(); // a="i"
     b = @a;
     a.getCh(); // a=""   b"i"
-    assert(b.getCh() == 'i', "b=i");
-    assert(a.getCh() == 0, "a at end")
+    assert(b.getCh() == 'i');
+    assert(a.getCh() == 0s) // at 'a' end
 }
 
-fn stringEscapes() {
+test stringEscapes() {
     s = utf32_(10, 9, 13, '"', 0x5c, 0x1090e, 0x65, '!').cursor();
-    assertIEq(0x0a, s.getCh());
-    assertIEq(9, s.getCh());
-    assertIEq(0x0d, s.getCh());
-    assertIEq('"', s.getCh());
-    assertIEq(0x5c, s.getCh());
-    assertIEq(0x1090e, s.getCh());
-    assertIEq(0x65, s.getCh());
-    assertIEq('!', s.getCh());
-    assertIEq(0, s.getCh());
+    assert(0x0as == s.getCh());
+    assert(9s == s.getCh());
+    assert(0x0ds == s.getCh());
+    assert('"' == s.getCh());
+    assert(0x5cs == s.getCh());
+    assert(0x1090es == s.getCh());
+    assert(0x65s == s.getCh());
+    assert('!' == s.getCh());
+    assert(0s == s.getCh());
 }
 
 class Cl{
@@ -440,7 +412,7 @@ class Cl{
     }
 }
 
-fn setOps() {
+test setOps() {
     a = 1;    // a=1   x=0xc
     a *= 10;  // a=10
     a += 4;   // a=14
@@ -448,7 +420,7 @@ fn setOps() {
     c.x |= 3;  //     x=0xf(15)
     c[4] /= 3; //     x = 5
     c.inc();   //     x=6
-    assertIEq(20, c.x + a)    // 20
+    assert(20 == c.x + a)
 }
 
 class ParentCl{
@@ -457,64 +429,64 @@ class ParentCl{
     new(x int) this { this.x := x }
 }
 
-fn getParent() {
+test getParent() {
     a = ParentCl.new(11);
     a.inner := ParentCl.new(22);
     a.inner?_.inner := ParentCl.new(33);
-    assertIEq(0, sys_getParent(a) && _~ParentCl ? _.x : 0);
-    assertIEq(11, a.inner && sys_getParent(_) && _~Cl ? _.x : 0);
+    assert(0 == sys_getParent(a) && _~ParentCl ? _.x : 0);
+    assert(11 == a.inner && sys_getParent(_) && _~Cl ? _.x : 0);
     p = a.inner;
     a.inner := ?ParentCl;
-    assertIEq(0, p
+    assert(0 == (p
         ? (sys_getParent(_) && _~ParentCl ? _.x : 0)
-        : -1);
-    assertIEq(22, p && _.inner && sys_getParent(_) && _~ParentCl ? _.x : 0)
+        : -1));
+    assert(22 == (p && _.inner && sys_getParent(_) && _~ParentCl ? _.x : 0))
 }
 
-fn getParentArray() {
+test getParentArray() {
     a = sys_Array(Object);
     a.insertItems(0, 10);
     a[0] := Object;
-    assertIEq(a[0] && par(_) && _==a ? 1:0, 1);
+    assert(a[0] && par(_) && _==a);
     v = a[0];
     a.delete(0, 1);
-    assertIEq(v && !par(_) ? 1 : 0, 1);
+    assert(v && !par(_));
     a[0] := Object;
-    assertIEq(a[0] && par(_) && _==a ? 1:0, 1);
+    assert(a[0] && par(_) && _==a);
     v := a[0];
     a.setOptAt(0, ?Object);
-    assertIEq(v && !getParent(_) ? 1 : 0, 1);
-    assertIEq(!getParent(a) ? 1 : 0, 1)
+    assert(v && !getParent(_));
+    assert(!getParent(a))
 }
 
-class SpliceC{ inner = ?SpliceC; }
+class SpliceCls{ inner = ?SpliceCls; }
 
-fn splice() {
-    a = SpliceC;
-    a.inner := SpliceC;
+test splice() {
+    a = SpliceCls;
+    a.inner := SpliceCls;
     temp = a.inner;
-    a.inner := ?SpliceC;
-    assertIEq(temp && !sys_getParent(_) ? 1:0, 1);
+    a.inner := ?SpliceCls;
+    assert(temp && !sys_getParent(_));
     a.inner @= temp;
-    assertIEq(temp == a.inner ? 1:0, 1)
+    assert(temp == a.inner)
 }
 
 class SharPoint {
     x = 0;
     y = 0;
-    z = *"";
+    z = "";
     at(x int, y int) this {
        this.x := x;
        this.y := y
     }
     *sum() int { x+y }
- }
+}
 
-fn shared() {
+test shared() {
       p = *SharPoint.at(1, 2);
       p2 = p;
-      assertIEq(p2.sum(), 3);
-      assert(p == p2, "p==p2")
+      assert(p2.sum() == 3);
+      assert(p == p2)
 }
 
 const xDefPoint = *Point;
@@ -523,28 +495,29 @@ const xHello = "Hello world";
 
 fn consts() {
     p = @xDefPoint;
-    sys_log(xHello);
-    assertIEq(xCount, 4)
+    assert(xCount == 4);
+    assert(xHello == "Hello world");
+    assert(xDefPoint.x == 0);
 }
 
-fn multiline() {
-    assert("..../
+test multiline() {
+    assert("....\
         Multiline
         string
     ",
-    "    Multiline{utf32_(0x10)}    string{utf32_(0x10)}");
+    "    Multiline{utf32_(0x10s)}    string{utf32_(0x10s)}");
 }
 
 class StrBuilder{
     pos = 0;
-    put(codePoint int) this {
+    put(codePoint short) this {
         size = capacity();
         growStep = 100;
         pos + 5 >= size ?
-            insertItems(size, growStep);
+            insert(size, growStep);
         pos := putChAt(pos, codePoint)
     }
-    putStr(s String) this {
+    putStr(s str) this {
         loop !{
             c = s.getCh();
             c != 0 ? put(c)
@@ -559,17 +532,17 @@ class StrBuilder{
 }
 
 fn stringInterpolation() {
-    assert("Hi {2*2}!"=="Hi 4!", "single-line");
-    assert("${}/
+    assert("Hi {2*2}!"=="Hi 4!");
+    assert("${}\
         Name=${
-        1 < 2
-            ? "asdf"
-            : "zxcv"}
+            1 < 2
+                ? "asdf"
+                : "zxcv"}
         Age=${2 * 2}
     " == "
         Name=asdf
         Age=4
-    ", "multiline");
+    ");
 }
 
 class Pair(K, V) {
@@ -581,27 +554,27 @@ class Pair(K, V) {
     }
 }
 
-fn generics() {
-    p = Pair(sys_String, sys_Blob).set("Hello", Blob);
+test generics() {
+    p = Pair(sys_String, sys_Blob).set("Hello", sys_Blob);
     assert(p.key && _ == "Hello");
 }
 
 class sys_WeakArray{
     append(item T) T {
-        insertItems(capacity(), 1);
+        insert(capacity(), 1);
         this[capacity() - 1] := &item;
         item
     }
 }
 
-fn reopenGenerics() {
+test reopenGenerics() {
     a = sys_WeakArray(sys_Object);
     {
         x = sys_Object;
         a.append(x);
-        sys_assertIEq(1, a[0] && x == _ ? 1:0);
+        assert(a[0] && x == _);
     };
-    sys_assertIEq(1, a[0] ? 0:1);
+    assert(1, a[0] ? 0:1);
 }
 
 class Map(K, V) {
@@ -611,56 +584,56 @@ class Dict(X) {
     +Map(sys_String, X);
 }
 
-fn genericFromGeneric() {
+test genericFromGeneric() {
     d = Dict(sys_Blob);
-    sys_log(d[0] ? _.key : "") // it should compile
+    assert((d[0] ? _.key : "") == "") // it should compile
 }
 
 fn myFn(s sys_SharedArray(sys_String)) {
-    s[0] ? log(_)
+    s[0] ? sys_log(_)
 }
 
-fn genericInstAsType() {
+test genericInstAsType() { // it should compile
     myFn(sys_SharedArray(sys_String).{
-        _.insertItems(0, 1);
+        _.insert(0, 1);
         _[0] := "Aloha"
     })
 }
 
-fn fnReturnFn() int {
+fn fnForReturnFromFnTest() int {
     i = 2;
     loop {
         i -= 1;
-        i == 0 ? ^fnReturnFn=42;
+        i == 0 ? ^fnForReturnFromFnTest=42;
         i < 0
     };
     11
 }
 
-fn fnReturnTest() {
-    assertIEq(42, fnReturnFn())
+test returnFromFnTest() {
+    assert(42 == fnForReturnFromFnTest())
 }
 
-fn breakTest() {
+test breakTest() {
     i = 2;
     r = loop {
         i -= 1;
         i == 0 ? ^r = 42;
     };
-    assertIEq(42, r)
+    assert(42 == r)
 }
 
-fn badFn(a String, b String) {
-    assert(false, "shouldn't be called");
+fn badFn(a str, b str) {
+    assert(false);  // shouldn't be called
 }
 
-fn breakSkipsCallWithPartialParamsTest() {
+test breakSkipsCallWithPartialParamsFn() {
     {=block
-        f("asdf", ?"" : ^block);
+        badFn("asdf", ?"" : ^block);
     }
 }
 
-fn breakFromLocalInitializerTest {
+test breakFromLocalInitializerTest() {
     {=block
         a = "asdf";
         b = ?"" : ^block;
@@ -669,24 +642,24 @@ fn breakFromLocalInitializerTest {
     }
 }
 
-fn breakFromInnerLambdaFn(l()) String {
+fn breakFromInnerLambdaFn(l()) str {
     l();
     "Normal"
 }
 
-fn breakFromInnerLambdaTest {
+test breakFromInnerLambdaTest() {
     x = breakFromInnerLambdaFn {
         ^x = "From break"
     };
-    assert(x == "From break", "expected value from break")
+    assert(x == "From break")
 }
 
 fn boolLambdaFn(l()bool) bool {
     l()
 }
 
-fn boolLambdaTest() {
-    assert(!boolLambdaFn{false}), "boolLambdaFn() returns !false")
+test boolLambdaTest() {
+    assert(!boolLambdaFn{false}) // boolLambdaFn() returns !false
 }
 
 // fn returnFromLambdaParam() {
@@ -712,140 +685,115 @@ fn boolLambdaTest() {
 //     )");
 // }
 
-fn returnFromInnerLambdaPass(l()) String {
+fn returnFromInnerLambdaPass(l()) str {
     l();
     "Normal"
 }
-fn returnFromInnerLambdaSkip() String {
+fn returnFromInnerLambdaSkip() str {
     returnFromInnerLambdaPass{
       ^returnFromInnerLambdaSkip = "From break"
     }
 }
-fn returnFromInnerLambdaTest() {
-    assertIEq(skip().cursor().getCh(), 'F')
+test returnFromInnerLambdaTest() {
+    assert(returnFromInnerLambdaSkip() == "From break")
 }
 
-TEST(Parser, Unwind) {
-    execute(R"-(
-        fn forRange(from int, to int, body(int)) {
-            loop !(from < to ? {
-                    body(from);
-                    from += 1
-                })
-        }
-        x = {
-                forRange(0, 3) i {
-                    i == 1 ? ^x=42
-                };
-                0
-            };
-        sys_assertIEq(42, x)
-    )-");
+fn forRange(from int, to int, body(int)) {
+    loop !(from < to ? {
+        body(from);
+        from += 1
+    })
 }
+
+test unwind() {
+    x = {
+        forRange(0, 3) `i {
+            i == 1 ? ^x=42
+        };
+        0
+    };
+    assert(42 == x)
+}
+
 class App{
-    asyncOp(next fn()) {
+    asyncOp() {
         sys_setMainObject(?sys_Object);
-        next()
     }
 }
 
-fn asyncInnerTest(next fn()) {
+test asyncInnerTest() { // It should 
     app = App;
     sys_setMainObject(app);
-    app.asyncOp~(next);
+    app.asyncOp~();
 }
 
+class MtApp{
+    worker = sys_Thread(sys_Object).start(sys_Object);
+}
+
+test multithreading() {
+    app = App;
+    sys_setMainObject(app);
+    sys_log("Started on main thread. ");
+    app.worker.root().&workerCode(onEnd &()){
+        sys_log("Hello from the worker thread. ");
+        onEnd~();
+    }~(app.&endEverything(){
+        sys_log("Shutdown from the main thread.");
+        sys_setMainObject(?sys_Object);
+    });
+}
+
+//
+// Sync
+//
+fn foreignTestFunction(x int) int;
+
+test foreignFunctionCall() {
+    foreignTestFunction(4*10);
+    assert(42 == foreignTestFunction(2))
+}
+
+class Font {
+    ttfHandle = 0;
+    setId(id int) {
+        ttfHandle != 0 ? foreignTestFunction(-ttfHandle);
+        ttfHandle := id;
+        id != 0 ? foreignTestFunction(id);
+    }
+}
+
+fn disposeFont(f Font) {
+    f.ttfHandle != 0 ? foreignTestFunction(-f.ttfHandle);
+}
+
+fn afterCopyFont(f Font) {
+    f.ttfHandle != 0 ? foreignTestFunction(f.ttfHandle);
+}
+
+test raii() {
+    {
+        foreignTestFunction(2);
+        fa = Font;
+        fa.setId(42);   // foreignTestFunction_state= 2+42
+        fb = @fa;       // foreignTestFunction_state= 2+42+42
+    };                  // foreignTestFunction_state= 2+42+42-42-42 = 2
+    assert(2 == foreignTestFunction(0))
+}
+
+//
+// Async
+//
 fn asyncFfiCallbackInvoker(callback &());
 
 class AsyncFfiApp{
-    next = ?fn();
     onCallback() {
         sys_setMainObject(?sys_Object);
-        next ? _()
     }
 }
 
-fn asyncFfi(next fn()) {
+test asyncFfi() {
     app = App;
-    app.next := next;
     sys_setMainObject(app);
     callbackInvoker(app.onCallback);
 }
-
-TEST(Parser, Multithreading) {
-    execute(R"-(
-        class App{
-            worker = sys_Thread(sys_Object).start(sys_Object);
-        }
-        app = App;
-        sys_setMainObject(app);
-        sys_log("Started on main thread\n");
-        app.worker.root().&workerCode(onEnd &()){
-            sys_log("Hello from the worker thread\n");
-            onEnd~();
-        }~(app.&endEverything(){
-            sys_log("Shutdown from the main thread\n");
-            sys_setMainObject(?sys_Object);        
-        });
-    )-");
-}
-
-/////////////////////////////////
-
-ints();
-doubles();
-block();
-lambdaWithParams();
-passingLambdaToLambda();
-sequence();
-localAssignment();
-makeAndConsumeOptionals();
-maybeChain();
-intComparisons();
-loops();
-classes();
-classInstanceCopy();
-classMethods();
-interfaces();
-twoInterfaces();
-promisedCast();
-classCast();
-interfaceCast();
-weaks();
-topoCopy();
-foreignFunctionCall();
-logicalOr();
-logicalAnd();
-raii();
-blobsAndIndexes();
-delegates();
-arrays();
-weakArrays();
-retOwnPtr();
-initializerMethods();
-stringOperations();
-literalStrings();
-stringEscapes();
-setOps();
-getParent();
-getParentArray();
-splice();
-shared();
-consts();
-multiline();
-stringInterpolation();
-generics();
-reopenGenerics();
-genericFromGeneric();
-genericInstAsType();
-fnReturnTest();
-breakTest();
-breakSkipsCallWithPartialParamsTest();
-breakFromLocalInitializerTest();
-breakFromInnerLambdaTest();
-boolLambdaTest();
-returnFromInnerLambdaTest();
-unwindTest();
-asyncInnerTest \
-asyncFfi \
-multithreading()

@@ -37,7 +37,7 @@ using ltm::cast;
 using std::uintptr_t;
 using dom::isa;
 
-const int AG_HEADER_OFFSET = 0; // -1 if dispatcher and counter to be accessed by negative offsets (which speeds up all ffi, but is incompatible with moronic LLVM debug info)
+const int AG_HEADER_OFFSET = 0; // -1 if dispatcher and counter to be accessed by negative offsets (which speeds up all ffi, but is incompatible with LLVM debug info)
 
 
 #define AK_STR(X) #X

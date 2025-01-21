@@ -1098,7 +1098,7 @@ struct Parser {
 				}
 			}
 			if (*c != '\n' && *c != '\r')
-				p.error("Unexpected symbols in format string at ", c);
+				p.error("Unexpected symbols in format string at ", std::string_view(c, 10));
 		}
 	};
 

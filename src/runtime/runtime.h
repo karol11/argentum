@@ -51,6 +51,7 @@ void ag_memmove(void*, void*, size_t);
 #define AG_CTR_HASH   ((uintptr_t) 8)
 #define AG_CTR_STEP   ((uintptr_t) 16)
 
+// An inner structure that sometimes outlives thread object.
 typedef struct ag_thread_tag ag_thread;
 
 #define AG_VISIT_OWN    0

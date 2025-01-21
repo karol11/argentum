@@ -660,8 +660,8 @@ bool ag_fn_sys_postTimer(int64_t at, AgWeak* receiver, ag_fn fn) {
 	return true;
 }
 
-// returns non-null mtx-locked thread
-// receiver must be prelocked
+// returns non-null thread that is not locked and need no locks
+// receiver must be pre-retained not null
 ag_thread* ag_prepare_post_from_ag(AgWeak* receiver, ag_fn fn, ag_trampoline tramp, size_t params_count) {
 	ag_thread* th = (ag_thread*)receiver->thread;
 	ag_thread* me = ag_current_thread;
