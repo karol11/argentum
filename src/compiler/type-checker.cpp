@@ -547,7 +547,7 @@ struct Typer : ast::ActionMatcher {
 			*fix_result,
 			value_type,
 			variable_type,
-			[&] { return ast::format_str("assign to vaiable", node.var_name, node.var.pinned()); });
+			[&] { return ast::format_str("assign to vaiable ", node.var_name, " declared at ", *node.var.pinned()); });
 	}
 	void on_mk_instance(ast::MkInstance& node) override {
 		if (!node.cls)  // delegate type declaration this-param has no cls
