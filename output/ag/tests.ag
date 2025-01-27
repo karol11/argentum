@@ -2,9 +2,10 @@ using sys{
     Object,
     Cursor,
     StrBuilder,
-    par = getParent,
-    assert=assert0
+    par = getParent
 }
+
+fn assert(v bool);
 
 test ints() {
     assert(7 == (2 ^ 2 * 3 + 1) << (2-1) | (2+2) | (3 & (2>>1)))
@@ -163,17 +164,17 @@ test twoInterfaces() {
 }
 
 test promisedCast() { // it should compile
-    p = Widget~Movable; // p is of type Movable containing a Widget instance
+    w = Widget;
+    p = w~Movable; // p is of type Movable containing a Widget instance
     p.moveTo(1, 2);
-    assert(3 == p.x + p.y);
-    p := Point;
+    assert(3 == w.x + w.y);
+    p := Point~Movable;
     p.moveTo(10, 20);
-    assert(30 == p.x + p.y);
 }
 
 test classCast() {
     p = Widget~Point;  // `p` is a `Point` holder initialized with a `Widget` instance
-    sys_assert0(24 == p~Widget?_.color : 0)     // cast `p` to `Widget` and return its `color` field on success
+    assert(24 == p~Widget?_.color : 0)     // cast `p` to `Widget` and return its `color` field on success
 }
 
 test interfaceCast() { // TODO interface dispatch with collisions
@@ -341,13 +342,13 @@ test initializerMethods() {
 }
 
 class sys_String{
-    length() int {
+    *length() int {
         s = Cursor.set(this);
         r = 0;
         loop {
             c = s.getCh();
-            c != 0 ? r += 1;
-            c == 0 ? r
+            c != 0s ? r += 1;
+            c == 0s ? r
         }
     }
 }
@@ -362,7 +363,7 @@ class OString {
         pos := putChAt(pos, codePoint)
     }
     append(s str) this {
-        cur = s.cursor();
+        cur = Cursor.set(s);
         loop{
             c = cur.getCh();
             c != 0s ? put(c);
@@ -455,8 +456,8 @@ test getParentArray() {
     assert(a[0] && par(_) && _==a);
     v := a[0];
     a.setOptAt(0, ?Object);
-    assert(v && !getParent(_));
-    assert(!getParent(a))
+    assert(v && !par(_));
+    assert(!par(a))
 }
 
 class SpliceCls{ inner = ?SpliceCls; }
@@ -518,13 +519,14 @@ class StrBuilder{
         pos := putChAt(pos, codePoint)
     }
     putStr(s str) this {
+        s = Cursor.set(s);
         loop !{
             c = s.getCh();
-            c != 0 ? put(c)
+            c != 0s ? put(c)
         }
     }
     putInt(v int) this {
-        put(v % 10 + '0')
+        put(short(v % 10) + '0')
     }
     toStr() str {
         mkStr(0, pos).{ pos := 0 }
@@ -691,7 +693,8 @@ fn returnFromInnerLambdaPass(l()) str {
 }
 fn returnFromInnerLambdaSkip() str {
     returnFromInnerLambdaPass{
-      ^returnFromInnerLambdaSkip = "From break"
+        0==0 ?  // let make this fn void, not strictly no_ret
+         ^returnFromInnerLambdaSkip = "From break";
     }
 }
 test returnFromInnerLambdaTest() {
@@ -747,38 +750,41 @@ test multithreading() {
 //
 // Sync
 //
-fn foreignTestFunction(x int) int;
+fn ffiTestFn(x int) int; // implemented as: return ff_state += delta;
+fn ffiTestReset(); // implemented as: ff_state = 0;
 
 test foreignFunctionCall() {
-    foreignTestFunction(4*10);
-    assert(42 == foreignTestFunction(2))
+    ffiTestReset();
+    ffiTestFn(4*10);
+    assert(42 == ffiTestFn(2))
 }
 
 class Font {
     ttfHandle = 0;
     setId(id int) {
-        ttfHandle != 0 ? foreignTestFunction(-ttfHandle);
+        ttfHandle != 0 ? ffiTestFn(-ttfHandle);
         ttfHandle := id;
-        id != 0 ? foreignTestFunction(id);
+        id != 0 ? ffiTestFn(id);
     }
 }
 
 fn disposeFont(f Font) {
-    f.ttfHandle != 0 ? foreignTestFunction(-f.ttfHandle);
+    f.ttfHandle != 0 ? ffiTestFn(-f.ttfHandle);
 }
 
 fn afterCopyFont(f Font) {
-    f.ttfHandle != 0 ? foreignTestFunction(f.ttfHandle);
+    f.ttfHandle != 0 ? ffiTestFn(f.ttfHandle);
 }
 
 test raii() {
+    ffiTestReset();
     {
-        foreignTestFunction(2);
+        ffiTestFn(2);
         fa = Font;
         fa.setId(42);   // foreignTestFunction_state= 2+42
         fb = @fa;       // foreignTestFunction_state= 2+42+42
     };                  // foreignTestFunction_state= 2+42+42-42-42 = 2
-    assert(2 == foreignTestFunction(0))
+    assert(2 == ffiTestFn(0))
 }
 
 //
@@ -788,12 +794,19 @@ fn asyncFfiCallbackInvoker(callback &());
 
 class AsyncFfiApp{
     onCallback() {
+        assert(2 == ffiTestFn(2));
         sys_setMainObject(?sys_Object);
     }
 }
 
 test asyncFfi() {
+    ffiTestReset();
     app = App;
     sys_setMainObject(app);
-    callbackInvoker(app.onCallback);
+    asyncFfiCallbackInvoker(app.onCallback);
 }
+
+test asyncFfiFollowup() {
+    assert(3 == ffiTestFn(3))
+}
+
